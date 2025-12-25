@@ -37,8 +37,6 @@ pub enum BinaryOp {
 pub enum Literal {
     Int(i128),
     Bool(bool),
-    // We might want specific types for Hex/Bin if we want to preserve representation,
-    // but for AST values i128 is likely sufficient.
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -88,10 +86,9 @@ pub struct UnionVariant {
 pub enum UnionBody {
     InlineStruct(Vec<StructItem>), // { id: u16, ... }
     TypeRef(String), // KnownStruct
-    // Spec also implies variants can be empty/unit-like or named.
-    // e.g. "Echo { ... }" -> Name + InlineStruct
-    // e.g. "Unknown" -> Name (Unit)
-    // But in `union(type) { ... }` the variants are usually `value => Name { ... }`
+    // NamedInline? Spec: "Echo { ... }". 
+    // This is effectively defining a struct inline.
+    NamedInline(String, Vec<StructItem>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,13 +110,13 @@ pub enum Type {
 pub struct StructDef {
     pub name: String,
     pub attributes: Vec<Attribute>,
-    pub items: Vec<StructItem>, // Changed from fields to items to support conditionals
+    pub items: Vec<StructItem>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ErrorVariant {
     pub name: String,
-    pub fields: Vec<(String, Type)>, // Spec allows primitives: "MISSING_THIS_FLAG { found: b<3>, ... }"
+    pub fields: Vec<(String, Primitive)>, // Spec says primitive fields only for errors
 }
 
 #[derive(Debug, Clone, PartialEq)]
