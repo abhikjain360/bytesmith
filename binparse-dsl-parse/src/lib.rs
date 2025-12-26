@@ -1,8 +1,7 @@
-use winnow::prelude::*;
 use winnow::{
+    Parser,
     ascii::{digit1, hex_digit1, multispace0},
     combinator::{alt, delimited, dispatch, fail, opt, peek, preceded, repeat, separated, seq},
-    error::ContextError,
     token::{any, take_until, take_while},
 };
 
@@ -22,7 +21,7 @@ fn block_comment<'a>(input: &mut &'a str) -> winnow::Result<()> {
 
 fn ws<'a>(input: &mut &'a str) -> winnow::Result<()> {
     loop {
-        let start = *input;
+        let start_len = input.len();
         multispace0.parse_next(input)?;
         if line_comment.parse_next(input).is_ok() {
             continue;
@@ -30,16 +29,16 @@ fn ws<'a>(input: &mut &'a str) -> winnow::Result<()> {
         if block_comment.parse_next(input).is_ok() {
             continue;
         }
-        if start.len() == input.len() {
+        if start_len == input.len() {
             break;
         }
     }
     Ok(())
 }
 
-fn padded<'a, O, F>(mut inner: F) -> impl Parser<&'a str, O, ContextError>
+fn padded<'a, O, F>(mut inner: F) -> impl Parser<&'a str, O, winnow::error::ContextError>
 where
-    F: Parser<&'a str, O, ContextError>,
+    F: Parser<&'a str, O, winnow::error::ContextError>,
 {
     move |input: &mut &'a str| {
         ws.parse_next(input)?;
@@ -578,7 +577,6 @@ pub fn parse_str(input: &str) -> Result<Vec<ast::Definition<'_>>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use winnow::Parser;
 
     fn parse_helper(src: &str) -> Vec<ast::Definition<'_>> {
         match parse.parse(src) {

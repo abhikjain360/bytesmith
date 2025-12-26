@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 binparse-dsl = { path = "../binparse-dsl" }
 ariadne = "0.6.0"
-winnow = "0.7.14"
+winnow = { version = "0.7.14", features = ["simd"] }
 
 [lib]
 path = "src/lib.rs"
