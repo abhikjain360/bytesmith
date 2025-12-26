@@ -1,12 +1,12 @@
-use std::borrow::Cow;
 use winnow::prelude::*;
 use winnow::{
     ascii::{digit1, hex_digit1, multispace0},
-    combinator::{alt, delimited, fail, opt, peek, preceded, repeat, separated, seq, dispatch},
-    token::{take_while, any, take_until},
+    combinator::{alt, delimited, dispatch, fail, opt, peek, preceded, repeat, separated, seq},
     error::ContextError,
+    token::{any, take_until, take_while},
 };
-use binparse_dsl::*;
+
+use binparse_dsl as ast;
 
 // Standard Result for winnow 0.6+
 type PResult<'i, O> = winnow::Result<O>;
@@ -14,28 +14,28 @@ type PResult<'i, O> = winnow::Result<O>;
 // --- Whitespace & Comments ---
 
 fn line_comment<'a>(input: &mut &'a str) -> PResult<'a, ()> {
-    (
-        "//",
-        take_while(0.., |c| c != '\n'),
-        opt('\n')
-    ).void().parse_next(input)
+    ("//", take_while(0.., |c| c != '\n'), opt('\n'))
+        .void()
+        .parse_next(input)
 }
 
 fn block_comment<'a>(input: &mut &'a str) -> PResult<'a, ()> {
-    (
-        "/*",
-        take_until(0.., "*/"),
-        "*/"
-    ).void().parse_next(input)
+    ("/*", take_until(0.., "*/"), "*/").void().parse_next(input)
 }
 
 fn ws<'a>(input: &mut &'a str) -> PResult<'a, ()> {
     loop {
         let start = *input;
         multispace0.parse_next(input)?;
-        if line_comment.parse_next(input).is_ok() { continue; }
-        if block_comment.parse_next(input).is_ok() { continue; }
-        if start.len() == input.len() { break; }
+        if line_comment.parse_next(input).is_ok() {
+            continue;
+        }
+        if block_comment.parse_next(input).is_ok() {
+            continue;
+        }
+        if start.len() == input.len() {
+            break;
+        }
     }
     Ok(())
 }
@@ -56,11 +56,15 @@ where
 
 fn ident_raw<'a>(input: &mut &'a str) -> PResult<'a, &'a str> {
     take_while(1.., |c: char| c.is_ascii_alphanumeric() || c == '_')
-        .verify(|s: &str| s.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_'))
+        .verify(|s: &str| {
+            s.chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        })
         .parse_next(input)
 }
 
-fn identifier<'a>(input: &mut &'a str) -> PResult<'a, Cow<'a, str>> {
+fn identifier<'a>(input: &mut &'a str) -> PResult<'a, &'a str> {
     let start = *input;
     let i = ident_raw(input)?;
     let reserved = ["struct", "union", "concat", "if", "else", "error", "match"];
@@ -68,13 +72,13 @@ fn identifier<'a>(input: &mut &'a str) -> PResult<'a, Cow<'a, str>> {
         *input = start;
         fail.parse_next(input)
     } else {
-        Ok(Cow::Borrowed(i))
+        Ok(i)
     }
 }
 
 // --- Literals ---
 
-fn literal<'a>(input: &mut &'a str) -> PResult<'a, Literal<'a>> {
+fn literal<'a>(input: &mut &'a str) -> PResult<'a, ast::Literal<'a>> {
     dispatch! {peek(any);
         '"' => string_literal,
         'x' => hex_literal,
@@ -82,105 +86,103 @@ fn literal<'a>(input: &mut &'a str) -> PResult<'a, Literal<'a>> {
         '0' => alt((hex_literal, binary_literal, decimal_literal)),
         '1'..='9' => decimal_literal,
         _ => fail
-    }.parse_next(input)
+    }
+    .parse_next(input)
 }
 
-fn decimal_literal<'a>(input: &mut &'a str) -> PResult<'a, Literal<'a>> {
-    digit1.try_map(|s: &str| s.parse::<u128>()).map(Literal::Int).parse_next(input)
-}
-
-fn hex_literal<'a>(input: &mut &'a str) -> PResult<'a, Literal<'a>> {
-    preceded(alt(("0x", "x")), hex_digit1)
-        .try_map(|s: &str| u128::from_str_radix(s, 16))
-        .map(Literal::Int)
+fn decimal_literal<'a>(input: &mut &'a str) -> PResult<'a, ast::Literal<'a>> {
+    digit1
+        .try_map(|s: &str| s.parse::<u128>())
+        .map(ast::Literal::Int)
         .parse_next(input)
 }
 
-fn binary_literal<'a>(input: &mut &'a str) -> PResult<'a, Literal<'a>> {
+fn hex_literal<'a>(input: &mut &'a str) -> PResult<'a, ast::Literal<'a>> {
+    preceded(alt(("0x", "x")), hex_digit1)
+        .try_map(|s: &str| u128::from_str_radix(s, 16))
+        .map(ast::Literal::Int)
+        .parse_next(input)
+}
+
+fn binary_literal<'a>(input: &mut &'a str) -> PResult<'a, ast::Literal<'a>> {
     preceded(alt(("0b", "b")), take_while(1.., |c| c == '0' || c == '1'))
         .try_map(|s: &str| {
             let width = s.len() as u8;
-            u128::from_str_radix(s, 2).map(|val| Literal::Binary { val, width })
+            u128::from_str_radix(s, 2).map(|val| ast::Literal::Binary { val, width })
         })
         .parse_next(input)
 }
 
-fn string_literal<'a>(input: &mut &'a str) -> PResult<'a, Literal<'a>> {
-    delimited(
-        '"',
-        take_while(0.., |c| c != '"'),
-        '"'
-    ).map(|s: &str| Literal::String(Cow::Borrowed(s))).parse_next(input)
+fn string_literal<'a>(input: &mut &'a str) -> PResult<'a, ast::Literal<'a>> {
+    delimited('"', take_while(0.., |c| c != '"'), '"')
+        .map(|s: &str| ast::Literal::String(s))
+        .parse_next(input)
 }
 
 // --- Expressions ---
 
-fn expr<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
+fn expr<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
     logic_or(input)
 }
 
-fn args<'a>(input: &mut &'a str) -> PResult<'a, Vec<Expr<'a>>> {
-    delimited(
-        padded('('),
-        separated(0.., expr, padded(',')),
-        padded(')')
-    ).parse_next(input)
+fn args<'a>(input: &mut &'a str) -> PResult<'a, Vec<ast::Expr<'a>>> {
+    delimited(padded('('), separated(0.., expr, padded(',')), padded(')')).parse_next(input)
 }
 
-fn atom<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
+fn atom<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
     padded(alt((
-        literal.map(Expr::Literal),
+        literal.map(ast::Expr::Literal),
         call_or_ident,
         tuple_or_group,
-    ))).parse_next(input)
+    )))
+    .parse_next(input)
 }
 
-fn call_or_ident<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
+fn call_or_ident<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
     let name = identifier(input)?;
     let args_opt = opt(args).parse_next(input)?;
     match args_opt {
-        Some(a) => Ok(Expr::Call(name, a)),
-        None => Ok(Expr::Ident(name)),
+        Some(a) => Ok(ast::Expr::Call(name, a)),
+        None => Ok(ast::Expr::Ident(name)),
     }
 }
 
-fn tuple_or_group<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
-    delimited(
-        padded('('),
-        separated(0.., expr, padded(',')),
-        padded(')')
-    ).map(|mut exprs: Vec<Expr<'a>>| {
-        if exprs.len() == 1 {
-            exprs.pop().unwrap()
-        } else {
-            Expr::Tuple(exprs)
-        }
-    }).parse_next(input)
+fn tuple_or_group<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
+    delimited(padded('('), separated(0.., expr, padded(',')), padded(')'))
+        .map(|mut exprs: Vec<ast::Expr<'a>>| {
+            if exprs.len() == 1 {
+                exprs.pop().unwrap()
+            } else {
+                ast::Expr::Tuple(exprs)
+            }
+        })
+        .parse_next(input)
 }
 
-fn member_access<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
+fn member_access<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
     let mut lhs = atom(input)?;
     while padded('.').parse_next(input).is_ok() {
         let field = padded(identifier).parse_next(input)?;
-        lhs = Expr::Member(Box::new(lhs), field);
+        lhs = ast::Expr::Member(Box::new(lhs), field);
     }
     Ok(lhs)
 }
 
-fn product<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
+fn product<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
     let mut lhs = member_access(input)?;
     loop {
         let start = *input;
-        let op_res: PResult<BinaryOp> = padded(alt((
-            "*".map(|_| BinaryOp::Mul),
-            "/".map(|_| BinaryOp::Div),
-            "%".map(|_| BinaryOp::Mod),
-        ))).parse_next(input);
+        let op_res: PResult<ast::BinaryOp> = padded(alt((
+            "*".map(|_| ast::BinaryOp::Mul),
+            "/".map(|_| ast::BinaryOp::Div),
+            "%".map(|_| ast::BinaryOp::Mod),
+        )))
+        .parse_next(input);
 
         match op_res {
             Ok(op) => {
                 let rhs = member_access(input)?;
-                lhs = Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
             }
             Err(_) => {
                 *input = start;
@@ -191,19 +193,20 @@ fn product<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
     Ok(lhs)
 }
 
-fn sum<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
+fn sum<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
     let mut lhs = product(input)?;
     loop {
         let start = *input;
-        let op_res: PResult<BinaryOp> = padded(alt((
-            "+".map(|_| BinaryOp::Add),
-            "-".map(|_| BinaryOp::Sub),
-        ))).parse_next(input);
+        let op_res: PResult<ast::BinaryOp> = padded(alt((
+            "+".map(|_| ast::BinaryOp::Add),
+            "-".map(|_| ast::BinaryOp::Sub),
+        )))
+        .parse_next(input);
 
         match op_res {
             Ok(op) => {
                 let rhs = product(input)?;
-                lhs = Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
             }
             Err(_) => {
                 *input = start;
@@ -214,20 +217,23 @@ fn sum<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
     Ok(lhs)
 }
 
-fn bitwise<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
+fn bitwise<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
     let mut lhs = sum(input)?;
     loop {
         let start = *input;
-        let op_res: PResult<BinaryOp> = padded(alt((
-            "&".verify(|s: &str| !s.starts_with("&&")).map(|_| BinaryOp::BitAnd),
-            "^".map(|_| BinaryOp::BitXor),
-            "|".verify(|s: &str| !s.starts_with("||")).map(|_| BinaryOp::BitOr),
-        ))).parse_next(input);
+        let op_res: PResult<ast::BinaryOp> = padded(alt((
+            "&".verify(|s: &str| !s.starts_with("&&"))
+                .map(|_| ast::BinaryOp::BitAnd),
+            "^".map(|_| ast::BinaryOp::BitXor),
+            "|".verify(|s: &str| !s.starts_with("||"))
+                .map(|_| ast::BinaryOp::BitOr),
+        )))
+        .parse_next(input);
 
         match op_res {
             Ok(op) => {
                 let rhs = sum(input)?;
-                lhs = Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
             }
             Err(_) => {
                 *input = start;
@@ -238,23 +244,24 @@ fn bitwise<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
     Ok(lhs)
 }
 
-fn comparison<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
+fn comparison<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
     let mut lhs = bitwise(input)?;
     loop {
         let start = *input;
-        let op_res: PResult<BinaryOp> = padded(alt((
-            "==".map(|_| BinaryOp::Eq),
-            "!=".map(|_| BinaryOp::Neq),
-            "<=".map(|_| BinaryOp::Le),
-            ">=".map(|_| BinaryOp::Ge),
-            "<".map(|_| BinaryOp::Lt),
-            ">".map(|_| BinaryOp::Gt),
-        ))).parse_next(input);
+        let op_res: PResult<ast::BinaryOp> = padded(alt((
+            "==".map(|_| ast::BinaryOp::Eq),
+            "!=".map(|_| ast::BinaryOp::Neq),
+            "<=".map(|_| ast::BinaryOp::Le),
+            ">=".map(|_| ast::BinaryOp::Ge),
+            "<".map(|_| ast::BinaryOp::Lt),
+            ">".map(|_| ast::BinaryOp::Gt),
+        )))
+        .parse_next(input);
 
         match op_res {
             Ok(op) => {
                 let rhs = bitwise(input)?;
-                lhs = Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
             }
             Err(_) => {
                 *input = start;
@@ -265,15 +272,16 @@ fn comparison<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
     Ok(lhs)
 }
 
-fn logic_and<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
+fn logic_and<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
     let mut lhs = comparison(input)?;
     loop {
         let start = *input;
-        let op_res: PResult<BinaryOp> = padded("&&".map(|_| BinaryOp::And)).parse_next(input);
+        let op_res: PResult<ast::BinaryOp> =
+            padded("&&".map(|_| ast::BinaryOp::And)).parse_next(input);
         match op_res {
             Ok(op) => {
                 let rhs = comparison(input)?;
-                lhs = Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
             }
             Err(_) => {
                 *input = start;
@@ -284,15 +292,16 @@ fn logic_and<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
     Ok(lhs)
 }
 
-fn logic_or<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
+fn logic_or<'a>(input: &mut &'a str) -> PResult<'a, ast::Expr<'a>> {
     let mut lhs = logic_and(input)?;
     loop {
         let start = *input;
-        let op_res: PResult<BinaryOp> = padded("||".map(|_| BinaryOp::Or)).parse_next(input);
+        let op_res: PResult<ast::BinaryOp> =
+            padded("||".map(|_| ast::BinaryOp::Or)).parse_next(input);
         match op_res {
             Ok(op) => {
                 let rhs = logic_and(input)?;
-                lhs = Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
             }
             Err(_) => {
                 *input = start;
@@ -305,62 +314,63 @@ fn logic_or<'a>(input: &mut &'a str) -> PResult<'a, Expr<'a>> {
 
 // --- Types & Attributes ---
 
-fn attribute<'a>(input: &mut &'a str) -> PResult<'a, Attribute<'a>> {
-    seq! {Attribute {
+fn attribute<'a>(input: &mut &'a str) -> PResult<'a, ast::Attribute<'a>> {
+    seq! {ast::Attribute {
         _: padded('@'),
         name: identifier,
         args: opt(args).map(|o| o.unwrap_or_default()),
-    }}.parse_next(input)
+    }}
+    .parse_next(input)
 }
 
-fn attributes<'a>(input: &mut &'a str) -> PResult<'a, Vec<Attribute<'a>>> {
+fn attributes<'a>(input: &mut &'a str) -> PResult<'a, Vec<ast::Attribute<'a>>> {
     repeat(0.., padded(attribute)).parse_next(input)
 }
 
-fn primitive<'a>(input: &mut &'a str) -> PResult<'a, Primitive> {
+fn primitive<'a>(input: &mut &'a str) -> PResult<'a, ast::Primitive> {
     dispatch! {peek(any);
         'u' => alt((
-            "u8".map(|_| Primitive::U8),
-            "u16".map(|_| Primitive::U16),
-            "u32".map(|_| Primitive::U32),
-            "u64".map(|_| Primitive::U64),
-            "u128".map(|_| Primitive::U128),
+            "u8".map(|_| ast::Primitive::U8),
+            "u16".map(|_| ast::Primitive::U16),
+            "u32".map(|_| ast::Primitive::U32),
+            "u64".map(|_| ast::Primitive::U64),
+            "u128".map(|_| ast::Primitive::U128),
         )),
         'b' => ("b", delimited('<', digit1, '>')).try_map(|(_, w_str): (&str, &str)| {
             w_str.parse::<u8>()
-        }).verify(|w| *w <= 128).map(Primitive::BitField),
+        }).verify(|w| *w <= 128).map(ast::Primitive::BitField),
         _ => fail
-    }.parse_next(input)
+    }
+    .parse_next(input)
 }
 
-fn type_parser<'a>(input: &mut &'a str) -> PResult<'a, Type<'a>> {
+fn type_parser<'a>(input: &mut &'a str) -> PResult<'a, ast::Type<'a>> {
     alt((
         array_type,
         concat_type,
         union_type,
-        primitive.map(Type::Primitive),
-        padded(identifier).map(Type::StructRef),
-    )).parse_next(input)
-}
-
-fn array_type<'a>(input: &mut &'a str) -> PResult<'a, Type<'a>> {
-    delimited(
-        padded('['),
-        (
-            type_parser,
-            opt(preceded(padded(';'), expr))
-        ),
-        padded(']')
-    ).map(|(t, len)| Type::Array(Box::new(t), len))
+        primitive.map(ast::Type::Primitive),
+        padded(identifier).map(ast::Type::StructRef),
+    ))
     .parse_next(input)
 }
 
-fn concat_field<'a>(input: &mut &'a str) -> PResult<'a, Field<'a>> {
+fn array_type<'a>(input: &mut &'a str) -> PResult<'a, ast::Type<'a>> {
+    delimited(
+        padded('['),
+        (type_parser, opt(preceded(padded(';'), expr))),
+        padded(']'),
+    )
+    .map(|(t, len)| ast::Type::Array(Box::new(t), len))
+    .parse_next(input)
+}
+
+fn concat_field<'a>(input: &mut &'a str) -> PResult<'a, ast::Field<'a>> {
     let (attrs, name) = (attributes, padded(identifier)).parse_next(input)?;
     let _ = padded(':').parse_next(input)?;
     let ty = type_parser(input)?;
     let constraint = opt(preceded(padded('='), expr)).parse_next(input)?;
-    Ok(Field {
+    Ok(ast::Field {
         name: Some(name),
         ty,
         attributes: attrs,
@@ -368,61 +378,73 @@ fn concat_field<'a>(input: &mut &'a str) -> PResult<'a, Field<'a>> {
     })
 }
 
-fn concat_type<'a>(input: &mut &'a str) -> PResult<'a, Type<'a>> {
+fn concat_type<'a>(input: &mut &'a str) -> PResult<'a, ast::Type<'a>> {
     preceded(
         padded("concat"),
         delimited(
             padded('('),
             separated(0.., concat_field, padded(',')),
-            padded(')')
-        )
-    ).map(Type::Concat).parse_next(input)
+            padded(')'),
+        ),
+    )
+    .map(ast::Type::Concat)
+    .parse_next(input)
 }
 
-fn error_body<'a>(input: &mut &'a str) -> PResult<'a, UnionBody<'a>> {
+fn error_body<'a>(input: &mut &'a str) -> PResult<'a, ast::UnionBody<'a>> {
     // @error(ERROR_NAME { field: expr, ... }) or @error(ERROR_NAME)
     let _ = padded("@error").parse_next(input)?;
     let _ = padded('(').parse_next(input)?;
     let name = padded(identifier).parse_next(input)?;
     let fields = opt(delimited(
         padded('{'),
-        separated(0.., seq!{ padded(identifier), _: padded(':'), expr }, padded(',')),
-        padded('}')
-    )).parse_next(input)?.unwrap_or_default();
+        separated(
+            0..,
+            seq! { padded(identifier), _: padded(':'), expr },
+            padded(','),
+        ),
+        padded('}'),
+    ))
+    .parse_next(input)?
+    .unwrap_or_default();
     let _ = padded(')').parse_next(input)?;
-    Ok(UnionBody::Error(name, fields))
+    Ok(ast::UnionBody::Error(name, fields))
 }
 
-fn union_body<'a>(input: &mut &'a str) -> PResult<'a, UnionBody<'a>> {
+fn union_body<'a>(input: &mut &'a str) -> PResult<'a, ast::UnionBody<'a>> {
     alt((
         error_body,
         seq! {
             padded(identifier),
             delimited(padded('{'), struct_items, padded('}'))
-        }.map(|(n, items)| UnionBody::NamedInline(n, items)),
-    )).parse_next(input)
+        }
+        .map(|(n, items)| ast::UnionBody::NamedInline(n, items)),
+    ))
+    .parse_next(input)
 }
 
-fn union_variant<'a>(input: &mut &'a str) -> PResult<'a, UnionVariant<'a>> {
-    seq! {UnionVariant {
+fn union_variant<'a>(input: &mut &'a str) -> PResult<'a, ast::UnionVariant<'a>> {
+    seq! {ast::UnionVariant {
         matchers: separated(1.., expr, padded('|')),
         _: padded("=>"),
         body: union_body,
-    }}.parse_next(input)
+    }}
+    .parse_next(input)
 }
 
-fn union_type<'a>(input: &mut &'a str) -> PResult<'a, Type<'a>> {
+fn union_type<'a>(input: &mut &'a str) -> PResult<'a, ast::Type<'a>> {
     preceded(
         padded("union"),
         seq! {
             delimited(padded('('), separated(0.., padded(identifier), padded(',')), padded(')')),
             delimited(padded('{'), union_variants, padded('}'))
-        }
-    ).map(|(args, variants)| Type::Union(UnionDef { args, variants }))
+        },
+    )
+    .map(|(args, variants)| ast::Type::Union(ast::UnionDef { args, variants }))
     .parse_next(input)
 }
 
-fn union_variants<'a>(input: &mut &'a str) -> PResult<'a, Vec<UnionVariant<'a>>> {
+fn union_variants<'a>(input: &mut &'a str) -> PResult<'a, Vec<ast::UnionVariant<'a>>> {
     let mut variants = Vec::new();
     loop {
         let start = *input;
@@ -441,19 +463,20 @@ fn union_variants<'a>(input: &mut &'a str) -> PResult<'a, Vec<UnionVariant<'a>>>
     Ok(variants)
 }
 
-fn struct_item<'a>(input: &mut &'a str) -> PResult<'a, StructItem<'a>> {
+fn struct_item<'a>(input: &mut &'a str) -> PResult<'a, ast::StructItem<'a>> {
     alt((
-        conditional.map(StructItem::Conditional),
-        field_decl.map(StructItem::Field),
-    )).parse_next(input)
+        conditional.map(ast::StructItem::Conditional),
+        field_decl.map(ast::StructItem::Field),
+    ))
+    .parse_next(input)
 }
 
-fn struct_items<'a>(input: &mut &'a str) -> PResult<'a, Vec<StructItem<'a>>> {
+fn struct_items<'a>(input: &mut &'a str) -> PResult<'a, Vec<ast::StructItem<'a>>> {
     repeat(0.., struct_item).parse_next(input)
 }
 
-fn conditional<'a>(input: &mut &'a str) -> PResult<'a, Conditional<'a>> {
-    seq! {Conditional {
+fn conditional<'a>(input: &mut &'a str) -> PResult<'a, ast::Conditional<'a>> {
+    seq! {ast::Conditional {
         _: padded("if"),
         condition: delimited(padded('('), expr, padded(')')),
         then_branch: delimited(padded('{'), struct_items, padded('}')),
@@ -461,13 +484,10 @@ fn conditional<'a>(input: &mut &'a str) -> PResult<'a, Conditional<'a>> {
     }}.parse_next(input)
 }
 
-fn field_decl<'a>(input: &mut &'a str) -> PResult<'a, Field<'a>> {
+fn field_decl<'a>(input: &mut &'a str) -> PResult<'a, ast::Field<'a>> {
     let field_attrs = attributes(input)?;
     let name = padded(identifier).parse_next(input)?;
-    let type_info = opt(preceded(
-        padded(':'),
-        (attributes, type_parser)
-    )).parse_next(input)?;
+    let type_info = opt(preceded(padded(':'), (attributes, type_parser))).parse_next(input)?;
     let constraint = opt(preceded(padded('='), expr)).parse_next(input)?;
     let _ = opt(padded(',')).parse_next(input)?;
 
@@ -478,24 +498,32 @@ fn field_decl<'a>(input: &mut &'a str) -> PResult<'a, Field<'a>> {
     let mut final_attrs = field_attrs;
     final_attrs.extend(type_attrs);
 
-    if ty.is_none() && let Some(Expr::Literal(lit)) = &constraint {
-         match lit {
-            Literal::Binary { width, .. } => {
-                ty = Some(Type::Primitive(Primitive::BitField(*width)));
+    if ty.is_none()
+        && let Some(ast::Expr::Literal(lit)) = &constraint
+    {
+        match lit {
+            ast::Literal::Binary { width, .. } => {
+                ty = Some(ast::Type::Primitive(ast::Primitive::BitField(*width)));
             }
-            Literal::Int(val) => {
-                let t = if *val <= u8::MAX as u128 { Primitive::U8 }
-                        else if *val <= u16::MAX as u128 { Primitive::U16 }
-                        else if *val <= u32::MAX as u128 { Primitive::U32 }
-                        else if *val <= u64::MAX as u128 { Primitive::U64 }
-                        else { Primitive::U128 };
-                ty = Some(Type::Primitive(t));
+            ast::Literal::Int(val) => {
+                let t = if *val <= u8::MAX as u128 {
+                    ast::Primitive::U8
+                } else if *val <= u16::MAX as u128 {
+                    ast::Primitive::U16
+                } else if *val <= u32::MAX as u128 {
+                    ast::Primitive::U32
+                } else if *val <= u64::MAX as u128 {
+                    ast::Primitive::U64
+                } else {
+                    ast::Primitive::U128
+                };
+                ty = Some(ast::Type::Primitive(t));
             }
             _ => {}
         }
     }
-    let final_ty = ty.unwrap_or(Type::Primitive(Primitive::U8));
-    Ok(Field {
+    let final_ty = ty.unwrap_or(ast::Type::Primitive(ast::Primitive::U8));
+    Ok(ast::Field {
         name: Some(name),
         ty: final_ty,
         attributes: final_attrs,
@@ -503,40 +531,50 @@ fn field_decl<'a>(input: &mut &'a str) -> PResult<'a, Field<'a>> {
     })
 }
 
-fn struct_def<'a>(input: &mut &'a str) -> PResult<'a, Definition<'a>> {
-    seq! {StructDef {
+fn struct_def<'a>(input: &mut &'a str) -> PResult<'a, ast::Definition<'a>> {
+    seq! {ast::StructDef {
         attributes: attributes,
         _: padded("struct"),
         name: padded(identifier),
         items: delimited(padded('{'), struct_items, padded('}')),
-    }}.map(Definition::Struct).parse_next(input)
+    }}
+    .map(ast::Definition::Struct)
+    .parse_next(input)
 }
 
-fn error_variant<'a>(input: &mut &'a str) -> PResult<'a, ErrorVariant<'a>> {
+fn error_variant<'a>(input: &mut &'a str) -> PResult<'a, ast::ErrorVariant<'a>> {
     let name = padded(identifier).parse_next(input)?;
     let fields = opt(delimited(
         padded('{'),
-        separated(0.., seq!{ padded(identifier), _: padded(':'), padded(primitive) }, padded(',')),
-        padded('}')
-    )).parse_next(input)?.unwrap_or_default();
+        separated(
+            0..,
+            seq! { padded(identifier), _: padded(':'), padded(primitive) },
+            padded(','),
+        ),
+        padded('}'),
+    ))
+    .parse_next(input)?
+    .unwrap_or_default();
     let _ = opt(padded(',')).parse_next(input)?;
-    Ok(ErrorVariant { name, fields })
+    Ok(ast::ErrorVariant { name, fields })
 }
 
-fn error_def<'a>(input: &mut &'a str) -> PResult<'a, Definition<'a>> {
+fn error_def<'a>(input: &mut &'a str) -> PResult<'a, ast::Definition<'a>> {
     preceded(
         padded("error"),
-        delimited(padded('{'), repeat(0.., padded(error_variant)), padded('}'))
-    ).map(Definition::Error).parse_next(input)
+        delimited(padded('{'), repeat(0.., padded(error_variant)), padded('}')),
+    )
+    .map(ast::Definition::Error)
+    .parse_next(input)
 }
 
 /// Parse a BinParse DSL source string into a list of definitions.
-pub fn parse<'a>(input: &mut &'a str) -> PResult<'a, Vec<Definition<'a>>> {
+pub fn parse<'a>(input: &mut &'a str) -> PResult<'a, Vec<ast::Definition<'a>>> {
     repeat(0.., padded(alt((struct_def, error_def)))).parse_next(input)
 }
 
 /// Convenience function that takes an owned string and returns Result.
-pub fn parse_str(input: &str) -> Result<Vec<Definition<'_>>, String> {
+pub fn parse_str(input: &str) -> Result<Vec<ast::Definition<'_>>, String> {
     parse.parse(input).map_err(|e| e.to_string())
 }
 
@@ -545,7 +583,7 @@ mod tests {
     use super::*;
     use winnow::Parser;
 
-    fn parse_helper(src: &str) -> Vec<Definition<'_>> {
+    fn parse_helper(src: &str) -> Vec<ast::Definition<'_>> {
         match parse.parse(src) {
             Ok(defs) => defs,
             Err(e) => {
@@ -676,14 +714,12 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
-                match &s.items[0] {
-                    StructItem::Field(f) => {
-                         assert_eq!(f.ty, Type::Primitive(Primitive::BitField(3)));
-                    }
-                    _ => panic!("Expected field"),
+            ast::Definition::Struct(s) => match &s.items[0] {
+                ast::StructItem::Field(f) => {
+                    assert_eq!(f.ty, ast::Type::Primitive(ast::Primitive::BitField(3)));
                 }
-            }
+                _ => panic!("Expected field"),
+            },
             _ => panic!("Expected struct"),
         }
     }
@@ -697,11 +733,11 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
+            ast::Definition::Struct(s) => {
                 match &s.items[0] {
-                    StructItem::Field(f) => {
-                         // 0 fits in u8
-                         assert_eq!(f.ty, Type::Primitive(Primitive::U8));
+                    ast::StructItem::Field(f) => {
+                        // 0 fits in u8
+                        assert_eq!(f.ty, ast::Type::Primitive(ast::Primitive::U8));
                     }
                     _ => panic!("Expected field"),
                 }
@@ -737,15 +773,19 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
+            ast::Definition::Struct(s) => {
                 // v = 10 -> u8
                 match &s.items[0] {
-                    StructItem::Field(f) => assert_eq!(f.ty, Type::Primitive(Primitive::U8)),
+                    ast::StructItem::Field(f) => {
+                        assert_eq!(f.ty, ast::Type::Primitive(ast::Primitive::U8))
+                    }
                     _ => panic!("Expected field v"),
                 }
                 // big = 65536 -> u32 (since > u16::MAX 65535)
                 match &s.items[1] {
-                    StructItem::Field(f) => assert_eq!(f.ty, Type::Primitive(Primitive::U32)),
+                    ast::StructItem::Field(f) => {
+                        assert_eq!(f.ty, ast::Type::Primitive(ast::Primitive::U32))
+                    }
                     _ => panic!("Expected field big"),
                 }
             }
@@ -797,7 +837,7 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
+            ast::Definition::Struct(s) => {
                 assert_eq!(s.attributes.len(), 2);
                 assert_eq!(s.attributes[0].name, "len");
                 assert_eq!(s.attributes[1].name, "endian");
@@ -817,7 +857,7 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Error(variants) => {
+            ast::Definition::Error(variants) => {
                 assert_eq!(variants.len(), 3);
                 assert_eq!(variants[0].name, "MISSING_FLAG");
                 assert_eq!(variants[0].fields.len(), 2);
@@ -838,15 +878,13 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
-                match &s.items[1] {
-                    StructItem::Field(f) => {
-                        assert_eq!(f.attributes.len(), 1);
-                        assert_eq!(f.attributes[0].name, "len");
-                    }
-                    _ => panic!("Expected field"),
+            ast::Definition::Struct(s) => match &s.items[1] {
+                ast::StructItem::Field(f) => {
+                    assert_eq!(f.attributes.len(), 1);
+                    assert_eq!(f.attributes[0].name, "len");
                 }
-            }
+                _ => panic!("Expected field"),
+            },
             _ => panic!("Expected struct"),
         }
     }
@@ -863,15 +901,13 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
-                match &s.items[3] {
-                    StructItem::Field(f) => {
-                        assert_eq!(f.attributes.len(), 1);
-                        assert_eq!(f.attributes[0].name, "greedy");
-                    }
-                    _ => panic!("Expected field"),
+            ast::Definition::Struct(s) => match &s.items[3] {
+                ast::StructItem::Field(f) => {
+                    assert_eq!(f.attributes.len(), 1);
+                    assert_eq!(f.attributes[0].name, "greedy");
                 }
-            }
+                _ => panic!("Expected field"),
+            },
             _ => panic!("Expected struct"),
         }
     }
@@ -885,14 +921,12 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
-                match &s.items[0] {
-                    StructItem::Field(f) => {
-                        assert_eq!(f.attributes[0].name, "until");
-                    }
-                    _ => panic!("Expected field"),
+            ast::Definition::Struct(s) => match &s.items[0] {
+                ast::StructItem::Field(f) => {
+                    assert_eq!(f.attributes[0].name, "until");
                 }
-            }
+                _ => panic!("Expected field"),
+            },
             _ => panic!("Expected struct"),
         }
     }
@@ -910,20 +944,16 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
-                match &s.items[0] {
-                    StructItem::Field(f) => {
-                        match &f.ty {
-                            Type::Concat(fields) => {
-                                assert_eq!(fields.len(), 3);
-                                assert_eq!(fields[1].attributes[0].name, "skip");
-                            }
-                            _ => panic!("Expected concat type"),
-                        }
+            ast::Definition::Struct(s) => match &s.items[0] {
+                ast::StructItem::Field(f) => match &f.ty {
+                    ast::Type::Concat(fields) => {
+                        assert_eq!(fields.len(), 3);
+                        assert_eq!(fields[1].attributes[0].name, "skip");
                     }
-                    _ => panic!("Expected field"),
-                }
-            }
+                    _ => panic!("Expected concat type"),
+                },
+                _ => panic!("Expected field"),
+            },
             _ => panic!("Expected struct"),
         }
     }
@@ -948,15 +978,13 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
-                match &s.items[0] {
-                    StructItem::Field(f) => {
-                        assert_eq!(f.attributes[0].name, "parse_with");
-                        assert_eq!(f.attributes[0].args.len(), 2);
-                    }
-                    _ => panic!("Expected field"),
+            ast::Definition::Struct(s) => match &s.items[0] {
+                ast::StructItem::Field(f) => {
+                    assert_eq!(f.attributes[0].name, "parse_with");
+                    assert_eq!(f.attributes[0].args.len(), 2);
                 }
-            }
+                _ => panic!("Expected field"),
+            },
             _ => panic!("Expected struct"),
         }
     }
@@ -971,14 +999,12 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
-                match &s.items[1] {
-                    StructItem::Field(f) => {
-                        assert_eq!(f.attributes[0].name, "max_iter");
-                    }
-                    _ => panic!("Expected field"),
+            ast::Definition::Struct(s) => match &s.items[1] {
+                ast::StructItem::Field(f) => {
+                    assert_eq!(f.attributes[0].name, "max_iter");
                 }
-            }
+                _ => panic!("Expected field"),
+            },
             _ => panic!("Expected struct"),
         }
     }
@@ -995,10 +1021,10 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
+            ast::Definition::Struct(s) => {
                 assert_eq!(s.attributes[0].name, "endian");
                 match &s.items[1] {
-                    StructItem::Field(f) => {
+                    ast::StructItem::Field(f) => {
                         assert_eq!(f.attributes[0].name, "endian");
                     }
                     _ => panic!("Expected field"),
@@ -1045,11 +1071,11 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
+            ast::Definition::Struct(s) => {
                 match &s.items[1] {
-                    StructItem::Field(f) => {
+                    ast::StructItem::Field(f) => {
                         match &f.ty {
-                            Type::Union(u) => {
+                            ast::Type::Union(u) => {
                                 // The wildcard '_' is parsed as an identifier
                                 assert_eq!(u.variants.len(), 2);
                             }
@@ -1076,16 +1102,16 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
+            ast::Definition::Struct(s) => {
                 match &s.items[1] {
-                    StructItem::Field(f) => {
+                    ast::StructItem::Field(f) => {
                         match &f.ty {
-                            Type::Union(u) => {
+                            ast::Type::Union(u) => {
                                 assert_eq!(u.variants.len(), 2);
                                 // Check the error variant
                                 match &u.variants[1].body {
-                                    UnionBody::Error(name, fields) => {
-                                        assert_eq!(name, "MISSING_FLAG");
+                                    ast::UnionBody::Error(name, fields) => {
+                                        assert_eq!(name, &"MISSING_FLAG");
                                         assert_eq!(fields.len(), 2);
                                         assert_eq!(fields[0].0, "found");
                                         assert_eq!(fields[1].0, "expected");
@@ -1114,16 +1140,14 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
-                match &s.items[2] {
-                    StructItem::Field(f) => {
-                        assert_eq!(f.attributes.len(), 2);
-                        assert_eq!(f.attributes[0].name, "no_cache");
-                        assert_eq!(f.attributes[1].name, "greedy");
-                    }
-                    _ => panic!("Expected field"),
+            ast::Definition::Struct(s) => match &s.items[2] {
+                ast::StructItem::Field(f) => {
+                    assert_eq!(f.attributes.len(), 2);
+                    assert_eq!(f.attributes[0].name, "no_cache");
+                    assert_eq!(f.attributes[1].name, "greedy");
                 }
-            }
+                _ => panic!("Expected field"),
+            },
             _ => panic!("Expected struct"),
         }
     }
@@ -1137,15 +1161,13 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
-                match &s.items[0] {
-                    StructItem::Field(f) => {
-                        assert_eq!(f.attributes[0].name, "transform");
-                        assert_eq!(f.attributes[0].args.len(), 1);
-                    }
-                    _ => panic!("Expected field"),
+            ast::Definition::Struct(s) => match &s.items[0] {
+                ast::StructItem::Field(f) => {
+                    assert_eq!(f.attributes[0].name, "transform");
+                    assert_eq!(f.attributes[0].args.len(), 1);
                 }
-            }
+                _ => panic!("Expected field"),
+            },
             _ => panic!("Expected struct"),
         }
     }
@@ -1161,16 +1183,16 @@ mod tests {
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
-            Definition::Struct(s) => {
+            ast::Definition::Struct(s) => {
                 assert_eq!(s.items.len(), 3);
                 match &s.items[1] {
-                    StructItem::Field(f) => {
+                    ast::StructItem::Field(f) => {
                         assert_eq!(f.attributes[0].name, "skip");
                     }
                     _ => panic!("Expected field"),
                 }
                 match &s.items[2] {
-                    StructItem::Field(f) => {
+                    ast::StructItem::Field(f) => {
                         assert_eq!(f.attributes[0].name, "align");
                     }
                     _ => panic!("Expected field"),
