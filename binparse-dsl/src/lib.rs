@@ -31,7 +31,7 @@ pub enum BinaryOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal<'a> {
     Int(u128),
-    Binary { val: u128, width: u8 },
+    Binary(u8),
     String(&'a str),
 }
 
@@ -39,10 +39,17 @@ pub enum Literal<'a> {
 pub enum Expr<'a> {
     Literal(Literal<'a>),
     Ident(&'a str),
-    Binary(Box<Expr<'a>>, BinaryOp, Box<Expr<'a>>),
+    Binary(Box<BinaryExpr<'a>>),
     Member(Box<Expr<'a>>, &'a str), // access field members (e.g. inner.len)
     Call(&'a str, Vec<Expr<'a>>),   // macros
     Tuple(Vec<Expr<'a>>),           // tuple matching in unions
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinaryExpr<'a> {
+    pub lhs: Expr<'a>,
+    pub op: BinaryOp,
+    pub rhs: Expr<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,7 +60,7 @@ pub struct Attribute<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Field<'a> {
-    pub name: Option<&'a str>,
+    pub name: &'a str,
     pub ty: Type<'a>,
     pub attributes: Vec<Attribute<'a>>,
     pub value_constraint: Option<Expr<'a>>, // field = 0x10
@@ -103,7 +110,7 @@ pub enum Type<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct StructDef<'a> {
+pub struct Struct<'a> {
     pub name: &'a str,
     pub attributes: Vec<Attribute<'a>>,
     pub items: Vec<StructItem<'a>>,
@@ -117,6 +124,6 @@ pub struct ErrorVariant<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Definition<'a> {
-    Struct(StructDef<'a>),
+    Struct(Struct<'a>),
     Error(Vec<ErrorVariant<'a>>),
 }

@@ -94,18 +94,15 @@ fn decimal_literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> 
 }
 
 fn hex_literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> {
-    preceded(alt(("0x", "x")), hex_digit1)
+    preceded("x", hex_digit1)
         .try_map(|s: &str| u128::from_str_radix(s, 16))
         .map(ast::Literal::Int)
         .parse_next(input)
 }
 
 fn binary_literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> {
-    preceded(alt(("0b", "b")), take_while(1.., |c| c == '0' || c == '1'))
-        .try_map(|s: &str| {
-            let width = s.len() as u8;
-            u128::from_str_radix(s, 2).map(|val| ast::Literal::Binary { val, width })
-        })
+    preceded("b", take_while(1.., |c| c == '0' || c == '1'))
+        .try_map(|s: &str| u8::from_str_radix(s, 2).map(ast::Literal::Binary))
         .parse_next(input)
 }
 
@@ -178,7 +175,7 @@ fn product<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
         match op_res {
             Ok(op) => {
                 let rhs = member_access(input)?;
-                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
             }
             Err(_) => {
                 *input = start;
@@ -202,7 +199,7 @@ fn sum<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
         match op_res {
             Ok(op) => {
                 let rhs = product(input)?;
-                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
             }
             Err(_) => {
                 *input = start;
@@ -229,7 +226,7 @@ fn bitwise<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
         match op_res {
             Ok(op) => {
                 let rhs = sum(input)?;
-                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
             }
             Err(_) => {
                 *input = start;
@@ -257,7 +254,7 @@ fn comparison<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
         match op_res {
             Ok(op) => {
                 let rhs = bitwise(input)?;
-                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
             }
             Err(_) => {
                 *input = start;
@@ -277,7 +274,7 @@ fn logic_and<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
         match op_res {
             Ok(op) => {
                 let rhs = comparison(input)?;
-                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
             }
             Err(_) => {
                 *input = start;
@@ -297,7 +294,7 @@ fn logic_or<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
         match op_res {
             Ok(op) => {
                 let rhs = logic_and(input)?;
-                lhs = ast::Expr::Binary(Box::new(lhs), op, Box::new(rhs));
+                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
             }
             Err(_) => {
                 *input = start;
@@ -367,7 +364,7 @@ fn concat_field<'a>(input: &mut &'a str) -> winnow::Result<ast::Field<'a>> {
     let ty = type_parser(input)?;
     let constraint = opt(preceded(padded('='), expr)).parse_next(input)?;
     Ok(ast::Field {
-        name: Some(name),
+        name,
         ty,
         attributes: attrs,
         value_constraint: constraint,
@@ -498,7 +495,7 @@ fn field_decl<'a>(input: &mut &'a str) -> winnow::Result<ast::Field<'a>> {
         && let Some(ast::Expr::Literal(lit)) = &constraint
     {
         match lit {
-            ast::Literal::Binary { width, .. } => {
+            ast::Literal::Binary(width) => {
                 ty = Some(ast::Type::Primitive(ast::Primitive::BitField(*width)));
             }
             ast::Literal::Int(val) => {
@@ -520,7 +517,7 @@ fn field_decl<'a>(input: &mut &'a str) -> winnow::Result<ast::Field<'a>> {
     }
     let final_ty = ty.unwrap_or(ast::Type::Primitive(ast::Primitive::U8));
     Ok(ast::Field {
-        name: Some(name),
+        name,
         ty: final_ty,
         attributes: final_attrs,
         value_constraint: constraint,
@@ -528,7 +525,7 @@ fn field_decl<'a>(input: &mut &'a str) -> winnow::Result<ast::Field<'a>> {
 }
 
 fn struct_def<'a>(input: &mut &'a str) -> winnow::Result<ast::Definition<'a>> {
-    seq! {ast::StructDef {
+    seq! {ast::Struct {
         attributes: attributes,
         _: padded("struct"),
         name: padded(identifier),
@@ -704,7 +701,7 @@ mod tests {
     fn test_type_inference_bitfield() {
         let src = r#"
             struct Infer {
-                res = b000,
+                res = b011,
             }
         "#;
         let defs = parse_helper(src);
@@ -909,12 +906,19 @@ mod tests {
 
     #[test]
     fn test_until_attribute() {
+        // let src = r#"
+        // struct CString {
+        //         @until(0x00) content: [u8],
+        //     }
+        // "#;
+
         let src = r#"
-            struct CString {
-                @until(0x00) content: [u8],
+        struct CString {
+        len: u16
             }
         "#;
         let defs = parse_helper(src);
+        println!("{:?}", defs);
         match &defs[0] {
             ast::Definition::Struct(s) => match &s.items[0] {
                 ast::StructItem::Field(f) => {
