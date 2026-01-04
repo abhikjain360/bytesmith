@@ -16,7 +16,7 @@ struct TcpFlags {
     // R1.1: Bit-fields
     // R1.4.2: Cursor tracked in bits
     data_offset: b<4>,
-    reserved: b<3>,  
+    reserved: b<3>,
     nonce: b<1>,
     cwr: b<1>,
     ecn: b<1>,
@@ -26,14 +26,15 @@ struct TcpFlags {
     rst: b<1>,
     syn: b<1>,
     fin: b<1>,
-    
+
     // R1.1.1: Bit-ordering (bits concatenated in stream order)
     // R1.4.3: Bitfield grouping rule (this starts at bit 12, must align if next is byte)
-    window_size: b<16>, 
+    window_size: b<16>,
 }
 ```
 
 **Expected Rust:**
+
 ```rust
 pub struct TcpFlags<'a> {
     data: &'a [u8], // R5.1 Reference-only storage
@@ -51,7 +52,7 @@ impl<'a> TcpFlags<'a> {
     pub fn nonce(&self) -> (u8, usize) { (self.data[0] & 0x01, 0) }
     // ... other 1-bit flags ...
     pub fn fin(&self) -> (u8, usize) { (self.data[1] & 0x01, 1) }
-    
+
     pub fn window_size(&self) -> (u16, usize) {
         // R1.3.1: Unaligned-safe reading (Big Endian)
         (u16::from_be_bytes([self.data[2], self.data[3]]), 2)
@@ -69,14 +70,14 @@ Use `@attributes` for metadata.
 struct EndianExample {
     val_be: u32,       // Inherits big
     val_le: @endian(little) u32,   // R1.2 Per-field override
-    
+
     // R1.2: Explicit bit-ordering (default is msb)
     @bit_order(lsb)
     lsb_flags: b<8>,
 
     // ... requires 5 bits of padding to reach next byte (3 + 5 = 8 bits)
-    @skip pad: b<5>, 
-    
+    @skip pad: b<5>,
+
     // R1.4.1: Alignment check (fail if cursor not at byte boundary)
     // Now we are aligned to byte boundary
     @align(1)
@@ -85,6 +86,7 @@ struct EndianExample {
 ```
 
 **Expected Rust:**
+
 ```rust
 pub struct EndianExample<'a> {
     data: &'a [u8],
@@ -102,18 +104,18 @@ impl<'a> EndianExample<'a> {
         // R1.3.1: Unaligned access helper (Inherits Big Endian)
         (u32::from_be_bytes(self.data[0..4].try_into().unwrap()), 0)
     }
-    
+
     pub fn val_le(&self) -> (u32, usize) {
         // R1.2.3: Per-field override (Little Endian)
         (u32::from_le_bytes(self.data[4..8].try_into().unwrap()), 4)
     }
-    
+
     pub fn flags(&self) -> (u8, usize) {
         ((self.data[8] >> 5) & 0x07, 8)
     }
-    
+
     pub fn aligned_val(&self) -> (u8, usize) {
-        // R1.4.1: Access aligned field. 
+        // R1.4.1: Access aligned field.
         (self.data[9], 9)
     }
 }
@@ -129,17 +131,17 @@ struct IcmpPacket {
     type: u8,
     code: u8,
     checksum: u16,
-    
+
     // R1.6.1: Deterministic selection based on prior fields
     body: union(type) {
         // All variants use @greedy, so IcmpPacket MUST be called with a length limit (R4.3)
-        0 | 8 => Echo { 
-            id: u16, 
-            seq: u16, 
+        0 | 8 => Echo {
+            id: u16,
+            seq: u16,
             payload: @greedy [u8]
         },
-        3 => DestUnreach { 
-            unused: u32, 
+        3 => DestUnreach {
+            unused: u32,
             orig_header: @greedy [u8]
         },
         // R1.6.4 Fallback
@@ -150,7 +152,7 @@ struct IcmpPacket {
 struct TupleUnionExample {
     major: u8,
     minor: u8,
-    
+
     // R1.6.2: Tuple Union (Multi-field selection)
     // Avoids nested unions
     version_data: union(major, minor) {
@@ -163,6 +165,7 @@ struct TupleUnionExample {
 ```
 
 **Expected Rust:**
+
 ```rust
 pub struct IcmpPacket<'a> {
     data: &'a [u8],
@@ -237,8 +240,8 @@ Use binary literals `b...` (or `0b...`), hexadecimal literals `x...` (or `0x...`
 struct ConstBitExample {
     // R1.7.1: Constant constraint
     // The parser must verify 'reserved' is exactly 0b000
-    reserved = b000, 
-    
+    reserved = b000,
+
     // Hex literal example
     magic = xFF,
 
@@ -254,7 +257,8 @@ struct ConstBitExample {
 ```
 
 **Expected Rust:**
-```rust
+
+````rust
 pub struct ConstBitExample<'a> {
     data: &'a [u8],
 }
@@ -263,32 +267,32 @@ impl<'a> ConstBitExample<'a> {
     pub fn parse(data: &'a [u8]) -> Result<Self, Error> {
         // Minimum size to read constants and 'mode'
         if data.len() < 3 { return Err(Error::UnexpectedEof); }
-        
+
         // R1.7.1: Constant constraint validation
         let reserved = (data[0] >> 5) & 0x07;
         if reserved != 0b000 { return Err(Error::InvalidConst); }
-        
+
         if data[1] != 0xFF { return Err(Error::InvalidConst); } // magic
         if data[2] != 10 { return Err(Error::InvalidConst); }   // version
-        
-        // mode is b<3> at bits 21-23 of the first 3 bytes? 
+
+        // mode is b<3> at bits 21-23 of the first 3 bytes?
         // No, let's assume it follows the bits.
-        
+
         Ok(Self { data })
     }
 
-    pub fn mode(&self) -> (u8, usize) { 
+    pub fn mode(&self) -> (u8, usize) {
         // Assuming mode follows 'reserved' (b<3>), 'magic' (u8), 'version' (u8)
         // This would be in the 4th byte if those were byte-aligned.
         // But the DSL says reserved: b<3>, then magic = xFF (u8)...
         // The generator handles the bit-offset tracking.
-        ((self.data[3] >> 5) & 0x07, 3) 
+        ((self.data[3] >> 5) & 0x07, 3)
     }
 
     pub fn special_param(&self) -> Option<(u8, usize)> {
         // R1.7: Bit literal used in conditional expression
         if self.mode().0 == 0b101 {
-            Some((self.data[4], 4)) 
+            Some((self.data[4], 4))
         } else {
             None
         }
@@ -305,14 +309,15 @@ struct FragmentedField {
     // R1.5: Field as concatenation of bits
     // bit_field will be u16 (4 + 8 = 12 bits)
     bit_field: concat(
-        chunk_a: b<4>, 
-        @skip reserved: b<4>, 
+        chunk_a: b<4>,
+        @skip reserved: b<4>,
         chunk_b: b<8>
     ),
 }
-```
+````
 
 **Expected Rust:**
+
 ```rust
 pub struct FragmentedField<'a> {
     data: &'a [u8],
@@ -326,7 +331,8 @@ impl<'a> FragmentedField<'a> {
     }
 }
 ```
-```
+
+````
 
 
 ## 2. Variable Length & Dynamic Sizing
@@ -340,20 +346,21 @@ Arithmetic expressions in array definitions.
 struct Tlv {
     tag: u8,
     len: u16,
-    
+
     // R2.1: Size determined by previous field
     // R2.2: Expression support
     // R5.6: Requires offset caching in struct
-    value: [u8; (len * 2) - 4], 
-    
+    value: [u8; (len * 2) - 4],
+
     // R5.6.1: Opt-out caching (recalculated on access)
     // R2.5: Unsafe override for example (usually TLV has no trailer)
     @no_cache
     trailer: @greedy(unsafe_eof) [u8],
 }
-```
+````
 
 **Expected Rust:**
+
 ```rust
 pub struct Tlv<'a> {
     data: &'a [u8],
@@ -365,21 +372,21 @@ impl<'a> Tlv<'a> {
     pub fn parse(data: &'a [u8]) -> Result<Self, Error> {
         let mut cursor = 0;
         if data.len() < 3 { return Err(Error::UnexpectedEof); }
-        
+
         cursor += 1; // tag: u8
         let len = u16::from_be_bytes(data[cursor..cursor+2].try_into().unwrap());
         cursor += 2;
-        
+
         // R2.2: Expression-based sizing: (len * 2) - 4
         // R7.3: Arithmetic safety check
         let value_len = (len as usize).checked_mul(2)
             .and_then(|x| x.checked_sub(4))
             .ok_or(Error::BadLength)?;
-            
+
         if data.len() < cursor + value_len { return Err(Error::UnexpectedEof); }
         cursor += value_len;
         let value_end = cursor;
-        
+
         Ok(Self { data, value_end })
     }
 
@@ -415,6 +422,7 @@ struct Container {
 ```
 
 **Expected Rust:**
+
 ```rust
 pub struct CString<'a> {
     data: &'a [u8],
@@ -426,7 +434,7 @@ impl<'a> CString<'a> {
         // R2.4.1: Optimized search (e.g. memchr) for byte sentinel
         let content_end = data.iter().position(|&b| b == 0x00)
             .ok_or(Error::UnexpectedEof)?;
-        
+
         Ok(Self { data, content_end })
     }
 
@@ -444,11 +452,11 @@ impl<'a> Container<'a> {
     pub fn parse(data: &'a [u8]) -> Result<Self, Error> {
         if data.len() < 2 { return Err(Error::UnexpectedEof); }
         let len = u16::from_be_bytes(data[0..2].try_into().unwrap()) as usize;
-        
+
         // R2.7: @opaque skips validation of InnerPacket during parse()
         if data.len() < 2 + len { return Err(Error::UnexpectedEof); }
         let inner_end = 2 + len;
-        
+
         Ok(Self { data, inner_end })
     }
 
@@ -471,9 +479,9 @@ Use `@len(field)` on the struct or a specific field to restrict the parsing cont
 @len(total_len)
 struct ScopedPacket {
     total_len: u16,
-    
+
     header: Header,
-    
+
     // R2.5: Greedy now consumes up to `total_len`, not EOF
     // Safe from reading trailing garbage/padding
     payload: @greedy [u8],
@@ -481,27 +489,29 @@ struct ScopedPacket {
 
 struct FieldScopePacket {
     sub_len: u16,
-    
+
     // R2.8.2: Field-level scope
     // Restricts the 'inner' field parser to consume at most 'sub_len' bytes.
     // Equivalent to slicing the input before calling Inner::parse.
     @len(sub_len)
     inner: InnerPacket,
 }
+```
 
 **Expected Rust:**
+
 ```rust
 impl<'a> ScopedPacket<'a> {
     pub fn parse(data: &'a [u8]) -> Result<Self, Error> {
         if data.len() < 2 { return Err(Error::UnexpectedEof); }
         let total_len = u16::from_be_bytes(data[0..2].try_into().unwrap()) as usize;
-        
+
         // R2.8.1: Enforce struct-level scope limit
         if data.len() < total_len {
             return Err(Error::UnexpectedEof);
         }
         let scope_data = &data[..total_len];
-        
+
         // ... parse fields within scope_data ...
         Ok(Self { data: scope_data })
     }
@@ -516,7 +526,7 @@ impl<'a> FieldScopePacket<'a> {
     pub fn parse(data: &'a [u8]) -> Result<Self, Error> {
         if data.len() < 2 { return Err(Error::UnexpectedEof); }
         let sub_len = u16::from_be_bytes(data[0..2].try_into().unwrap()) as usize;
-        
+
         // R2.8.2: Field-level scope validates availability
         if data.len() < 2 + sub_len { return Err(Error::UnexpectedEof); }
         Ok(Self { data, inner_len: sub_len })
@@ -547,7 +557,7 @@ struct Record {
 
 struct Table {
     count: u16,
-    
+
     // R3.3.1: Count-based array of structs
     // R3.3.2: Max iterations for BPF safety
     // R3.4: Allocation-free iterator
@@ -557,6 +567,7 @@ struct Table {
 ```
 
 **Expected Rust:**
+
 ```rust
 pub struct Table<'a> {
     data: &'a [u8],
@@ -567,14 +578,14 @@ impl<'a> Table<'a> {
     pub fn parse(data: &'a [u8]) -> Result<Self, Error> {
         if data.len() < 2 { return Err(Error::UnexpectedEof); }
         let count = u16::from_be_bytes(data[0..2].try_into().unwrap()) as usize;
-        
+
         // R3.3.2: Optional validation of @max_iter at runtime/compile-time
         if count > 1024 { return Err(Error::BadLength); }
-        
+
         // R3.4: Validate total size for allocation-free iteration
         let total_size = count * 8; // Record is 8 bytes
         if data.len() < 2 + total_size { return Err(Error::UnexpectedEof); }
-        
+
         Ok(Self { data, count })
     }
 
@@ -611,12 +622,13 @@ struct Parent {
 struct Child {
     id: u8,
     // R2.5: Greedy consumes only up to 'limit'
-    payload: @greedy(unsafe_eof) [u8], 
+    payload: @greedy(unsafe_eof) [u8],
 }
 ```
 
 **Expected Rust:**
-```rust
+
+````rust
 pub struct Parent<'a> {
     data: &'a [u8],
     total_len: usize,
@@ -626,7 +638,7 @@ impl<'a> Parent<'a> {
     pub fn parse(data: &'a [u8]) -> Result<Self, Error> {
         if data.len() < 2 { return Err(Error::UnexpectedEof); }
         let total_len = u16::from_be_bytes(data[0..2].try_into().unwrap()) as usize;
-        
+
         // R4.3.1: Context-defined limit validation
         if data.len() < total_len { return Err(Error::UnexpectedEof); }
         Ok(Self { data, total_len })
@@ -664,33 +676,35 @@ Use `@check` to define invariants that span across protocol layers.
 ```binparse
 struct Outer {
     inner_len: u16,
-    
+
     @len(inner_len)
     inner: Inner,
-    
+
     // R4.5: Assert consistency between Outer and Inner
     @check(inner_len == inner.total_length)
 }
-```
+````
 
 **Expected Rust:**
+
 ```rust
 impl<'a> Outer<'a> {
     pub fn inner(&self) -> Result<(Inner<'a>, usize, usize), Error> {
         let len = self.inner_len().0 as usize;
         let data = &self.data[2..2 + len];
         let inner = Inner::parse(data)?;
-        
+
         // R4.5: Enforcement of cross-layer constraints during lazy access
         if (self.inner_len().0 as u32) != inner.total_length().0 {
             return Err(Error::ChecksumMismatch); // Or appropriate custom error
         }
-        
+
         Ok((inner, 2, len))
     }
 }
 ```
-```
+
+````
 
 ---
 
@@ -715,9 +729,10 @@ struct SecureData {
     @parse_with(fn("crate::varint::parse"), u64)
     length: @greedy(unsafe_eof) [u8],
 }
-```
+````
 
 **Expected Rust:**
+
 ```rust
 pub struct SecureData<'a> {
     data: &'a [u8],
@@ -728,12 +743,12 @@ pub struct SecureData<'a> {
 impl<'a> SecureData<'a> {
     pub fn parse(data: &'a [u8]) -> Result<Self, Error> {
         if data.len() < 16 { return Err(Error::UnexpectedEof); }
-        
+
         // R2.3, R6.1: VarInt via custom parser hook
         // R6.1.1: Hooks must report consumed length and handle errors
         let (length, consumed) = crate::varint::parse(&data[16..])
             .map_err(|_| Error::BadLength)?;
-            
+
         Ok(Self { data, length, length_len: consumed })
     }
 
@@ -753,6 +768,7 @@ impl<'a> SecureData<'a> {
 ## 7. Safety
 
 **Expected Rust Behavior:**
+
 - **R7.1 Malformed Input:** All array indexing uses `.get()` or checked slicing. Returns `Result::Err`.
 - **R7.3 Arithmetic:** Uses `.checked_add`, `.checked_mul`.
 - **R5.1 No Alloc:** Structs contain only `usize` and `&[u8]`.
@@ -769,10 +785,10 @@ error {
     // R8.1: Custom variants with primitive fields
     // R8.2: Bit-fields map to smallest enclosing primitive (e.g. b<3> -> u8)
     MISSING_THIS_FLAG { found: b<3>, expected: b<3> },
-    
+
     // Primitive integer types allowed
     INVALID_VERSION { val: u8 },
-    
+
     // Unit variants allowed
     CHECKSUM_MISMATCH,
 }
@@ -787,16 +803,17 @@ struct Packet {
 ```
 
 **Expected Rust:**
+
 ```rust
 #[derive(Debug)]
 pub enum Error {
     // R8.3: Automatic IO error wrapping
     Io(std::io::Error),
-    
+
     // Standard parsing errors
     UnexpectedEof,
     BadLength,
-    
+
     // Generated custom variants
     MissingThisFlag { found: u8, expected: u8 },
     InvalidVersion { val: u8 },
@@ -813,7 +830,7 @@ impl From<std::io::Error> for Error {
 impl<'a> Packet<'a> {
     pub fn parse(data: &'a [u8]) -> Result<Self, Error> {
         if data.is_empty() { return Err(Error::UnexpectedEof); }
-        
+
         let packet_type = (data[0] >> 5) & 0x07;
         match packet_type {
             0b010 => {
@@ -822,9 +839,9 @@ impl<'a> Packet<'a> {
             }
             _ => {
                 // R8.1: Returning a custom error variant defined in the DSL
-                Err(Error::MissingThisFlag { 
-                    found: packet_type, 
-                    expected: 0b010 
+                Err(Error::MissingThisFlag {
+                    found: packet_type,
+                    expected: 0b010
                 })
             }
         }
