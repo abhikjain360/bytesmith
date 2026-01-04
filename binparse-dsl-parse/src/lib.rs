@@ -375,7 +375,7 @@ fn primitive<'a>(input: &mut &'a str) -> winnow::Result<ast::Primitive> {
         )),
         'b' => ("b", delimited('<', digit1, '>')).try_map(|(_, w_str): (&str, &str)| {
             w_str.parse::<u8>()
-        }).verify(|w| *w <= 128).map(ast::Primitive::BitField),
+        }).verify(|w| *w <= 8).map(ast::Primitive::BitField),
         _ => fail
     }
     .parse_next(input)
@@ -523,70 +523,6 @@ fn field<'a>(input: &mut &'a str) -> winnow::Result<ast::Field<'a>> {
 
 fn field_with_opt_comma<'a>(input: &mut &'a str) -> winnow::Result<ast::Field<'a>> {
     terminated(field, opt(padded(','))).parse_next(input)
-
-    // let type_info = opt(preceded(padded(':'), (attributes, type_parser))).parse_next(input)?;
-    // let constraint = opt(preceded(padded('='), expr)).parse_next(input)?;
-    // let _ = opt(padded(',')).parse_next(input)?;
-
-    // let (type_attrs, mut ty) = match type_info {
-    //     Some((a, t)) => (a, Some(t)),
-    //     None => (Vec::new(), None),
-    // };
-    // let mut final_attrs = field_attrs;
-    // final_attrs.extend(type_attrs);
-
-    // if ty.is_none()
-    //     && let Some(ast::Expr::Literal(lit)) = &constraint
-    // {
-    //     match lit {
-    //         ast::Literal::Int(ast::IntLiteral {
-    //             width,
-    //             ty: ast::IntType::Binary,
-    //             value,
-    //         }) => {
-    //             ty = Some(ast::Type::BitMatch(ast::BitMatchType {
-    //                 width: *width as u8,
-    //                 value: *value,
-    //             }));
-    //         }
-    //         ast::Literal::Int(ast::IntLiteral {
-    //             width,
-    //             ty: ast::IntType::Hex,
-    //             value,
-    //         }) => {
-    //             ty = Some(ast::Type::BitMatch(ast::BitMatchType {
-    //                 width: *width as u8 * 4,
-    //                 value: *value,
-    //             }));
-    //         }
-    //         ast::Literal::Int(ast::IntLiteral {
-    //             value,
-    //             ty: ast::IntType::Decimal,
-    //             ..
-    //         }) => {
-    //             let t = if *value <= u8::MAX as u128 {
-    //                 ast::Primitive::U8
-    //             } else if *value <= u16::MAX as u128 {
-    //                 ast::Primitive::U16
-    //             } else if *value <= u32::MAX as u128 {
-    //                 ast::Primitive::U32
-    //             } else if *value <= u64::MAX as u128 {
-    //                 ast::Primitive::U64
-    //             } else {
-    //                 ast::Primitive::U128
-    //             };
-    //             ty = Some(ast::Type::Primitive(t));
-    //         }
-    //         _ => {}
-    //     }
-    // }
-    // let final_ty = ty.unwrap_or(ast::Type::Primitive(ast::Primitive::U8));
-    // Ok(ast::Field {
-    //     name,
-    //     ty: final_ty,
-    //     attributes: final_attrs,
-    //     value_constraint: constraint,
-    // })
 }
 
 fn struct_def<'a>(input: &mut &'a str) -> winnow::Result<ast::Definition<'a>> {
@@ -627,7 +563,7 @@ fn error_def<'a>(input: &mut &'a str) -> winnow::Result<ast::Definition<'a>> {
 }
 
 /// Parse a BinParse DSL source string into a list of definitions.
-pub fn parse<'a>(input: &mut &'a str) -> winnow::Result<Vec<ast::Definition<'a>>> {
+fn parse<'a>(input: &mut &'a str) -> winnow::Result<Vec<ast::Definition<'a>>> {
     repeat(0.., padded(alt((struct_def, error_def)))).parse_next(input)
 }
 
@@ -725,7 +661,7 @@ mod tests {
             struct TcpFlags {
                 data_offset: b<4>,
                 reserved: b<3>,
-                window_size: b<16>,
+                window_size: u16,
             }
         "#;
         parse_helper(src);
@@ -822,7 +758,17 @@ mod tests {
     fn test_bitfield_limit() {
         let src = r#"
             struct Fail {
-                f: b<129>,
+                f: b<9>,
+            }
+        "#;
+        parse_helper(src);
+    }
+
+    #[test]
+    fn test_bitfield_valid_limit() {
+        let src = r#"
+            struct Fail {
+                f: b<8>,
             }
         "#;
         parse_helper(src);

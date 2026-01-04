@@ -117,12 +117,6 @@ pub struct Union<'a> {
     pub variants: Vec<UnionVariant<'a>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BitMatchType {
-    pub width: u8,
-    pub value: u128,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayType<'a> {
     pub elem_ty: Type<'a>,
@@ -131,7 +125,6 @@ pub struct ArrayType<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type<'a> {
-    BitMatch(BitMatchType),
     Primitive(Primitive),
     Array(Box<ArrayType<'a>>),
     StructRef(Vec<&'a str>), // Reference to another struct

@@ -5,7 +5,18 @@ edition = "2024"
 
 [dependencies]
 binparse-dsl = { path = "../binparse-dsl" }
+
 indexmap = "2.12.1"
+prettyplease = "0.2.37"
 proc-macro2 = "1.0.103"
 quote = "1.0.42"
+syn = { version = "2.0.111", default-features = false, features = [
+    "derive",
+    "full",
+    "parsing",
+    "printing",
+] }
 thiserror = "2.0.17"
+
+[dev-dependencies]
+binparse-dsl-parse = { path = "../binparse-dsl-parse" }
