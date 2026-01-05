@@ -44,7 +44,12 @@ pub enum Error {
 
 fn to_ident(name: &str) -> Ident {
     match name {
-        "const" | "enum" | "extern" | "fn" | "impl" | "let" | "mod" | "pub" | "struct" | "trait" | "type" | "use" | "where" | "mut" | "match" | "if" | "else" | "return" | "loop" | "while" | "for" | "in" | "continue" | "break" | "crate" | "super" | "self" | "Self" | "unsafe" | "async" | "await" | "dyn" | "abstract" | "become" | "box" | "do" | "final" | "macro" | "override" | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try" => Ident::new_raw(name, Span::call_site()),
+        "const" | "enum" | "extern" | "fn" | "impl" | "let" | "mod" | "pub" | "struct"
+        | "trait" | "type" | "use" | "where" | "mut" | "match" | "if" | "else" | "return"
+        | "loop" | "while" | "for" | "in" | "continue" | "break" | "crate" | "super" | "self"
+        | "Self" | "unsafe" | "async" | "await" | "dyn" | "abstract" | "become" | "box" | "do"
+        | "final" | "macro" | "override" | "priv" | "typeof" | "unsized" | "virtual" | "yield"
+        | "try" => Ident::new_raw(name, Span::call_site()),
         _ => Ident::new(name, Span::call_site()),
     }
 }
@@ -481,7 +486,7 @@ impl<'a> StructCtx<'a> {
 
                         if !skip {
                             let accessor_offset = if self.static_offset.is_some() {
-                                start_offset_expr
+                                start_offset_expr.clone()
                             } else {
                                 let offset_field_ident = Ident::new(
                                     &format!("_{}_offset", field.name),
@@ -934,7 +939,7 @@ impl<'a> StructCtx<'a> {
 
                     if !skip {
                         let accessor_offset = if self.static_offset.is_some() {
-                            start_offset_expr
+                            start_offset_expr.clone()
                         } else {
                             quote! { 0 }
                         };
@@ -1087,14 +1092,14 @@ impl<'a> StructCtx<'a> {
                     }
                 }
                 ast::Type::Union(u) => {
-                    let _target_tokens = if u.target.len() == 1 {
-                        crate::generate_variable(&u.target[0], &quote! {}, ExprContext::Parse)
-                    } else {
-                        quote! { 0 }
-                    };
-
-                    self.static_offset = None;
-                    self.dynamic_offset = quote! { cursor };
+                    self.generate_union(
+                        field,
+                        u,
+                        accessors,
+                        extra_types,
+                        start_offset_expr.clone(),
+                        in_conditional,
+                    )?;
                 }
             },
             ast::FieldValue::Constraint(lit) => {
@@ -1283,5 +1288,201 @@ impl<'a> StructCtx<'a> {
         }
 
         Ok(())
+    }
+
+    fn generate_union(
+        &mut self,
+        field: &ast::Field<'a>,
+        u: &ast::Union<'a>,
+        accessors: &mut TokenStream,
+        extra_types: &mut TokenStream,
+        start_offset_expr: TokenStream,
+        in_conditional: bool,
+    ) -> Result<(), Error> {
+        let field_name_ident = Ident::new_raw(field.name, Span::call_site());
+        let parent_name = self.origin.name;
+        let enum_name = format!("{}_{}", parent_name, field.name);
+        let enum_ident = Ident::new(&enum_name, Span::call_site());
+
+        let mut enum_variants = TokenStream::new();
+        let mut parse_arms = TokenStream::new();
+        let mut accessor_arms = TokenStream::new();
+
+        let target_expr_parse = if u.target.len() == 1 {
+            crate::generate_variable(&u.target[0], &quote! {}, crate::ExprContext::Parse)
+        } else {
+            let mut vars = Vec::new();
+            for target in &u.target {
+                vars.push(crate::generate_variable(
+                    target,
+                    &quote! {},
+                    crate::ExprContext::Parse,
+                ));
+            }
+            quote! { (#(#vars),*) }
+        };
+
+        let target_expr_accessor = if u.target.len() == 1 {
+            crate::generate_variable(&u.target[0], &quote! { self }, crate::ExprContext::Accessor)
+        } else {
+            let mut vars = Vec::new();
+            for target in &u.target {
+                vars.push(crate::generate_variable(
+                    target,
+                    &quote! { self },
+                    crate::ExprContext::Accessor,
+                ));
+            }
+            quote! { (#(#vars),*) }
+        };
+
+        for variant in &u.variants {
+            let pat = if variant.matchers.len() == 1 {
+                generate_pattern(&variant.matchers[0])
+            } else {
+                let pats: Vec<_> = variant.matchers.iter().map(generate_pattern).collect();
+                quote! { #(#pats)|* }
+            };
+
+            match &variant.body {
+                ast::UnionBody::NamedInline(name, items) => {
+                    let variant_ident = Ident::new(name, Span::call_site());
+
+                    let variant_struct_def = ast::Struct {
+                        name,
+                        attributes: vec![],
+                        items: items.clone(),
+                    };
+
+                    let ctx = StructCtx::new(variant_struct_def, self.done);
+                    let generated = ctx.generate()?;
+                    extra_types.extend(generated.tokens);
+
+                    enum_variants.extend(quote! {
+                        #variant_ident(#variant_ident<'a>),
+                    });
+
+                    parse_arms.extend(quote! {
+                        #pat => {
+                            let val = #variant_ident::parse(&data[cursor..])?;
+                            val.consumed()
+                        }
+                    });
+
+                    accessor_arms.extend(quote! {
+                        #pat => {
+                             let val = #variant_ident::parse(slice)?;
+                             let consumed = val.consumed();
+                             Ok((#enum_ident::#variant_ident(val), offset, consumed))
+                        }
+                    });
+                }
+                ast::UnionBody::Error(err_name, fields) => {
+                    let err_ident = Ident::new(err_name, Span::call_site());
+
+                    let generate_err_fields =
+                        |ctx: crate::ExprContext, receiver: &TokenStream| -> TokenStream {
+                            let mut tokens = TokenStream::new();
+                            for (fname, atom) in fields {
+                                let fname_ident = Ident::new(fname, Span::call_site());
+                                let val = match atom {
+                                    ast::NumericAtom::Literal(lit) => crate::generate_literal(lit),
+                                    ast::NumericAtom::Variable(path) => {
+                                        crate::generate_variable(path, receiver, ctx)
+                                    }
+                                };
+                                tokens.extend(quote! { #fname_ident: #val as _, });
+                            }
+                            tokens
+                        };
+
+                    let parse_err_fields =
+                        generate_err_fields(crate::ExprContext::Parse, &quote! {});
+                    let accessor_err_fields =
+                        generate_err_fields(crate::ExprContext::Accessor, &quote! {self});
+
+                    parse_arms.extend(quote! {
+                        #pat => {
+                            return Err(binparse::Error::#err_ident { #parse_err_fields }.into());
+                        }
+                    });
+
+                    accessor_arms.extend(quote! {
+                        #pat => {
+                            return Err(binparse::Error::#err_ident { #accessor_err_fields }.into());
+                        }
+                    });
+                }
+            }
+        }
+
+        extra_types.extend(quote! {
+            #[derive(Debug, Clone)]
+            pub enum #enum_ident<'a> {
+                #enum_variants
+            }
+        });
+
+        self.static_offset = None;
+        self.dynamic_offset = quote! { cursor };
+
+        let offset_field = Ident::new(&format!("_{}_offset", field.name), Span::call_site());
+
+        if in_conditional {
+            self.parse_stmts.extend(quote! {
+                #offset_field = Some(cursor);
+            });
+        } else {
+            self.extra_fields
+                .push((offset_field.clone(), quote! { usize }));
+            self.parse_stmts.extend(quote! {
+                let #offset_field = cursor;
+            });
+        }
+
+        self.parse_stmts.extend(quote! {
+             let consumed = match #target_expr_parse {
+                 #parse_arms
+             };
+             cursor += consumed;
+        });
+
+        let accessor_body = quote! {
+             let offset = #start_offset_expr;
+             let slice = &self.data[offset..];
+             match #target_expr_accessor {
+                 #accessor_arms
+             }
+        };
+
+        if in_conditional {
+            accessors.extend(quote! {
+                 pub fn #field_name_ident(&self) -> Option<Result<(#enum_ident<'a>, usize, usize), binparse::Error>> {
+                     let _ = self.#offset_field?;
+                     Some((|| {
+                         #accessor_body
+                     })())
+                 }
+             });
+        } else {
+            accessors.extend(quote! {
+                 pub fn #field_name_ident(&self) -> Result<(#enum_ident<'a>, usize, usize), binparse::Error> {
+                     #accessor_body
+                 }
+             });
+        }
+
+        Ok(())
+    }
+}
+
+fn generate_pattern(pattern: &ast::Pattern) -> TokenStream {
+    match pattern {
+        ast::Pattern::Literal(lit) => crate::generate_literal(lit),
+        ast::Pattern::Wildcard => quote! { _ },
+        ast::Pattern::Tuple(pats) => {
+            let pats: Vec<_> = pats.iter().map(generate_pattern).collect();
+            quote! { (#(#pats),*) }
+        }
     }
 }
