@@ -9,65 +9,71 @@ pub enum Primitive {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum BinaryOp {
+pub enum MathOp {
     Add,
     Sub,
     Mul,
     Div,
     Mod,
-    Eq,
-    Neq,
-    Lt,
-    Gt,
-    Le,
-    Ge,
-    And,
-    Or,
     BitAnd,
     BitOr,
     BitXor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct IntLiteral {
-    pub value: u128,
-    pub width: u8,
-    pub ty: IntType,
+pub enum CmpOp {
+    Eq,
+    Neq,
+    Lt,
+    Gt,
+    Le,
+    Ge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum IntType {
-    Decimal,
-    Hex,
-    Binary,
+pub enum LogicOp {
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Literal<'a> {
-    Int(IntLiteral),
+pub enum NumericLiteral {
+    Decimal(u128),
+    Hex { value: u128, width: u8 },
+    Binary { value: u128, width: u8 },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum NumericAtom<'a> {
+    Literal(NumericLiteral),
+    Variable(Vec<&'a str>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MathExpr<'a> {
+    Atom(NumericAtom<'a>),
+    Binary(Box<MathExpr<'a>>, MathOp, Box<MathExpr<'a>>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoolExpr<'a> {
+    Comparison(MathExpr<'a>, CmpOp, MathExpr<'a>),
+    Logic(Box<BoolExpr<'a>>, LogicOp, Box<BoolExpr<'a>>),
+    Not(Box<BoolExpr<'a>>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttributeArg<'a> {
     String(&'a str),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Expr<'a> {
-    Literal(Literal<'a>),
-    Path(Vec<&'a str>),
-    Binary(Box<BinaryExpr<'a>>),
-    Call(&'a str, Vec<Expr<'a>>), // macros
-    Tuple(Vec<Expr<'a>>),         // tuple matching in unions
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct BinaryExpr<'a> {
-    pub lhs: Expr<'a>,
-    pub op: BinaryOp,
-    pub rhs: Expr<'a>,
+    Type(Type<'a>),
+    Math(MathExpr<'a>),
+    Bool(BoolExpr<'a>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Attribute<'a> {
     pub name: &'a str,
-    pub args: Vec<Expr<'a>>,
+    pub args: Vec<AttributeArg<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,12 +86,12 @@ pub struct Field<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldValue<'a> {
     Type(Type<'a>),
-    Constraint(Expr<'a>), // field = 0x10
+    Constraint(NumericLiteral), // field = 0x10
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conditional<'a> {
-    pub condition: Expr<'a>,
+    pub condition: BoolExpr<'a>,
     pub then_branch: Vec<StructItem<'a>>,
     pub else_branch: Option<Vec<StructItem<'a>>>,
 }
@@ -97,30 +103,34 @@ pub enum StructItem<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    Literal(NumericLiteral),
+    Wildcard,
+    Tuple(Vec<Pattern>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnionVariant<'a> {
-    pub matchers: Vec<Expr<'a>>, // 0 | 8 => ...
-    pub body: UnionBody<'a>,     // struct definition or reference
+    pub matchers: Vec<Pattern>,
+    pub body: UnionBody<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnionBody<'a> {
-    // spec: "Echo { ... }".
-    // effectively defining a struct inline
     NamedInline(&'a str, Vec<StructItem<'a>>),
-    // error variant: @error(ERROR_NAME { field: expr, ... })
-    Error(&'a str, Vec<(&'a str, Expr<'a>)>),
+    Error(&'a str, Vec<(&'a str, NumericAtom<'a>)>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Union<'a> {
-    pub args: Vec<&'a str>, // union(arg1, arg2)
+    pub target: Vec<Vec<&'a str>>, // union(a, b.c)
     pub variants: Vec<UnionVariant<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayType<'a> {
     pub elem_ty: Type<'a>,
-    pub size_expr: Option<Expr<'a>>,
+    pub size_expr: Option<MathExpr<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
