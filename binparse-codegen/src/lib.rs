@@ -4,10 +4,13 @@ use binparse_dsl as ast;
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use struct_::*;
+
+mod struct_;
+
 pub struct CodeGen<'a> {
     todo: HashMap<&'a str, Todo<'a>>,
-    done: HashMap<&'a str, Option<usize>>,
-    items: Vec<TokenStream>,
+    done: HashMap<&'a str, GeneratedStruct>,
 }
 
 pub struct Todo<'a> {
@@ -30,10 +33,12 @@ impl<'a> Todo<'a> {
 pub enum Error {
     #[error("duplicate struct definition '{name}'")]
     DuplicateStruct { name: String },
-    #[error("first field '{field}' of struct '{struct_}' is a dynamic type")]
-    FirstFieldDynamic { struct_: String, field: String },
-    #[error("field '{field}' of struct '{struct_}' is unaligned")]
-    UnalignedType { struct_: String, field: String },
+    #[error("failed to generate struct '{name}'")]
+    GenerateStruct {
+        name: String,
+        #[source]
+        error: struct_::Error,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -101,70 +106,25 @@ impl<'a> CodeGen<'a> {
         let mut me = Self {
             todo: structs,
             done: HashMap::new(),
-            items: Vec::new(),
         };
         let mut next = Vec::new();
         while !roots.is_empty() {
             for root in roots.drain(..) {
                 let todo = me.todo.remove(root).expect("root not found in todo");
-                me.generate_struct(todo.origin)?;
+
+                let generated = StructCtx::new(todo.origin, &me.done)
+                    .generate()
+                    .map_err(|e| Error::GenerateStruct {
+                        name: root.to_string(),
+                        error: e,
+                    })?;
+                me.done.insert(root, generated);
             }
 
             std::mem::swap(&mut next, &mut roots);
         }
 
         me.print()
-    }
-
-    fn generate_struct(&mut self, struct_: &'a ast::Struct<'a>) -> Result<(), Error> {
-        let name_ident = quote::format_ident!("{}", struct_.name);
-
-        let mut impl_items = Vec::<TokenStream>::new();
-
-        let mut total_len_opt = Some(Len::default());
-
-        for (index, field) in struct_.items.iter().enumerate() {
-            match field {
-                ast::StructItem::Field(ast::Field {
-                    name,
-                    attributes: _,
-                    value: ast::FieldValue::Type(ty),
-                }) => {
-                    let (len_opt, tokens) =
-                        self.generate_field(name, ty, struct_, total_len_opt)?;
-                    impl_items.push(tokens);
-
-                    match (len_opt, total_len_opt) {
-                        (Some(len), Some(current)) => total_len_opt = Some(current + len),
-                        (None, Some(_)) => {
-                            if index == 0 {
-                                return Err(Error::FirstFieldDynamic {
-                                    struct_: struct_.name.to_string(),
-                                    field: name.to_string(),
-                                });
-                            }
-                            total_len_opt = None;
-                        }
-                        _ => total_len_opt = None,
-                    }
-                }
-                _ => todo!("handle conditional fields in first field"),
-            }
-        }
-
-        let tokens = quote! {
-            pub struct #name_ident<'a> {
-                pub read_buffer: &'a [u8],
-            }
-
-            impl #name_ident<'_> {
-                #(#impl_items)*
-            }
-        };
-
-        self.items.push(tokens);
-        self.done.insert(struct_.name, None);
-        Ok(())
     }
 
     #[expect(dead_code, unused_variables)]
@@ -179,84 +139,11 @@ impl<'a> CodeGen<'a> {
         struct_: &'a ast::Struct<'a>,
         offset: Option<Len>,
     ) -> Result<(Option<Len>, TokenStream), Error> {
-        match ty {
-            ast::Type::Primitive(primitive) => {
-                let (len, rust_ty, needs_alignment) = match_primitive(primitive);
-
-                if let Some(offset) = offset {
-                    let bits = offset.bit;
-                    let bytes = offset.byte;
-                    let len_bytes = len.byte;
-                    let len_bits = len.bit;
-
-                    let end_offset = offset + len;
-                    let end_bytes = end_offset.byte;
-                    let end_bits = end_offset.bit;
-
-                    let end_offset_fn_name = quote::format_ident!("{}_end_offset", name);
-                    let end_offset_fn = quote! {
-                        pub fn #end_offset_fn_name(&self) -> Len {
-                            Len { byte: #end_bytes, bit: #end_bits }
-                        }
-                    };
-
-                    let getter_fn_name = quote::format_ident!("{}", name);
-
-                    let getter_body = if needs_alignment {
-                        if bits == 0 && len_bits == 0 {
-                            quote! {
-                                let slice = &self.read_buffer[#bytes..#bytes + #len_bytes];
-                                let array = slice.try_into().expect("slice has correct length");
-                                #rust_ty::from_be_bytes(array)
-                            }
-                        } else {
-                            return Err(Error::UnalignedType {
-                                struct_: struct_.name.to_string(),
-                                field: name.to_string(),
-                            });
-                        }
-                    } else {
-                        // len_bytes == 0, we don't allow longer BitFields in parser
-                        if len_bits + bits > 8 {
-                            quote! {
-                                let slice = &self.read_buffer[#bytes..#bytes + #len_bytes];
-                            }
-                        } else {
-                            let val = (1 << len_bits) - 1;
-                            let mask_literal = syn::LitInt::new(
-                                &format!("0b{:b}", val),
-                                proc_macro2::Span::call_site(),
-                            );
-                            quote! {
-                                let byte = self.read_buffer[#bytes];
-                                (byte >> #bits) & #mask_literal
-                            }
-                        }
-                    };
-
-                    let getter_fn = quote! {
-                        pub fn #getter_fn_name(&self) -> #rust_ty {
-                            #getter_body
-                        }
-                    };
-
-                    Ok((
-                        Some(len),
-                        quote! {
-                            #end_offset_fn
-                            #getter_fn
-                        },
-                    ))
-                } else {
-                    Ok((Some(len), todo!()))
-                }
-            }
-            _ => todo!("support non-primitive types"),
-        }
+        todo!()
     }
 
     fn print(self) -> Result<String, Error> {
-        let combined: TokenStream = self.items.into_iter().collect();
+        let combined: TokenStream = self.done.into_values().map(|s| s.tokens).collect();
         let file: syn::File = syn::parse2(combined).expect("failed to parse generated tokens");
         Ok(prettyplease::unparse(&file))
     }
