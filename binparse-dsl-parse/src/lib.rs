@@ -1,23 +1,27 @@
+use ariadne::{Color, Label, Report, ReportKind, Source};
 use winnow::{
     Parser,
     ascii::{digit1, hex_digit1, multispace0},
     combinator::*,
+    stream::LocatingSlice,
     token::{any, take_until, take_while},
 };
 
 use binparse_dsl as ast;
 
-fn line_comment(input: &mut &str) -> winnow::Result<()> {
+type Input<'a> = LocatingSlice<&'a str>;
+
+fn line_comment(input: &mut Input<'_>) -> winnow::Result<()> {
     ("//", take_while(0.., |c| c != '\n'), opt('\n'))
         .void()
         .parse_next(input)
 }
 
-fn block_comment(input: &mut &str) -> winnow::Result<()> {
+fn block_comment(input: &mut Input<'_>) -> winnow::Result<()> {
     ("/*", take_until(0.., "*/"), "*/").void().parse_next(input)
 }
 
-fn ws(input: &mut &str) -> winnow::Result<()> {
+fn ws(input: &mut Input<'_>) -> winnow::Result<()> {
     loop {
         let start_len = input.len();
         multispace0.parse_next(input)?;
@@ -34,11 +38,11 @@ fn ws(input: &mut &str) -> winnow::Result<()> {
     Ok(())
 }
 
-fn padded<'a, O, F>(mut inner: F) -> impl Parser<&'a str, O, winnow::error::ContextError>
+fn padded<'a, O, F>(mut inner: F) -> impl Parser<Input<'a>, O, winnow::error::ContextError>
 where
-    F: Parser<&'a str, O, winnow::error::ContextError>,
+    F: Parser<Input<'a>, O, winnow::error::ContextError>,
 {
-    move |input: &mut &'a str| {
+    move |input: &mut Input<'a>| {
         ws.parse_next(input)?;
         let res = inner.parse_next(input)?;
         ws.parse_next(input)?;
@@ -46,7 +50,7 @@ where
     }
 }
 
-fn ident_raw<'a>(input: &mut &'a str) -> winnow::Result<&'a str> {
+fn ident_raw<'a>(input: &mut Input<'a>) -> winnow::Result<&'a str> {
     take_while(1.., |c: char| c.is_ascii_alphanumeric() || c == '_')
         .verify(|s: &str| {
             s.chars()
@@ -56,7 +60,7 @@ fn ident_raw<'a>(input: &mut &'a str) -> winnow::Result<&'a str> {
         .parse_next(input)
 }
 
-fn identifier<'a>(input: &mut &'a str) -> winnow::Result<&'a str> {
+fn identifier<'a>(input: &mut Input<'a>) -> winnow::Result<&'a str> {
     let start = *input;
     let i = ident_raw(input)?;
     let reserved = ["struct", "union", "concat", "if", "else", "error", "match"];
@@ -68,11 +72,11 @@ fn identifier<'a>(input: &mut &'a str) -> winnow::Result<&'a str> {
     }
 }
 
-fn path<'a>(input: &mut &'a str) -> winnow::Result<Vec<&'a str>> {
+fn path<'a>(input: &mut Input<'a>) -> winnow::Result<Vec<&'a str>> {
     separated(1.., identifier, ".").parse_next(input)
 }
 
-fn literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> {
+fn literal<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Literal<'a>> {
     dispatch! {peek(any);
         '"' => string_literal,
         'x' => hex_literal,
@@ -92,7 +96,7 @@ pub enum IntLiteralError {
     InvalidInt(#[from] std::num::ParseIntError),
 }
 
-fn decimal_literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> {
+fn decimal_literal<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Literal<'a>> {
     digit1
         .try_map(|s: &str| {
             let width = s.len().try_into()?;
@@ -109,7 +113,7 @@ fn decimal_literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> 
         .parse_next(input)
 }
 
-fn hex_literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> {
+fn hex_literal<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Literal<'a>> {
     preceded("x", hex_digit1)
         .try_map(|s: &str| {
             let width = s.len().try_into()?;
@@ -125,7 +129,7 @@ fn hex_literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> {
         .parse_next(input)
 }
 
-fn binary_literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> {
+fn binary_literal<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Literal<'a>> {
     preceded("b", take_while(1.., |c| c == '0' || c == '1'))
         .try_map(|s: &str| {
             let width = s.len().try_into()?;
@@ -141,21 +145,21 @@ fn binary_literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> {
         .parse_next(input)
 }
 
-fn string_literal<'a>(input: &mut &'a str) -> winnow::Result<ast::Literal<'a>> {
+fn string_literal<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Literal<'a>> {
     delimited('"', take_while(0.., |c| c != '"'), '"')
         .map(|s: &str| ast::Literal::String(s))
         .parse_next(input)
 }
 
-fn expr<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn expr<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     logic_or(input)
 }
 
-fn args<'a>(input: &mut &'a str) -> winnow::Result<Vec<ast::Expr<'a>>> {
+fn args<'a>(input: &mut Input<'a>) -> winnow::Result<Vec<ast::Expr<'a>>> {
     delimited(padded('('), separated(0.., expr, padded(',')), padded(')')).parse_next(input)
 }
 
-fn atom<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn atom<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     padded(alt((
         literal.map(ast::Expr::Literal),
         call_or_path,
@@ -164,7 +168,7 @@ fn atom<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
     .parse_next(input)
 }
 
-fn call_or_path<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn call_or_path<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     let p = path(input)?;
     if p.len() == 1 {
         let name = p[0];
@@ -178,7 +182,7 @@ fn call_or_path<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
     }
 }
 
-fn tuple_or_group<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn tuple_or_group<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     delimited(padded('('), separated(0.., expr, padded(',')), padded(')'))
         .map(|mut exprs: Vec<ast::Expr<'a>>| {
             if exprs.len() == 1 {
@@ -190,11 +194,11 @@ fn tuple_or_group<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
         .parse_next(input)
 }
 
-fn member_access<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn member_access<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     atom(input)
 }
 
-fn product<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn product<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     let mut lhs = member_access(input)?;
     loop {
         let start = *input;
@@ -219,7 +223,7 @@ fn product<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
     Ok(lhs)
 }
 
-fn sum<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn sum<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     let mut lhs = product(input)?;
     loop {
         let start = *input;
@@ -243,7 +247,7 @@ fn sum<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
     Ok(lhs)
 }
 
-fn bitwise<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn bitwise<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     let mut lhs = sum(input)?;
     loop {
         let start = *input;
@@ -270,7 +274,7 @@ fn bitwise<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
     Ok(lhs)
 }
 
-fn comparison<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn comparison<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     let mut lhs = bitwise(input)?;
     loop {
         let start = *input;
@@ -298,7 +302,7 @@ fn comparison<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
     Ok(lhs)
 }
 
-fn logic_and<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn logic_and<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     let mut lhs = comparison(input)?;
     loop {
         let start = *input;
@@ -318,7 +322,7 @@ fn logic_and<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
     Ok(lhs)
 }
 
-fn logic_or<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
+fn logic_or<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Expr<'a>> {
     let mut lhs = logic_and(input)?;
     loop {
         let start = *input;
@@ -338,20 +342,20 @@ fn logic_or<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
     Ok(lhs)
 }
 
-fn attribute<'a>(input: &mut &'a str) -> winnow::Result<ast::Attribute<'a>> {
+fn attribute<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Attribute<'a>> {
     seq! {ast::Attribute {
         _: '@',
         name: identifier,
-        args: opt(args).map(|o| o.unwrap_or_default()),
+        args: opt(args).map(|o: Option<Vec<ast::Expr>>| o.unwrap_or_default()),
     }}
     .parse_next(input)
 }
 
-fn attributes<'a>(input: &mut &'a str) -> winnow::Result<Vec<ast::Attribute<'a>>> {
+fn attributes<'a>(input: &mut Input<'a>) -> winnow::Result<Vec<ast::Attribute<'a>>> {
     repeat(0.., padded(attribute)).parse_next(input)
 }
 
-fn primitive(input: &mut &str) -> winnow::Result<ast::Primitive> {
+fn primitive(input: &mut Input<'_>) -> winnow::Result<ast::Primitive> {
     dispatch! {peek(any);
         'u' => alt((
             "u8".map(|_| ast::Primitive::U8),
@@ -368,7 +372,7 @@ fn primitive(input: &mut &str) -> winnow::Result<ast::Primitive> {
     .parse_next(input)
 }
 
-fn type_parser<'a>(input: &mut &'a str) -> winnow::Result<ast::Type<'a>> {
+fn type_parser<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Type<'a>> {
     alt((
         array_type,
         concat_type,
@@ -379,7 +383,7 @@ fn type_parser<'a>(input: &mut &'a str) -> winnow::Result<ast::Type<'a>> {
     .parse_next(input)
 }
 
-fn array_type<'a>(input: &mut &'a str) -> winnow::Result<ast::Type<'a>> {
+fn array_type<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Type<'a>> {
     delimited(
         padded('['),
         (type_parser, opt(preceded(padded(';'), expr))),
@@ -389,7 +393,7 @@ fn array_type<'a>(input: &mut &'a str) -> winnow::Result<ast::Type<'a>> {
     .parse_next(input)
 }
 
-fn field_value<'a>(input: &mut &'a str) -> winnow::Result<ast::FieldValue<'a>> {
+fn field_value<'a>(input: &mut Input<'a>) -> winnow::Result<ast::FieldValue<'a>> {
     alt((
         preceded(padded(':'), type_parser).map(ast::FieldValue::Type),
         preceded(padded('='), expr).map(ast::FieldValue::Constraint),
@@ -397,7 +401,7 @@ fn field_value<'a>(input: &mut &'a str) -> winnow::Result<ast::FieldValue<'a>> {
     .parse_next(input)
 }
 
-fn concat_type<'a>(input: &mut &'a str) -> winnow::Result<ast::Type<'a>> {
+fn concat_type<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Type<'a>> {
     preceded(
         padded("concat"),
         delimited(padded('('), separated(0.., field, padded(',')), padded(')')),
@@ -406,7 +410,7 @@ fn concat_type<'a>(input: &mut &'a str) -> winnow::Result<ast::Type<'a>> {
     .parse_next(input)
 }
 
-fn error_body<'a>(input: &mut &'a str) -> winnow::Result<ast::UnionBody<'a>> {
+fn error_body<'a>(input: &mut Input<'a>) -> winnow::Result<ast::UnionBody<'a>> {
     // @error(ERROR_NAME { field: expr, ... }) or @error(ERROR_NAME)
     let _ = padded("@error").parse_next(input)?;
     let _ = padded('(').parse_next(input)?;
@@ -426,7 +430,7 @@ fn error_body<'a>(input: &mut &'a str) -> winnow::Result<ast::UnionBody<'a>> {
     Ok(ast::UnionBody::Error(name, fields))
 }
 
-fn union_body<'a>(input: &mut &'a str) -> winnow::Result<ast::UnionBody<'a>> {
+fn union_body<'a>(input: &mut Input<'a>) -> winnow::Result<ast::UnionBody<'a>> {
     alt((
         error_body,
         seq! {
@@ -438,7 +442,7 @@ fn union_body<'a>(input: &mut &'a str) -> winnow::Result<ast::UnionBody<'a>> {
     .parse_next(input)
 }
 
-fn union_variant<'a>(input: &mut &'a str) -> winnow::Result<ast::UnionVariant<'a>> {
+fn union_variant<'a>(input: &mut Input<'a>) -> winnow::Result<ast::UnionVariant<'a>> {
     seq! {ast::UnionVariant {
         matchers: separated(1.., expr, padded('|')),
         _: padded("=>"),
@@ -447,7 +451,7 @@ fn union_variant<'a>(input: &mut &'a str) -> winnow::Result<ast::UnionVariant<'a
     .parse_next(input)
 }
 
-fn union_type<'a>(input: &mut &'a str) -> winnow::Result<ast::Type<'a>> {
+fn union_type<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Type<'a>> {
     preceded(
         padded("union"),
         seq! {
@@ -459,7 +463,7 @@ fn union_type<'a>(input: &mut &'a str) -> winnow::Result<ast::Type<'a>> {
     .parse_next(input)
 }
 
-fn union_variants<'a>(input: &mut &'a str) -> winnow::Result<Vec<ast::UnionVariant<'a>>> {
+fn union_variants<'a>(input: &mut Input<'a>) -> winnow::Result<Vec<ast::UnionVariant<'a>>> {
     let mut variants = Vec::new();
     loop {
         let start = *input;
@@ -478,7 +482,7 @@ fn union_variants<'a>(input: &mut &'a str) -> winnow::Result<Vec<ast::UnionVaria
     Ok(variants)
 }
 
-fn struct_item<'a>(input: &mut &'a str) -> winnow::Result<ast::StructItem<'a>> {
+fn struct_item<'a>(input: &mut Input<'a>) -> winnow::Result<ast::StructItem<'a>> {
     alt((
         conditional.map(ast::StructItem::Conditional),
         field_with_opt_comma.map(ast::StructItem::Field),
@@ -486,11 +490,11 @@ fn struct_item<'a>(input: &mut &'a str) -> winnow::Result<ast::StructItem<'a>> {
     .parse_next(input)
 }
 
-fn struct_items<'a>(input: &mut &'a str) -> winnow::Result<Vec<ast::StructItem<'a>>> {
+fn struct_items<'a>(input: &mut Input<'a>) -> winnow::Result<Vec<ast::StructItem<'a>>> {
     repeat(0.., struct_item).parse_next(input)
 }
 
-fn conditional<'a>(input: &mut &'a str) -> winnow::Result<ast::Conditional<'a>> {
+fn conditional<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Conditional<'a>> {
     seq! {ast::Conditional {
         _: padded("if"),
         condition: delimited(padded('('), expr, padded(')')),
@@ -499,7 +503,7 @@ fn conditional<'a>(input: &mut &'a str) -> winnow::Result<ast::Conditional<'a>> 
     }}.parse_next(input)
 }
 
-fn field<'a>(input: &mut &'a str) -> winnow::Result<ast::Field<'a>> {
+fn field<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Field<'a>> {
     seq! {ast::Field {
         attributes: attributes,
         name: padded(identifier),
@@ -508,11 +512,11 @@ fn field<'a>(input: &mut &'a str) -> winnow::Result<ast::Field<'a>> {
     .parse_next(input)
 }
 
-fn field_with_opt_comma<'a>(input: &mut &'a str) -> winnow::Result<ast::Field<'a>> {
+fn field_with_opt_comma<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Field<'a>> {
     terminated(field, opt(padded(','))).parse_next(input)
 }
 
-fn struct_def<'a>(input: &mut &'a str) -> winnow::Result<ast::Definition<'a>> {
+fn struct_def<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Definition<'a>> {
     seq! {ast::Struct {
         attributes: attributes,
         _: padded("struct"),
@@ -523,7 +527,7 @@ fn struct_def<'a>(input: &mut &'a str) -> winnow::Result<ast::Definition<'a>> {
     .parse_next(input)
 }
 
-fn error_variant<'a>(input: &mut &'a str) -> winnow::Result<ast::ErrorVariant<'a>> {
+fn error_variant<'a>(input: &mut Input<'a>) -> winnow::Result<ast::ErrorVariant<'a>> {
     let name = padded(identifier).parse_next(input)?;
     let fields = opt(delimited(
         padded('{'),
@@ -540,7 +544,7 @@ fn error_variant<'a>(input: &mut &'a str) -> winnow::Result<ast::ErrorVariant<'a
     Ok(ast::ErrorVariant { name, fields })
 }
 
-fn error_def<'a>(input: &mut &'a str) -> winnow::Result<ast::Definition<'a>> {
+fn error_def<'a>(input: &mut Input<'a>) -> winnow::Result<ast::Definition<'a>> {
     preceded(
         padded("error"),
         delimited(padded('{'), repeat(0.., padded(error_variant)), padded('}')),
@@ -550,13 +554,50 @@ fn error_def<'a>(input: &mut &'a str) -> winnow::Result<ast::Definition<'a>> {
 }
 
 /// Parse a BinParse DSL source string into a list of definitions.
-fn parse<'a>(input: &mut &'a str) -> winnow::Result<Vec<ast::Definition<'a>>> {
+fn parse<'a>(input: &mut Input<'a>) -> winnow::Result<Vec<ast::Definition<'a>>> {
     repeat(0.., padded(alt((struct_def, error_def)))).parse_next(input)
 }
 
+fn report_error(src: &str, offset: usize, msg: String) -> String {
+    let mut output = Vec::new();
+    let report = Report::build(ReportKind::Error, ((), offset..offset))
+        .with_message("Parse error")
+        .with_label(
+            Label::new(((), offset..offset))
+                .with_message(msg)
+                .with_color(Color::Red),
+        )
+        .finish();
+    let _ = report.write(Source::from(src), &mut output);
+    String::from_utf8_lossy(&output).into_owned()
+}
+
 /// Convenience function that takes an owned string and returns Result.
-pub fn parse_str(input: &str) -> Result<Vec<ast::Definition<'_>>, String> {
-    parse.parse(input).map_err(|e| e.to_string())
+pub fn parse_str(src: &str) -> Result<Vec<ast::Definition<'_>>, String> {
+    let mut input = LocatingSlice::new(src);
+    match parse.parse_next(&mut input) {
+        Ok(defs) => {
+            let _ = ws.parse_next(&mut input);
+            if !input.is_empty() {
+                let start = src.as_ptr() as usize;
+                let current = input.as_ptr() as usize;
+                let offset = current.saturating_sub(start);
+                return Err(report_error(
+                    src,
+                    offset,
+                    "unexpected trailing data".to_string(),
+                ));
+            }
+            Ok(defs)
+        }
+        Err(e) => {
+            let start = src.as_ptr() as usize;
+            let current = input.as_ptr() as usize;
+            let offset = current.saturating_sub(start);
+            let err_msg = e.to_string();
+            Err(report_error(src, offset, err_msg))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -564,7 +605,7 @@ mod tests {
     use super::*;
 
     fn parse_helper(src: &str) -> Vec<ast::Definition<'_>> {
-        match parse.parse(src) {
+        match parse.parse(LocatingSlice::new(src)) {
             Ok(defs) => defs,
             Err(e) => {
                 panic!("Parse errors: \n{}", e);
