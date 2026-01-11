@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use binparse_dsl as ast;
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 
 use crate::Len;
 use crate::field::FieldCtx;

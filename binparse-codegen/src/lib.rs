@@ -135,10 +135,10 @@ impl<'a> CodeGen<'a> {
 
     fn generate_field(
         &self,
-        name: &str,
-        ty: &'a ast::Type<'a>,
-        struct_: &'a ast::Struct<'a>,
-        offset: Option<Len>,
+        _name: &str,
+        _ty: &'a ast::Type<'a>,
+        _struct_: &'a ast::Struct<'a>,
+        _offset: Option<Len>,
     ) -> Result<(Option<Len>, TokenStream), Error> {
         todo!()
     }
