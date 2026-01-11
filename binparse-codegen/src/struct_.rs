@@ -28,17 +28,6 @@ pub(crate) enum Error {
     },
 }
 
-/// Information collected per field during generation
-struct FieldInfo {
-    name: String,
-    /// Whether this field needs its offset stored in the struct
-    needs_stored_offset: bool,
-    /// The static offset of this field (if known)
-    static_offset: Option<Len>,
-    /// The length of this field (if known)
-    len: Option<Len>,
-}
-
 impl<'a> StructCtx<'a> {
     pub(crate) fn new(
         origin: &'a ast::Struct<'a>,
@@ -54,7 +43,6 @@ impl<'a> StructCtx<'a> {
     pub(crate) fn generate(mut self) -> Result<GeneratedStruct, Error> {
         let mut field_definitions = TokenStream::new();
         let mut functions = TokenStream::new();
-        let mut field_infos = Vec::new();
 
         for item in &self.origin.items {
             if let ast::StructItem::Field(field) = item {
@@ -64,14 +52,6 @@ impl<'a> StructCtx<'a> {
                     name: field.name.to_string(),
                     error,
                 })?;
-
-                // Track field info for parse function generation
-                field_infos.push(FieldInfo {
-                    name: field.name.to_string(),
-                    needs_stored_offset: current_offset.is_none(),
-                    static_offset: current_offset,
-                    len: generated.len,
-                });
 
                 field_definitions.extend(generated.definitions);
                 functions.extend(generated.field_getter);
