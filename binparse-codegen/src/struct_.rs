@@ -19,7 +19,7 @@ pub(crate) struct GeneratedStruct {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("failed to generate field '{name}': {error}")]
     Field {
         name: String,

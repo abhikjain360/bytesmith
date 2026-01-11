@@ -11,7 +11,7 @@ pub(crate) struct FieldCtx<'a> {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum Error {}
+pub enum Error {}
 
 pub(crate) struct GeneratedField {
     /// The length of this field. `None` if not statically known.

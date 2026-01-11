@@ -201,7 +201,6 @@ fn tuple_or_group<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
 }
 
 fn member_access<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
-    // member access is now folded into atom via path
     atom(input)
 }
 
@@ -348,8 +347,6 @@ fn logic_or<'a>(input: &mut &'a str) -> winnow::Result<ast::Expr<'a>> {
     }
     Ok(lhs)
 }
-
-// --- Types & Attributes ---
 
 fn attribute<'a>(input: &mut &'a str) -> winnow::Result<ast::Attribute<'a>> {
     seq! {ast::Attribute {
