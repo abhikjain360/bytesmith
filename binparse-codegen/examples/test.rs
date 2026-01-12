@@ -12,9 +12,14 @@ struct Header {
     dscp: b<6>,
     ecn: b<2>,
     total_length: u16,
-    identification: u16,
+    id: u16,
     flags: b<3>,
     fragment_offset: concat(b<5>, u8),
+    ttl: u8,
+    protocol: u8,
+    header_checksum: u16,
+    src: IpAddr,
+    dst: IpAddr,
 }
 "#;
 
@@ -22,7 +27,6 @@ fn main() {
     let ast = binparse_dsl_parse::parse_str(DSL_STRING)
         .inspect_err(|e| eprintln!("{e}"))
         .unwrap();
-    println!("got the AST!!");
     let code = binparse_codegen::CodeGen::generate(&ast)
         .inspect_err(|e| eprintln!("{e}"))
         .unwrap();

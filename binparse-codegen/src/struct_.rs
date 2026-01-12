@@ -100,7 +100,7 @@ impl<'a> StructCtx<'a> {
             impl<'a> #name<'a> {
                 pub fn parse(data: &'a [u8]) -> Option<(Self, &'a [u8])> {
                     #parser_impl
-                    Self { #parser_ret }
+                    Self { data, #parser_ret }
                 }
 
                 #functions
