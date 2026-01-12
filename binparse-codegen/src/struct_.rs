@@ -11,7 +11,6 @@ pub(crate) struct StructCtx<'a> {
     pub(crate) origin: &'a ast::Struct<'a>,
     pub(crate) offset: Option<Len>,
     done_fields: Vec<DoneField<'a>>,
-    #[expect(dead_code)]
     pub(crate) done: &'a HashMap<&'a str, GeneratedStruct>,
 }
 
@@ -19,11 +18,10 @@ pub(crate) struct StructCtx<'a> {
 pub(crate) struct DoneField<'a> {
     origin: &'a ast::Field<'a>,
     len: Option<Len>,
-    offset_getter_fn_name: syn::Ident,
+    pub(crate) offset_getter_fn_name: syn::Ident,
 }
 
 pub(crate) struct GeneratedStruct {
-    #[expect(dead_code)]
     pub(crate) len: Option<Len>,
     pub(crate) tokens: TokenStream,
 }
@@ -63,7 +61,7 @@ impl<'a> StructCtx<'a> {
         for item in &self.origin.items {
             if let ast::StructItem::Field(field) = item {
                 let current_offset = self.offset;
-                let field_ctx = FieldCtx::new(field, current_offset, &self.done_fields);
+                let field_ctx = FieldCtx::new(field, current_offset, &self.done_fields, self.done);
                 let generated = field_ctx.generate().map_err(|error| Error::Field {
                     name: field.name.to_string(),
                     error,
