@@ -57,102 +57,20 @@ impl<'a> FieldCtx<'a> {
 
         let (len, definitions, field_getter) = match &self.field.value {
             ast::FieldValue::Type(ty) => match ty {
-                ast::Type::Primitive(p) => {
-                    let (len, def) = match_primitive(p);
+                ast::Type::Primitive(p) => self
+                    .generate_type_primitive_field_getter(p, &field_name)
+                    .map(|(len, definitions, field_getters)| {
+                        (Some(len), definitions, field_getters)
+                    })?,
 
-                    match (&self.start_offset, self.done_fields.last()) {
-                        (Some(offset), _) => {
-                            let end = *offset + len;
-
-                            let start_byte = offset.byte;
-                            let end_byte = end.byte;
-
-                            let field_getter = quote! {
-                                pub fn #field_name(&self) -> #def {
-                                    let field_data = self.data[#start_byte..#end_byte];
-                                    #def::from_ne_bytes(field_data)
-                                }
-                            };
-
-                            (Some(len), quote! {}, field_getter)
-                        }
-
-                        (None, None) => return Err(Error::UnknownOffset),
-
-                        _ => todo!(),
-                    }
-                }
-
-                ast::Type::BitField(width) => {
-                    let width = *width as usize;
-                    let len = Len {
-                        byte: 0,
-                        bit: width,
-                    };
-
-                    match (&self.start_offset, self.done_fields.last()) {
-                        (Some(offset), _) => {
-                            let start_byte = offset.byte;
-                            let start_bit = offset.bit;
-
-                            let field_getter = if start_bit + width <= 8 {
-                                let mask = (1u8 << width) - 1;
-                                quote! {
-                                    pub fn #field_name(&self) -> u8 {
-                                        (self.data[#start_byte] >> #start_bit) & #mask
-                                    }
-                                }
-                            } else {
-                                let bits_in_first_byte = 8 - start_bit;
-                                let bits_in_second_byte = width - bits_in_first_byte;
-                                let first_mask = (1u8 << bits_in_first_byte) - 1;
-                                let second_mask = (1u8 << bits_in_second_byte) - 1;
-                                let second_byte = start_byte + 1;
-
-                                quote! {
-                                    pub fn #field_name(&self) -> u8 {
-                                        let first_part = (self.data[#start_byte] >> #start_bit) & #first_mask;
-                                        let second_part = self.data[#second_byte] & #second_mask;
-                                        first_part | (second_part << #bits_in_first_byte)
-                                    }
-                                }
-                            };
-
-                            (Some(len), quote! {}, field_getter)
-                        }
-
-                        (None, None) => return Err(Error::UnknownOffset),
-
-                        _ => todo!(),
-                    }
-                }
+                ast::Type::BitField(width) => self
+                    .generate_type_bitfield_field_getter(*width as usize, &field_name)
+                    .map(|(len, definitions, field_getters)| {
+                        (Some(len), definitions, field_getters)
+                    })?,
 
                 ast::Type::StructRef(struct_name) => {
-                    let generated_struct = self
-                        .done
-                        .get(struct_name)
-                        .ok_or_else(|| Error::UnknownType(struct_name.to_string()))?;
-
-                    let len = generated_struct.len;
-                    let struct_ident = format_ident!("{}", struct_name);
-
-                    match (&self.start_offset, self.done_fields.last()) {
-                        (Some(offset), _) => {
-                            let start_byte = offset.byte;
-
-                            let field_getter = quote! {
-                                pub fn #field_name(&self) -> #struct_ident<'_> {
-                                    #struct_ident { data: &self.data[#start_byte..] }
-                                }
-                            };
-
-                            (len, quote! {}, field_getter)
-                        }
-
-                        (None, None) => return Err(Error::UnknownOffset),
-
-                        _ => todo!(),
-                    }
+                    self.generate_type_struct_ref_field_getter(struct_name, &field_name)?
                 }
 
                 _ => todo!(),
@@ -212,6 +130,115 @@ impl<'a> FieldCtx<'a> {
             offset_getter,
             field_getter,
         })
+    }
+
+    fn generate_type_primitive_field_getter(
+        &self,
+        primitive: &ast::Primitive,
+        field_name: &syn::Ident,
+    ) -> Result<(Len, TokenStream, TokenStream), Error> {
+        let (len, def) = match_primitive(primitive);
+
+        match (&self.start_offset, self.done_fields.last()) {
+            (Some(offset), _) => {
+                let end = *offset + len;
+
+                let start_byte = offset.byte;
+                let end_byte = end.byte;
+
+                let field_getter = quote! {
+                    pub fn #field_name(&self) -> #def {
+                        let field_data = self.data[#start_byte..#end_byte];
+                        #def::from_ne_bytes(field_data)
+                    }
+                };
+
+                Ok((len, quote! {}, field_getter))
+            }
+
+            (None, None) => return Err(Error::UnknownOffset),
+
+            _ => todo!(),
+        }
+    }
+
+    fn generate_type_bitfield_field_getter(
+        &self,
+        width: usize,
+        field_name: &syn::Ident,
+    ) -> Result<(Len, TokenStream, TokenStream), Error> {
+        let len = Len {
+            byte: 0,
+            bit: width,
+        };
+
+        match (&self.start_offset, self.done_fields.last()) {
+            (Some(offset), _) => {
+                let start_byte = offset.byte;
+                let start_bit = offset.bit;
+
+                let field_getter = if start_bit + width <= 8 {
+                    let mask = (1u8 << width) - 1;
+                    quote! {
+                        pub fn #field_name(&self) -> u8 {
+                            (self.data[#start_byte] >> #start_bit) & #mask
+                        }
+                    }
+                } else {
+                    let bits_in_first_byte = 8 - start_bit;
+                    let bits_in_second_byte = width - bits_in_first_byte;
+                    let first_mask = (1u8 << bits_in_first_byte) - 1;
+                    let second_mask = (1u8 << bits_in_second_byte) - 1;
+                    let second_byte = start_byte + 1;
+
+                    quote! {
+                        pub fn #field_name(&self) -> u8 {
+                            let first_part = (self.data[#start_byte] >> #start_bit) & #first_mask;
+                            let second_part = self.data[#second_byte] & #second_mask;
+                            first_part | (second_part << #bits_in_first_byte)
+                        }
+                    }
+                };
+
+                Ok((len, quote! {}, field_getter))
+            }
+
+            (None, None) => return Err(Error::UnknownOffset),
+
+            _ => todo!(),
+        }
+    }
+
+    fn generate_type_struct_ref_field_getter(
+        &self,
+        struct_name: &str,
+        field_name: &syn::Ident,
+    ) -> Result<(Option<Len>, TokenStream, TokenStream), Error> {
+        let generated_struct = self
+            .done
+            .get(struct_name)
+            .ok_or_else(|| Error::UnknownType(struct_name.to_string()))?;
+
+        let len = generated_struct.len;
+        let struct_ident = format_ident!("{}", struct_name);
+
+        match (&self.start_offset, self.done_fields.last()) {
+            (Some(offset), _) => {
+                let start_byte = offset.byte;
+
+                let field_getter = quote! {
+                    pub fn #field_name(&self) -> #struct_ident<'_> {
+                        #struct_ident { data: &self.data[#start_byte..] }
+                    }
+                };
+
+                Ok((len, quote! {}, field_getter))
+            }
+
+            (None, None) => return Err(Error::UnknownOffset),
+
+            _ => todo!(),
+        }
     }
 }
 
