@@ -123,13 +123,19 @@ pub struct ArrayType<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ConcatItem<'a> {
+    pub attributes: Vec<Attribute<'a>>,
+    pub ty: Type<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type<'a> {
     BitField(u8), // b<N>
     Primitive(Primitive),
     Array(Box<ArrayType<'a>>),
-    StructRef(&'a str),     // Reference to another struct
-    Concat(Vec<Field<'a>>), // concat(f1: type, ...)
-    Union(Union<'a>),       // union(...) { ... }
+    StructRef(&'a str),          // Reference to another struct
+    Concat(Vec<ConcatItem<'a>>), // concat(@attr type, ...)
+    Union(Union<'a>),            // union(...) { ... }
 }
 
 #[derive(Debug, Clone, PartialEq)]

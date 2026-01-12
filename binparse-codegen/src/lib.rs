@@ -140,11 +140,9 @@ fn find_type_dependencies<'a>(ty: &ast::Type<'a>, dependencies: &mut HashSet<&'a
         ast::Type::Array(array_ty) => {
             find_type_dependencies(&array_ty.elem_ty, dependencies);
         }
-        ast::Type::Concat(fields) => {
-            for field in fields {
-                if let ast::FieldValue::Type(ty) = &field.value {
-                    find_type_dependencies(ty, dependencies);
-                }
+        ast::Type::Concat(items) => {
+            for item in items {
+                find_type_dependencies(&item.ty, dependencies);
             }
         }
         ast::Type::Union(union) => {

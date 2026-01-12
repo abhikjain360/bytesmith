@@ -403,12 +403,20 @@ fn field_value<'a>(input: &mut Input<'a>) -> ModalResult<ast::FieldValue<'a>> {
     .parse_next(input)
 }
 
+fn concat_item<'a>(input: &mut Input<'a>) -> ModalResult<ast::ConcatItem<'a>> {
+    seq! {ast::ConcatItem {
+        attributes: attributes,
+        ty: type_parser,
+    }}
+    .parse_next(input)
+}
+
 fn concat_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::Type<'a>> {
     let _ = padded("concat").parse_next(input)?;
     delimited(
         padded('('),
-        separated(0.., field, padded(',')),
-        padded(')').context(StrContext::Label("')' or named field (e.g., 'name: b<4>')")),
+        separated(0.., concat_item, padded(',')),
+        padded(')').context(StrContext::Label("')' or type")),
     )
     .map(ast::Type::Concat)
     .parse_next(input)
@@ -1023,20 +1031,21 @@ mod tests {
     fn test_concat_type() {
         let src = r#"
             struct Fragmented {
-                field: concat(
-                    chunk_a: b<4>,
-                    @skip reserved: b<4>,
-                    chunk_b: b<8>
-                ),
+                field: concat(b<4>, @skip b<4>, b<8>),
             }
         "#;
         let defs = parse_helper(src);
         match &defs[0] {
             ast::Definition::Struct(s) => match &s.items[0] {
                 ast::StructItem::Field(f) => match &f.value {
-                    ast::FieldValue::Type(ast::Type::Concat(fields)) => {
-                        assert_eq!(fields.len(), 3);
-                        assert_eq!(fields[1].attributes[0].name, "skip");
+                    ast::FieldValue::Type(ast::Type::Concat(items)) => {
+                        assert_eq!(items.len(), 3);
+                        assert_eq!(items[0].ty, ast::Type::BitField(4));
+                        assert_eq!(items[0].attributes.len(), 0);
+                        assert_eq!(items[1].ty, ast::Type::BitField(4));
+                        assert_eq!(items[1].attributes.len(), 1);
+                        assert_eq!(items[1].attributes[0].name, "skip");
+                        assert_eq!(items[2].ty, ast::Type::BitField(8));
                     }
                     _ => panic!("Expected concat type"),
                 },

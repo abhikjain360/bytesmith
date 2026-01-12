@@ -1,7 +1,7 @@
 - rust codebase, edition 2024, resolver 3
 - ast definitions in binparse-dsl
   - it is always recommended to read the binparse-dsl/src/lib.rs as it has the AST definition which you'll probably need for most tasks
-- string to ast parser in biparse-dsl-parser
+- string to ast parser in biparse-dsl-parse
 - common lib in binparse
 - codgen in binparse-codegen
   - everywhere `use binparse_dsl as ast;`
