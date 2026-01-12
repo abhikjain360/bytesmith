@@ -99,6 +99,14 @@ impl<'a> CodeGen<'a> {
                             source,
                         })?;
                 me.done.insert(root, generated);
+
+                for dependant in todo.dependants {
+                    let dependant_todo = me.todo.get_mut(dependant).expect("dependant not found");
+                    dependant_todo.dependencies.remove(root);
+                    if dependant_todo.dependencies.is_empty() {
+                        next.push(dependant);
+                    }
+                }
             }
 
             std::mem::swap(&mut next, &mut roots);

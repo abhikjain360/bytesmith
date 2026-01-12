@@ -55,8 +55,7 @@ impl<'a> StructCtx<'a> {
         let mut field_definitions = TokenStream::new();
         let mut functions = TokenStream::new();
 
-        let mut parser_impl = TokenStream::new();
-        let parser_ret = TokenStream::new();
+        let mut last_offset_getter_fn_name = None;
 
         for item in &self.origin.items {
             if let ast::StructItem::Field(field) = item {
@@ -72,15 +71,11 @@ impl<'a> StructCtx<'a> {
                 functions.extend(generated.offset_getter);
 
                 self.offset = match (self.offset, generated.len) {
-                    (Some(current), Some(field_len)) => {
-                        let fn_name = &generated.offset_getter_fn_name;
-                        parser_impl.extend(quote! {
-                            let len = len + me.#fn_name();
-                        });
-                        Some(current + field_len)
-                    }
+                    (Some(current), Some(field_len)) => Some(current + field_len),
                     _ => None,
                 };
+
+                last_offset_getter_fn_name = Some(generated.offset_getter_fn_name.clone());
 
                 self.done_fields.push(DoneField {
                     origin: field,
@@ -91,6 +86,29 @@ impl<'a> StructCtx<'a> {
         }
 
         let name = format_ident!("{}", self.origin.name);
+
+        let parse_fn = if let Some(fn_name) = last_offset_getter_fn_name {
+            quote! {
+                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                    let me = Self { data };
+                    let len = me.#fn_name();
+                    if len.bit != 0 {
+                        return Err(binparse::ParseError::UnalignedLength(len));
+                    }
+                    if data.len() < len.byte {
+                        return Err(binparse::ParseError::NotEnoughData { expected: len.byte, got: data.len() });
+                    }
+                    Ok((me, &data[len.byte..]))
+                }
+            }
+        } else {
+            quote! {
+                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                    Ok((Self { data }, data))
+                }
+            }
+        };
+
         let tokens = quote! {
             pub struct #name<'a> {
                 data: &'a [u8],
@@ -98,10 +116,7 @@ impl<'a> StructCtx<'a> {
             }
 
             impl<'a> #name<'a> {
-                pub fn parse(data: &'a [u8]) -> Option<(Self, &'a [u8])> {
-                    #parser_impl
-                    Self { data, #parser_ret }
-                }
+                #parse_fn
 
                 #functions
             }

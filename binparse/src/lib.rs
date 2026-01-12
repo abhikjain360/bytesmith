@@ -4,6 +4,14 @@ pub struct Len {
     pub bit: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ParseError {
+    #[error("not enough data: expected {expected} bytes, got {got}")]
+    NotEnoughData { expected: usize, got: usize },
+    #[error("unaligned length: {0:?}")]
+    UnalignedLength(Len),
+}
+
 impl std::ops::Add for Len {
     type Output = Self;
 
