@@ -52,8 +52,6 @@ impl<'a> FieldCtx<'a> {
         let field_name = format_ident!("{}", self.field.name);
         let offset_getter_fn_name = format_ident!("{}_end_offset", field_name);
 
-        let prev_field = self.done_fields.last();
-
         let (len, definitions, helper_fns, helper_entities, field_getter) = match &self.field.value
         {
             ast::FieldValue::Type(ty) => {
@@ -61,7 +59,7 @@ impl<'a> FieldCtx<'a> {
                     ty,
                     &field_name,
                     self.start_offset,
-                    prev_field,
+                    self.done_fields,
                 )?;
                 let return_ty = generated.return_ty;
                 let field_getter_body = generated.field_getter_body;
@@ -83,7 +81,7 @@ impl<'a> FieldCtx<'a> {
             ast::FieldValue::Constraint(_) => todo!(),
         };
 
-        let offset_getter = match (&self.start_offset, prev_field) {
+        let offset_getter = match (&self.start_offset, self.done_fields.last()) {
             (Some(offset), _) => match &len {
                 Some(len) => {
                     let total_len = *offset + *len;

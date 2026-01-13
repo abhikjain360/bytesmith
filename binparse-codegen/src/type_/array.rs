@@ -10,7 +10,7 @@ pub(crate) struct ArrayCtx<'a, 'b> {
     pub(crate) array_type: &'a ast::ArrayType<'a>,
     pub(crate) field_name: &'b syn::Ident,
     pub(crate) start_offset: Option<Len>,
-    pub(crate) prev_field: Option<&'a DoneField<'a>>,
+    pub(crate) done_fields: &'a [DoneField<'a>],
     pub(crate) done: &'b std::collections::HashMap<&'a str, GeneratedStruct>,
 }
 
@@ -24,7 +24,7 @@ impl ArrayCtx<'_, '_> {
 
                 let count = self.generate_array_size(&self.array_type.size);
 
-                let offset = match self.prev_field {
+                let offset = match self.done_fields.last() {
                     Some(DoneField {
                         offset_getter_fn_name,
                         ..

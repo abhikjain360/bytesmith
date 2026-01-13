@@ -17,7 +17,7 @@ pub(crate) struct ConcatCtx<'a, 'b> {
     pub(crate) items: &'a [ast::ConcatItem<'a>],
     pub(crate) field_name: &'b syn::Ident,
     pub(crate) start_offset: Option<Len>,
-    pub(crate) prev_field: Option<&'a DoneField<'a>>,
+    pub(crate) done_fields: &'a [DoneField<'a>],
     pub(crate) done: &'b std::collections::HashMap<&'a str, GeneratedStruct>,
 }
 
@@ -48,7 +48,7 @@ impl ConcatCtx<'_, '_> {
                         &item.ty,
                         &item_name,
                         Some(current_offset),
-                        self.prev_field,
+                        self.done_fields,
                     )?;
 
                     let item_len = item_len.ok_or(Error::UnknownItemLen(i))?;

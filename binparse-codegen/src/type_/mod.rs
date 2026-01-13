@@ -45,7 +45,7 @@ impl<'a> TypeCtx<'a> {
         ty: &ast::Type,
         field_name: &syn::Ident,
         start_offset: Option<Len>,
-        prev_field: Option<&'a DoneField<'a>>,
+        done_fields: &'a [DoneField<'a>],
     ) -> Result<GeneratedType, Error> {
         match ty {
             ast::Type::Primitive(p) => primitive::PrimitiveCtx {
@@ -64,7 +64,7 @@ impl<'a> TypeCtx<'a> {
                 items,
                 field_name,
                 start_offset,
-                prev_field,
+                done_fields,
                 done: self.done,
             }
             .generate(),
@@ -79,7 +79,7 @@ impl<'a> TypeCtx<'a> {
             ast::Type::Array(array_type) => array::ArrayCtx {
                 array_type,
                 field_name,
-                prev_field,
+                done_fields,
                 start_offset,
                 done: self.done,
             }
