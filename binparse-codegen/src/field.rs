@@ -57,18 +57,18 @@ impl<'a> FieldCtx<'a> {
 
         let (len, definitions, field_getter) = match &self.field.value {
             ast::FieldValue::Type(ty) => match ty {
-                ast::Type::Primitive(p) => self
-                    .generate_type_primitive_field_getter(p, &field_name, self.start_offset)
-                    .map(|(len, definitions, field_getters)| {
-                        (Some(len), definitions, field_getters)
-                    })?,
-
                 ast::Type::BitField(width) => self
                     .generate_type_bitfield_field_getter(
                         *width as usize,
                         &field_name,
                         self.start_offset,
                     )
+                    .map(|(len, definitions, field_getters)| {
+                        (Some(len), definitions, field_getters)
+                    })?,
+
+                ast::Type::Primitive(p) => self
+                    .generate_type_primitive_field_getter(p, &field_name, self.start_offset)
                     .map(|(len, definitions, field_getters)| {
                         (Some(len), definitions, field_getters)
                     })?,
@@ -87,6 +87,7 @@ impl<'a> FieldCtx<'a> {
 
                 _ => todo!(),
             },
+
             ast::FieldValue::Constraint(_) => todo!(),
         };
 
@@ -165,8 +166,7 @@ impl<'a> FieldCtx<'a> {
 
                 let field_getter = quote! {
                     pub fn #field_name(&self) -> #def {
-                        let field_data = self.data[#start_byte..#end_byte];
-                        #def::from_ne_bytes(field_data)
+                        #def::from_ne_bytes(self.data[#start_byte..#end_byte].try_into().unwrap())
                     }
                 };
 
@@ -198,6 +198,7 @@ impl<'a> FieldCtx<'a> {
                 let field_getter = if start_bit + width <= 8 {
                     let mask = (1u8 << width) - 1;
                     quote! {
+                        #[allow(clippy::identity_op)]
                         pub fn #field_name(&self) -> u8 {
                             (self.data[#start_byte] >> #start_bit) & #mask
                         }
@@ -210,6 +211,7 @@ impl<'a> FieldCtx<'a> {
                     let second_byte = start_byte + 1;
 
                     quote! {
+                        #[allow(clippy::identity_op)]
                         pub fn #field_name(&self) -> u8 {
                             let first_part = (self.data[#start_byte] >> #start_bit) & #first_mask;
                             let second_part = self.data[#second_byte] & #second_mask;
@@ -337,7 +339,7 @@ impl<'a> FieldCtx<'a> {
 
                 let field_getter = quote! {
                     pub fn #field_name(&self) -> #struct_ident<'_> {
-                        #struct_ident { data: &self.data[#start_byte..] }
+                        #struct_ident::parse(&self.data[#start_byte..]).unwrap().0
                     }
                 };
 
