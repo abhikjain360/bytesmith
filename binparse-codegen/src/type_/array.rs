@@ -91,7 +91,10 @@ impl ArrayCtx<'_, '_> {
 
                         ast::ArrayElemType::BitField(width) => {
                             let width = *width as usize;
-                            let len = Len { byte: 0, bit: width };
+                            let len = Len {
+                                byte: 0,
+                                bit: width,
+                            };
                             let return_ty = quote! { u8 };
                             let iterator_fields = quote! {
                                 idx: usize,
