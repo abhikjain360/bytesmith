@@ -1,3 +1,5 @@
+use std::ops::{Add, Mul};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Len {
     pub byte: usize,
@@ -12,7 +14,9 @@ pub enum ParseError {
     UnalignedLength(Len),
 }
 
-impl std::ops::Add for Len {
+pub type ParseResult<T> = std::result::Result<T, ParseError>;
+
+impl Add for Len {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
@@ -23,5 +27,21 @@ impl std::ops::Add for Len {
             bit -= 8;
         }
         Self { byte, bit }
+    }
+}
+
+impl<T> Mul<T> for Len
+where
+    T: Copy,
+    usize: Mul<T, Output = usize>,
+{
+    type Output = Self;
+
+    fn mul(self, rhs: T) -> Self::Output {
+        let bit = self.bit * rhs;
+        Self {
+            byte: self.byte * rhs + bit / 8,
+            bit: bit % 8,
+        }
     }
 }

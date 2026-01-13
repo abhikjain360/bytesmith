@@ -12,3 +12,4 @@
   - in the same spirit prefer using match arms with todo!() for other cases
 - bitfield width is always less than 8
 - don't leave comments, at all, unless asked otherwise
+- keep the coding style consistent, read code for other places on how we handle different problems and follow the same pattern

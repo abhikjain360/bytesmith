@@ -7,15 +7,14 @@ use crate::struct_::GeneratedStruct;
 
 use super::{Error, GeneratedType};
 
-pub(super) struct StructRefCtx<'a, 'b> {
-    pub(super) struct_name: &'a str,
-    pub(super) field_name: &'b syn::Ident,
-    pub(super) start_offset: Option<Len>,
-    pub(super) done: &'b HashMap<&'a str, GeneratedStruct>,
+pub(crate) struct StructRefCtx<'a, 'b> {
+    pub(crate) struct_name: &'a str,
+    pub(crate) start_offset: Option<Len>,
+    pub(crate) done: &'b HashMap<&'a str, GeneratedStruct>,
 }
 
 impl StructRefCtx<'_, '_> {
-    pub(super) fn generate(self) -> Result<GeneratedType, Error> {
+    pub(crate) fn generate(self) -> Result<GeneratedType, Error> {
         let generated_struct = self
             .done
             .get(self.struct_name)
@@ -31,18 +30,17 @@ impl StructRefCtx<'_, '_> {
                     return Err(Error::InvalidAlignment(offset));
                 }
                 let start_byte = offset.byte;
-                let field_name = self.field_name;
 
-                let field_getter = quote! {
-                    pub fn #field_name(&self) -> #struct_ident<'_> {
-                        #struct_ident::parse(&self.data[#start_byte..]).unwrap().0
-                    }
+                let field_getter_body = quote! {
+                    #struct_ident::parse(&self.data[#start_byte..]).unwrap().0
                 };
 
                 Ok(GeneratedType {
                     len,
                     definitions: quote! {},
-                    field_getter,
+                    helper_fns: quote! {},
+                    helper_entities: quote! {},
+                    field_getter_body,
                     return_ty,
                 })
             }

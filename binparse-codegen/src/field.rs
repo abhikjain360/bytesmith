@@ -27,6 +27,8 @@ pub(crate) struct GeneratedField {
     pub(crate) len: Option<Len>,
     pub(crate) offset_getter_fn_name: syn::Ident,
     pub(crate) definitions: TokenStream,
+    pub(crate) helper_fns: TokenStream,
+    pub(crate) helper_entities: TokenStream,
     pub(crate) field_getter: TokenStream,
     pub(crate) offset_getter: TokenStream,
 }
@@ -50,21 +52,38 @@ impl<'a> FieldCtx<'a> {
         let field_name = format_ident!("{}", self.field.name);
         let offset_getter_fn_name = format_ident!("{}_end_offset", field_name);
 
-        let (len, definitions, field_getter) = match &self.field.value {
+        let prev_field = self.done_fields.last();
+
+        let (len, definitions, helper_fns, helper_entities, field_getter) = match &self.field.value
+        {
             ast::FieldValue::Type(ty) => {
-                let type_::GeneratedType {
-                    len,
-                    definitions,
+                let generated = type_::TypeCtx { done: self.done }.generate(
+                    ty,
+                    &field_name,
+                    self.start_offset,
+                    prev_field,
+                )?;
+                let return_ty = generated.return_ty;
+                let field_getter_body = generated.field_getter_body;
+                let field_getter = quote! {
+                    #[allow(clippy::identity_op)]
+                    pub fn #field_name(&self) -> #return_ty {
+                        #field_getter_body
+                    }
+                };
+                (
+                    generated.len,
+                    generated.definitions,
+                    generated.helper_fns,
+                    generated.helper_entities,
                     field_getter,
-                    ..
-                } = type_::generate(ty, &field_name, self.start_offset, self.done)?;
-                (len, definitions, field_getter)
+                )
             }
 
             ast::FieldValue::Constraint(_) => todo!(),
         };
 
-        let offset_getter = match (&self.start_offset, self.done_fields.last()) {
+        let offset_getter = match (&self.start_offset, prev_field) {
             (Some(offset), _) => match &len {
                 Some(len) => {
                     let total_len = *offset + *len;
@@ -112,6 +131,8 @@ impl<'a> FieldCtx<'a> {
         Ok(GeneratedField {
             len,
             definitions,
+            helper_fns,
+            helper_entities,
             offset_getter_fn_name,
             offset_getter,
             field_getter,

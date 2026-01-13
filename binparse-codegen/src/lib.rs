@@ -9,6 +9,11 @@ mod field;
 mod struct_;
 mod type_;
 
+// TODO: uncomment this once you are ready to fix tests
+//
+// #[cfg(test)]
+// mod tests;
+
 pub struct CodeGen<'a> {
     todo: HashMap<&'a str, Todo<'a>>,
     done: HashMap<&'a str, GeneratedStruct>,
@@ -146,8 +151,11 @@ fn find_type_dependencies<'a>(ty: &ast::Type<'a>, dependencies: &mut HashSet<&'a
         ast::Type::StructRef(name) => {
             dependencies.insert(name);
         }
-        ast::Type::Array(array_ty) => {
-            find_type_dependencies(&array_ty.elem_ty, dependencies);
+        ast::Type::Array(ast::ArrayType {
+            elem_ty: ast::ArrayElemType::StructRef(name),
+            ..
+        }) => {
+            dependencies.insert(name);
         }
         ast::Type::Concat(items) => {
             for item in items {

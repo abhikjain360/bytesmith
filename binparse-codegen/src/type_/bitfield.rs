@@ -3,14 +3,13 @@ use quote::quote;
 
 use super::{Error, GeneratedType};
 
-pub(super) struct BitFieldCtx<'a> {
-    pub(super) width: usize,
-    pub(super) field_name: &'a syn::Ident,
-    pub(super) start_offset: Option<Len>,
+pub(crate) struct BitFieldCtx {
+    pub(crate) width: usize,
+    pub(crate) start_offset: Option<Len>,
 }
 
-impl BitFieldCtx<'_> {
-    pub(super) fn generate(self) -> Result<GeneratedType, Error> {
+impl BitFieldCtx {
+    pub(crate) fn generate(self) -> Result<GeneratedType, Error> {
         let len = Len {
             byte: 0,
             bit: self.width,
@@ -21,15 +20,11 @@ impl BitFieldCtx<'_> {
             Some(offset) => {
                 let start_byte = offset.byte;
                 let start_bit = offset.bit;
-                let field_name = self.field_name;
 
-                let field_getter = if start_bit + self.width <= 8 {
+                let field_getter_body = if start_bit + self.width <= 8 {
                     let mask = (1u8 << self.width) - 1;
                     quote! {
-                        #[allow(clippy::identity_op)]
-                        pub fn #field_name(&self) -> u8 {
-                            (self.data[#start_byte] >> #start_bit) & #mask
-                        }
+                        (self.data[#start_byte] >> #start_bit) & #mask
                     }
                 } else {
                     let bits_in_first_byte = 8 - start_bit;
@@ -39,8 +34,7 @@ impl BitFieldCtx<'_> {
                     let second_byte = start_byte + 1;
 
                     quote! {
-                        #[allow(clippy::identity_op)]
-                        pub fn #field_name(&self) -> u8 {
+                        {
                             let first_part = (self.data[#start_byte] >> #start_bit) & #first_mask;
                             let second_part = self.data[#second_byte] & #second_mask;
                             first_part | (second_part << #bits_in_first_byte)
@@ -51,7 +45,9 @@ impl BitFieldCtx<'_> {
                 Ok(GeneratedType {
                     len: Some(len),
                     definitions: quote! {},
-                    field_getter,
+                    helper_fns: quote! {},
+                    helper_entities: quote! {},
+                    field_getter_body,
                     return_ty,
                 })
             }

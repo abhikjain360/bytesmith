@@ -20,6 +20,7 @@ struct Header {
     header_checksum: u16,
     src: IpAddr,
     dst: IpAddr,
+    // options: [u8; 100],
 }
 "#;
 

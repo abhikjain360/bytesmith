@@ -1,29 +1,36 @@
-use std::collections::HashMap;
-
 use binparse::Len;
 use binparse_dsl as ast;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::struct_::GeneratedStruct;
+use crate::struct_::{DoneField, GeneratedStruct};
 
-use super::{Error, GeneratedType};
+use super::{GeneratedType, TypeCtx};
 
-pub(super) struct ConcatCtx<'a, 'b> {
-    pub(super) items: &'a [ast::ConcatItem<'a>],
-    pub(super) field_name: &'b syn::Ident,
-    pub(super) start_offset: Option<Len>,
-    pub(super) done: &'b HashMap<&'a str, GeneratedStruct>,
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("concat item {0} must have known length")]
+    UnknownItemLen(usize),
+}
+
+pub(crate) struct ConcatCtx<'a, 'b> {
+    pub(crate) items: &'a [ast::ConcatItem<'a>],
+    pub(crate) field_name: &'b syn::Ident,
+    pub(crate) start_offset: Option<Len>,
+    pub(crate) prev_field: Option<&'a DoneField<'a>>,
+    pub(crate) done: &'b std::collections::HashMap<&'a str, GeneratedStruct>,
 }
 
 impl ConcatCtx<'_, '_> {
-    pub(super) fn generate(self) -> Result<GeneratedType, Error> {
+    pub(crate) fn generate(self) -> Result<GeneratedType, super::Error> {
         match self.start_offset {
             Some(start_offset) => {
                 let mut total_len = Len::default();
                 let mut field_types = Vec::new();
                 let mut field_exprs = TokenStream::new();
-                let mut sub_getters = TokenStream::new();
+                let mut definitions = TokenStream::new();
+                let mut helper_fns = TokenStream::new();
+                let mut helper_entities = TokenStream::new();
 
                 let mut current_offset = start_offset;
 
@@ -32,15 +39,29 @@ impl ConcatCtx<'_, '_> {
 
                     let GeneratedType {
                         len: item_len,
-                        definitions,
-                        field_getter,
+                        definitions: type_definitions,
+                        helper_fns: type_helper_fns,
+                        helper_entities: type_helper_entities,
+                        field_getter_body,
                         return_ty,
-                    } = super::generate(&item.ty, &item_name, Some(current_offset), self.done)?;
+                    } = TypeCtx { done: self.done }.generate(
+                        &item.ty,
+                        &item_name,
+                        Some(current_offset),
+                        self.prev_field,
+                    )?;
 
-                    let item_len = item_len.expect("concat items should have known length");
+                    let item_len = item_len.ok_or(Error::UnknownItemLen(i))?;
 
-                    sub_getters.extend(definitions);
-                    sub_getters.extend(field_getter);
+                    definitions.extend(type_definitions);
+                    helper_fns.extend(type_helper_fns);
+                    helper_fns.extend(quote! {
+                        #[allow(clippy::identity_op)]
+                        pub fn #item_name(&self) -> #return_ty {
+                            #field_getter_body
+                        }
+                    });
+                    helper_entities.extend(type_helper_entities);
                     field_types.push(return_ty);
                     field_exprs.extend(quote! { self.#item_name(), });
 
@@ -48,21 +69,18 @@ impl ConcatCtx<'_, '_> {
                     current_offset = current_offset + item_len;
                 }
 
-                let field_name = self.field_name;
-                let field_getter = quote! {
-                    #sub_getters
-
-                    pub fn #field_name(&self) -> ( #(#field_types),* ) {
-                        ( #field_exprs )
-                    }
+                let field_getter_body = quote! {
+                    ( #field_exprs )
                 };
 
                 let return_ty = quote! { ( #(#field_types),* ) };
 
                 Ok(GeneratedType {
                     len: Some(total_len),
-                    definitions: quote! {},
-                    field_getter,
+                    definitions,
+                    helper_fns,
+                    helper_entities,
+                    field_getter_body,
                     return_ty,
                 })
             }

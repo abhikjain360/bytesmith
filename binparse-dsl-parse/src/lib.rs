@@ -97,9 +97,9 @@ fn decimal_literal<'a>(input: &mut Input<'a>) -> ModalResult<ast::Literal<'a>> {
         .try_map(|s: &str| {
             let width = s.len().try_into()?;
 
-            s.parse::<u128>()
-                .map(|v| ast::IntLiteral {
-                    value: v,
+            s.parse::<usize>()
+                .map(|value| ast::IntLiteral {
+                    value,
                     width,
                     ty: ast::IntType::Decimal,
                 })
@@ -113,9 +113,9 @@ fn hex_literal<'a>(input: &mut Input<'a>) -> ModalResult<ast::Literal<'a>> {
     preceded("x", hex_digit1)
         .try_map(|s: &str| {
             let width = s.len().try_into()?;
-            u128::from_str_radix(s, 16)
-                .map(|v| ast::IntLiteral {
-                    value: v,
+            usize::from_str_radix(s, 16)
+                .map(|value| ast::IntLiteral {
+                    value,
                     width,
                     ty: ast::IntType::Hex,
                 })
@@ -129,9 +129,9 @@ fn binary_literal<'a>(input: &mut Input<'a>) -> ModalResult<ast::Literal<'a>> {
     preceded("b", take_while(1.., |c| c == '0' || c == '1'))
         .try_map(|s: &str| {
             let width = s.len().try_into()?;
-            u128::from_str_radix(s, 2)
-                .map(|v| ast::IntLiteral {
-                    value: v,
+            usize::from_str_radix(s, 2)
+                .map(|value| ast::IntLiteral {
+                    value,
                     width,
                     ty: ast::IntType::Binary,
                 })
@@ -199,9 +199,9 @@ fn product<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     loop {
         let start = *input;
         let op_res: ModalResult<ast::BinaryOp> = padded(alt((
-            "*".map(|_| ast::BinaryOp::Mul),
-            "/".map(|_| ast::BinaryOp::Div),
-            "%".map(|_| ast::BinaryOp::Mod),
+            "*".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::Mul)),
+            "/".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::Div)),
+            "%".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::Mod)),
         )))
         .parse_next(input);
 
@@ -224,8 +224,8 @@ fn sum<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     loop {
         let start = *input;
         let op_res: ModalResult<ast::BinaryOp> = padded(alt((
-            "+".map(|_| ast::BinaryOp::Add),
-            "-".map(|_| ast::BinaryOp::Sub),
+            "+".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::Add)),
+            "-".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::Sub)),
         )))
         .parse_next(input);
 
@@ -249,10 +249,10 @@ fn bitwise<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
         let start = *input;
         let op_res: ModalResult<ast::BinaryOp> = padded(alt((
             "&".verify(|s: &str| !s.starts_with("&&"))
-                .map(|_| ast::BinaryOp::BitAnd),
-            "^".map(|_| ast::BinaryOp::BitXor),
+                .map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::BitAnd)),
+            "^".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::BitXor)),
             "|".verify(|s: &str| !s.starts_with("||"))
-                .map(|_| ast::BinaryOp::BitOr),
+                .map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::BitOr)),
         )))
         .parse_next(input);
 
@@ -275,12 +275,12 @@ fn comparison<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     loop {
         let start = *input;
         let op_res: ModalResult<ast::BinaryOp> = padded(alt((
-            "==".map(|_| ast::BinaryOp::Eq),
-            "!=".map(|_| ast::BinaryOp::Neq),
-            "<=".map(|_| ast::BinaryOp::Le),
-            ">=".map(|_| ast::BinaryOp::Ge),
-            "<".map(|_| ast::BinaryOp::Lt),
-            ">".map(|_| ast::BinaryOp::Gt),
+            "==".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Eq)),
+            "!=".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Neq)),
+            "<=".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Le)),
+            ">=".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Ge)),
+            "<".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Lt)),
+            ">".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Gt)),
         )))
         .parse_next(input);
 
@@ -303,7 +303,7 @@ fn logic_and<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     loop {
         let start = *input;
         let op_res: ModalResult<ast::BinaryOp> =
-            padded("&&".map(|_| ast::BinaryOp::And)).parse_next(input);
+            padded("&&".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::And))).parse_next(input);
         match op_res {
             Ok(op) => {
                 let rhs = comparison(input)?;
@@ -323,7 +323,7 @@ fn logic_or<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     loop {
         let start = *input;
         let op_res: ModalResult<ast::BinaryOp> =
-            padded("||".map(|_| ast::BinaryOp::Or)).parse_next(input);
+            padded("||".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Or))).parse_next(input);
         match op_res {
             Ok(op) => {
                 let rhs = logic_and(input)?;
@@ -385,13 +385,107 @@ fn type_parser<'a>(input: &mut Input<'a>) -> ModalResult<ast::Type<'a>> {
     .parse_next(input)
 }
 
+fn array_elem_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::ArrayElemType<'a>> {
+    alt((
+        ("b", delimited('<', digit1, '>'))
+            .try_map(|(_, w_str): (&str, &str)| w_str.parse::<u8>())
+            .verify(|w| *w <= 8)
+            .map(ast::ArrayElemType::BitField),
+        primitive.map(ast::ArrayElemType::Primitive),
+        padded(identifier).map(ast::ArrayElemType::StructRef),
+    ))
+    .parse_next(input)
+}
+
+fn array_size_atom<'a>(input: &mut Input<'a>) -> ModalResult<ast::ArraySize<'a>> {
+    alt((
+        path.map(ast::ArraySize::Path),
+        decimal_literal.map(|lit| match lit {
+            ast::Literal::Int(i) => ast::ArraySize::Int(i),
+            _ => unreachable!(),
+        }),
+        hex_literal.map(|lit| match lit {
+            ast::Literal::Int(i) => ast::ArraySize::Int(i),
+            _ => unreachable!(),
+        }),
+        delimited(padded('('), array_size, padded(')')),
+    ))
+    .parse_next(input)
+}
+
+fn array_size_product<'a>(input: &mut Input<'a>) -> ModalResult<ast::ArraySize<'a>> {
+    let first = array_size_atom.parse_next(input)?;
+    repeat(
+        0..,
+        (
+            padded(alt((
+                '*'.value(ast::NumericBinaryOp::Mul),
+                '/'.value(ast::NumericBinaryOp::Div),
+                '%'.value(ast::NumericBinaryOp::Mod),
+            ))),
+            array_size_atom,
+        ),
+    )
+    .fold(
+        move || first.clone(),
+        |lhs, (op, rhs)| ast::ArraySize::Binary(Box::new(ast::ArraySizeBinary { lhs, op, rhs })),
+    )
+    .parse_next(input)
+}
+
+fn array_size_sum<'a>(input: &mut Input<'a>) -> ModalResult<ast::ArraySize<'a>> {
+    let first = array_size_product.parse_next(input)?;
+    repeat(
+        0..,
+        (
+            padded(alt((
+                '+'.value(ast::NumericBinaryOp::Add),
+                '-'.value(ast::NumericBinaryOp::Sub),
+            ))),
+            array_size_product,
+        ),
+    )
+    .fold(
+        move || first.clone(),
+        |lhs, (op, rhs)| ast::ArraySize::Binary(Box::new(ast::ArraySizeBinary { lhs, op, rhs })),
+    )
+    .parse_next(input)
+}
+
+fn array_size_bitwise<'a>(input: &mut Input<'a>) -> ModalResult<ast::ArraySize<'a>> {
+    let first = array_size_sum.parse_next(input)?;
+    repeat(
+        0..,
+        (
+            padded(alt((
+                '&'.value(ast::NumericBinaryOp::BitAnd),
+                '|'.value(ast::NumericBinaryOp::BitOr),
+                '^'.value(ast::NumericBinaryOp::BitXor),
+            ))),
+            array_size_sum,
+        ),
+    )
+    .fold(
+        move || first.clone(),
+        |lhs, (op, rhs)| ast::ArraySize::Binary(Box::new(ast::ArraySizeBinary { lhs, op, rhs })),
+    )
+    .parse_next(input)
+}
+
+fn array_size<'a>(input: &mut Input<'a>) -> ModalResult<ast::ArraySize<'a>> {
+    array_size_bitwise.parse_next(input)
+}
+
 fn array_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::Type<'a>> {
     delimited(
         padded('['),
-        (type_parser, opt(preceded(padded(';'), expr))),
+        (
+            array_elem_type,
+            opt(preceded(padded(';'), array_size)).map(|s| s.unwrap_or(ast::ArraySize::Unsized)),
+        ),
         padded(']'),
     )
-    .map(|(elem_ty, size_expr)| ast::Type::Array(Box::new(ast::ArrayType { elem_ty, size_expr })))
+    .map(|(elem_ty, size)| ast::Type::Array(ast::ArrayType { elem_ty, size }))
     .parse_next(input)
 }
 

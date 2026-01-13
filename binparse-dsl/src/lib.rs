@@ -8,12 +8,7 @@ pub enum Primitive {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum BinaryOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
+pub enum BoolBinaryOp {
     Eq,
     Neq,
     Lt,
@@ -22,14 +17,29 @@ pub enum BinaryOp {
     Ge,
     And,
     Or,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NumericBinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
     BitAnd,
     BitOr,
     BitXor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BinaryOp {
+    Bool(BoolBinaryOp),
+    Numeric(NumericBinaryOp),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct IntLiteral {
-    pub value: u128,
+    pub value: usize,
     pub width: u8,
     pub ty: IntType,
 }
@@ -117,9 +127,31 @@ pub struct Union<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum ArrayElemType<'a> {
+    BitField(u8),
+    Primitive(Primitive),
+    StructRef(&'a str), // Reference to another struct
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ArraySize<'a> {
+    Unsized,
+    Path(Vec<&'a str>),
+    Int(IntLiteral),
+    Binary(Box<ArraySizeBinary<'a>>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArraySizeBinary<'a> {
+    pub lhs: ArraySize<'a>,
+    pub op: NumericBinaryOp,
+    pub rhs: ArraySize<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArrayType<'a> {
-    pub elem_ty: Type<'a>,
-    pub size_expr: Option<Expr<'a>>,
+    pub elem_ty: ArrayElemType<'a>,
+    pub size: ArraySize<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -132,7 +164,7 @@ pub struct ConcatItem<'a> {
 pub enum Type<'a> {
     BitField(u8), // b<N>
     Primitive(Primitive),
-    Array(Box<ArrayType<'a>>),
+    Array(ArrayType<'a>),
     StructRef(&'a str),          // Reference to another struct
     Concat(Vec<ConcatItem<'a>>), // concat(@attr type, ...)
     Union(Union<'a>),            // union(...) { ... }

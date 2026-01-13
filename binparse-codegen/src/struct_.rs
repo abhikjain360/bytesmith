@@ -16,8 +16,8 @@ pub(crate) struct StructCtx<'a> {
 
 #[expect(dead_code)]
 pub(crate) struct DoneField<'a> {
-    origin: &'a ast::Field<'a>,
-    len: Option<Len>,
+    pub(crate) origin: &'a ast::Field<'a>,
+    pub(crate) len: Option<Len>,
     pub(crate) offset_getter_fn_name: syn::Ident,
 }
 
@@ -54,6 +54,7 @@ impl<'a> StructCtx<'a> {
     pub(crate) fn generate(mut self) -> Result<GeneratedStruct, Error> {
         let mut field_definitions = TokenStream::new();
         let mut functions = TokenStream::new();
+        let mut other_entities = TokenStream::new();
 
         let mut last_offset_getter_fn_name = None;
 
@@ -67,8 +68,10 @@ impl<'a> StructCtx<'a> {
                 })?;
 
                 field_definitions.extend(generated.definitions);
+                functions.extend(generated.helper_fns);
                 functions.extend(generated.field_getter);
                 functions.extend(generated.offset_getter);
+                other_entities.extend(generated.helper_entities);
 
                 self.offset = match (self.offset, generated.len) {
                     (Some(current), Some(field_len)) => Some(current + field_len),
