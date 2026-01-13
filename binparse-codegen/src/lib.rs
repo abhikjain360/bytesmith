@@ -7,6 +7,7 @@ use struct_::*;
 
 mod field;
 mod struct_;
+mod type_;
 
 pub struct CodeGen<'a> {
     todo: HashMap<&'a str, Todo<'a>>,

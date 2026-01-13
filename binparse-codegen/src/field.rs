@@ -6,6 +6,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::struct_::{DoneField, GeneratedStruct};
+use crate::type_;
 
 pub(crate) struct FieldCtx<'a> {
     pub(crate) field: &'a ast::Field<'a>,
@@ -16,14 +17,10 @@ pub(crate) struct FieldCtx<'a> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("type needs alignment but is not aligned itself")]
-    UnalignedType,
-    #[error("type needs alignment, but the start offset ({0:?}) is not aligned")]
-    InvalidAlignment(Len),
+    #[error("type generation error: {0}")]
+    Type(#[from] type_::Error),
     #[error("cannot determine field offset: no start offset and no previous fields")]
     UnknownOffset,
-    #[error("unknown type: {0}")]
-    UnknownType(String),
 }
 
 pub(crate) struct GeneratedField {
@@ -50,43 +47,19 @@ impl<'a> FieldCtx<'a> {
     }
 
     pub(crate) fn generate(self) -> Result<GeneratedField, Error> {
-        // TODO: we need to handle lens which depend on some previous field, probably by making
-        //       the `GeneratedField.len` it's own enum type
         let field_name = format_ident!("{}", self.field.name);
         let offset_getter_fn_name = format_ident!("{}_end_offset", field_name);
 
         let (len, definitions, field_getter) = match &self.field.value {
-            ast::FieldValue::Type(ty) => match ty {
-                ast::Type::BitField(width) => self
-                    .generate_type_bitfield_field_getter(
-                        *width as usize,
-                        &field_name,
-                        self.start_offset,
-                    )
-                    .map(|(len, definitions, field_getters)| {
-                        (Some(len), definitions, field_getters)
-                    })?,
-
-                ast::Type::Primitive(p) => self
-                    .generate_type_primitive_field_getter(p, &field_name, self.start_offset)
-                    .map(|(len, definitions, field_getters)| {
-                        (Some(len), definitions, field_getters)
-                    })?,
-
-                ast::Type::StructRef(struct_name) => self.generate_type_struct_ref_field_getter(
-                    struct_name,
-                    &field_name,
-                    self.start_offset,
-                )?,
-
-                ast::Type::Concat(items) => self
-                    .generate_type_concat_field_getter(items, &field_name, self.start_offset)
-                    .map(|(len, definitions, field_getters)| {
-                        (Some(len), definitions, field_getters)
-                    })?,
-
-                _ => todo!(),
-            },
+            ast::FieldValue::Type(ty) => {
+                let type_::GeneratedType {
+                    len,
+                    definitions,
+                    field_getter,
+                    ..
+                } = type_::generate(ty, &field_name, self.start_offset, self.done)?;
+                (len, definitions, field_getter)
+            }
 
             ast::FieldValue::Constraint(_) => todo!(),
         };
@@ -143,222 +116,5 @@ impl<'a> FieldCtx<'a> {
             offset_getter,
             field_getter,
         })
-    }
-
-    fn generate_type_primitive_field_getter(
-        &self,
-        primitive: &ast::Primitive,
-        field_name: &syn::Ident,
-        start_offset: Option<Len>,
-    ) -> Result<(Len, TokenStream, TokenStream), Error> {
-        let (len, def) = match_primitive(primitive);
-
-        match (start_offset, self.done_fields.last()) {
-            (Some(offset), _) => {
-                if offset.bit != 0 {
-                    return Err(Error::InvalidAlignment(offset));
-                }
-
-                let end = offset + len;
-
-                let start_byte = offset.byte;
-                let end_byte = end.byte;
-
-                let field_getter = quote! {
-                    pub fn #field_name(&self) -> #def {
-                        #def::from_ne_bytes(self.data[#start_byte..#end_byte].try_into().unwrap())
-                    }
-                };
-
-                Ok((len, quote! {}, field_getter))
-            }
-
-            (None, None) => Err(Error::UnknownOffset),
-
-            _ => todo!(),
-        }
-    }
-
-    fn generate_type_bitfield_field_getter(
-        &self,
-        width: usize,
-        field_name: &syn::Ident,
-        start_offset: Option<Len>,
-    ) -> Result<(Len, TokenStream, TokenStream), Error> {
-        let len = Len {
-            byte: 0,
-            bit: width,
-        };
-
-        match (start_offset, self.done_fields.last()) {
-            (Some(offset), _) => {
-                let start_byte = offset.byte;
-                let start_bit = offset.bit;
-
-                let field_getter = if start_bit + width <= 8 {
-                    let mask = (1u8 << width) - 1;
-                    quote! {
-                        #[allow(clippy::identity_op)]
-                        pub fn #field_name(&self) -> u8 {
-                            (self.data[#start_byte] >> #start_bit) & #mask
-                        }
-                    }
-                } else {
-                    let bits_in_first_byte = 8 - start_bit;
-                    let bits_in_second_byte = width - bits_in_first_byte;
-                    let first_mask = (1u8 << bits_in_first_byte) - 1;
-                    let second_mask = (1u8 << bits_in_second_byte) - 1;
-                    let second_byte = start_byte + 1;
-
-                    quote! {
-                        #[allow(clippy::identity_op)]
-                        pub fn #field_name(&self) -> u8 {
-                            let first_part = (self.data[#start_byte] >> #start_bit) & #first_mask;
-                            let second_part = self.data[#second_byte] & #second_mask;
-                            first_part | (second_part << #bits_in_first_byte)
-                        }
-                    }
-                };
-
-                Ok((len, quote! {}, field_getter))
-            }
-
-            (None, None) => Err(Error::UnknownOffset),
-
-            _ => todo!(),
-        }
-    }
-
-    fn generate_type_concat_field_getter(
-        &self,
-        items: &[ast::ConcatItem],
-        field_name: &syn::Ident,
-        start_offset: Option<Len>,
-    ) -> Result<(Len, TokenStream, TokenStream), Error> {
-        let mut total_len = Len::default();
-        let mut field_types = Vec::new();
-        let mut field_exprs = TokenStream::new();
-        let mut sub_getters = TokenStream::new();
-
-        let start_offset = match start_offset {
-            Some(o) => o,
-            None => return Err(Error::UnknownOffset),
-        };
-        let mut current_offset = start_offset;
-
-        for (i, item) in items.iter().enumerate() {
-            let item_name = format_ident!("{}_{}", field_name, i);
-            let (item_len, definitions, field_getter, return_ty) = match &item.ty {
-                ast::Type::Primitive(primitive) => {
-                    let (len, return_ty) = match_primitive(primitive);
-                    let (_, definiitions, field_getter) = self
-                        .generate_type_primitive_field_getter(
-                            primitive,
-                            &item_name,
-                            Some(current_offset),
-                        )?;
-                    (len, definiitions, field_getter, return_ty)
-                }
-
-                ast::Type::BitField(width) => {
-                    let width = *width as usize;
-                    let len = Len {
-                        byte: 0,
-                        bit: width,
-                    };
-                    let return_ty = quote! { u8 };
-                    let (_, definitions, field_getter) = self.generate_type_bitfield_field_getter(
-                        width,
-                        &item_name,
-                        Some(current_offset),
-                    )?;
-                    (len, definitions, field_getter, return_ty)
-                }
-
-                ast::Type::Concat(inner_items) => {
-                    let (len, definitions, field_getter) = self.generate_type_concat_field_getter(
-                        inner_items,
-                        &item_name,
-                        Some(current_offset),
-                    )?;
-                    let inner_types: Vec<TokenStream> = inner_items
-                        .iter()
-                        .map(|inner_item| match &inner_item.ty {
-                            ast::Type::Primitive(p) => match_primitive(p).1,
-                            ast::Type::BitField(_) => quote! { u8 },
-                            _ => todo!(),
-                        })
-                        .collect();
-                    let return_ty = quote! { ( #(#inner_types),* ) };
-                    (len, definitions, field_getter, return_ty)
-                }
-
-                _ => todo!("impl other types for concat"),
-            };
-
-            sub_getters.extend(definitions);
-            sub_getters.extend(field_getter);
-            field_types.push(return_ty);
-            field_exprs.extend(quote! { self.#item_name(), });
-
-            total_len = total_len + item_len;
-            current_offset = current_offset + item_len;
-        }
-
-        let field_getter = quote! {
-            #sub_getters
-
-            pub fn #field_name(&self) -> ( #(#field_types),* ) {
-                ( #field_exprs )
-            }
-        };
-
-        Ok((total_len, quote! {}, field_getter))
-    }
-
-    fn generate_type_struct_ref_field_getter(
-        &self,
-        struct_name: &str,
-        field_name: &syn::Ident,
-        start_offset: Option<Len>,
-    ) -> Result<(Option<Len>, TokenStream, TokenStream), Error> {
-        let generated_struct = self
-            .done
-            .get(struct_name)
-            .ok_or_else(|| Error::UnknownType(struct_name.to_string()))?;
-
-        let len = generated_struct.len;
-        let struct_ident = format_ident!("{}", struct_name);
-
-        match (start_offset, self.done_fields.last()) {
-            (Some(offset), _) => {
-                if offset.bit != 0 {
-                    return Err(Error::InvalidAlignment(offset));
-                }
-                let start_byte = offset.byte;
-
-                let field_getter = quote! {
-                    pub fn #field_name(&self) -> #struct_ident<'_> {
-                        #struct_ident::parse(&self.data[#start_byte..]).unwrap().0
-                    }
-                };
-
-                Ok((len, quote! {}, field_getter))
-            }
-
-            (None, None) => Err(Error::UnknownOffset),
-
-            _ => todo!(),
-        }
-    }
-}
-
-fn match_primitive(primitive: &ast::Primitive) -> (Len, TokenStream) {
-    match primitive {
-        ast::Primitive::U8 => (Len { byte: 1, bit: 0 }, quote! { u8 }),
-        ast::Primitive::U16 => (Len { byte: 2, bit: 0 }, quote! { u16 }),
-        ast::Primitive::U32 => (Len { byte: 4, bit: 0 }, quote! { u32 }),
-        ast::Primitive::U64 => (Len { byte: 8, bit: 0 }, quote! { u64 }),
-        ast::Primitive::U128 => (Len { byte: 16, bit: 0 }, quote! { u128 }),
     }
 }
