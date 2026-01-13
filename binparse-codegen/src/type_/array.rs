@@ -4,7 +4,17 @@ use quote::{format_ident, quote};
 
 use crate::struct_::{DoneField, GeneratedStruct};
 
-use super::{Error, GeneratedType, primitive::match_primitive};
+use super::{GeneratedType, primitive::match_primitive};
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("array size path is empty")]
+    EmptyPath,
+    #[error("array size path references unknown field '{0}'")]
+    UnknownField(String),
+    #[error("array size path must reference a primitive or bitfield, not '{0}'")]
+    InvalidSizeType(String),
+}
 
 pub(crate) struct ArrayCtx<'a, 'b> {
     pub(crate) array_type: &'a ast::ArrayType<'a>,
@@ -15,14 +25,14 @@ pub(crate) struct ArrayCtx<'a, 'b> {
 }
 
 impl ArrayCtx<'_, '_> {
-    pub(crate) fn generate(self) -> Result<GeneratedType, Error> {
+    pub(crate) fn generate(self) -> Result<GeneratedType, super::Error> {
         match self.start_offset {
             Some(start_offset) => {
                 if start_offset.bit != 0 {
-                    return Err(Error::InvalidAlignment(start_offset));
+                    return Err(super::Error::InvalidAlignment(start_offset));
                 }
 
-                let count = self.generate_array_size(&self.array_type.size);
+                let (count, static_count) = self.generate_array_size(&self.array_type.size)?;
 
                 let offset = match self.done_fields.last() {
                     Some(DoneField {
@@ -62,11 +72,11 @@ impl ArrayCtx<'_, '_> {
                         }
 
                         ast::ArrayElemType::StructRef(struct_name) => {
-                            let generated_struct = self
-                                .done
-                                .get(*struct_name)
-                                .ok_or_else(|| Error::UnknownType(struct_name.to_string()))?;
-                            let len = generated_struct.len.ok_or(Error::UnsizedType)?;
+                            let generated_struct =
+                                self.done.get(*struct_name).ok_or_else(|| {
+                                    super::Error::UnknownType(struct_name.to_string())
+                                })?;
+                            let len = generated_struct.len.ok_or(super::Error::UnsizedType)?;
                             let struct_ident = format_ident!("{}", struct_name);
                             let return_ty = quote! { #struct_ident<'_> };
                             let iterator_fields = quote! {
@@ -154,7 +164,7 @@ impl ArrayCtx<'_, '_> {
                 };
 
                 Ok(GeneratedType {
-                    len: Some(elem_len * count),
+                    len: static_count.map(|c| elem_len * c),
                     definitions: quote! {},
                     helper_fns: quote! {},
                     helper_entities,
@@ -167,12 +177,38 @@ impl ArrayCtx<'_, '_> {
         }
     }
 
-    fn generate_array_size(&self, size: &ast::ArraySize) -> usize {
+    fn generate_array_size(
+        &self,
+        size: &ast::ArraySize,
+    ) -> Result<(proc_macro2::TokenStream, Option<usize>), Error> {
         match size {
             ast::ArraySize::Unsized => todo!("try from attributes"),
-            ast::ArraySize::Path(_) => todo!(),
 
-            ast::ArraySize::Int(ast::IntLiteral { value, .. }) => *value,
+            ast::ArraySize::Path(path) => {
+                let field_name = path.first().ok_or(Error::EmptyPath)?;
+                let done_field = self
+                    .done_fields
+                    .iter()
+                    .find(|f| f.origin.name == *field_name)
+                    .ok_or_else(|| Error::UnknownField(field_name.to_string()))?;
+
+                match &done_field.origin.value {
+                    ast::FieldValue::Type(ty) => match ty {
+                        ast::Type::Primitive(_) | ast::Type::BitField(_) => {
+                            let getter = format_ident!("{}", field_name);
+                            Ok((quote! { self.#getter() as usize }, None))
+                        }
+
+                        other => Err(Error::InvalidSizeType(format!("{:?}", other))),
+                    },
+                    ast::FieldValue::Constraint(_) => todo!(),
+                }
+            }
+
+            ast::ArraySize::Int(ast::IntLiteral { value, .. }) => {
+                let v = *value;
+                Ok((quote! { #v }, Some(v)))
+            }
 
             ast::ArraySize::Binary(_) => todo!(),
         }

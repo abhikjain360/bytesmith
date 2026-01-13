@@ -33,6 +33,8 @@ pub enum Error {
     UnknownType(String),
     #[error(transparent)]
     Concat(#[from] concat::Error),
+    #[error(transparent)]
+    Array(#[from] array::Error),
 }
 
 pub(crate) struct TypeCtx<'a> {
