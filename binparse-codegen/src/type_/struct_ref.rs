@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 
-use binparse::Len;
 use quote::{format_ident, quote};
 
 use crate::struct_::GeneratedStruct;
 
-use super::{Error, GeneratedType};
+use super::{Error, GeneratedLen, GeneratedType};
 
 pub(crate) struct StructRefCtx<'a, 'b> {
     pub(crate) struct_name: &'a str,
-    pub(crate) start_offset: Option<Len>,
+    pub(crate) start_offset: GeneratedLen,
     pub(crate) done: &'b HashMap<&'a str, GeneratedStruct>,
 }
 
@@ -20,12 +19,12 @@ impl StructRefCtx<'_, '_> {
             .get(self.struct_name)
             .ok_or_else(|| Error::UnknownType(self.struct_name.to_string()))?;
 
-        let len = generated_struct.len;
+        let len = generated_struct.len.clone();
         let struct_ident = format_ident!("{}", self.struct_name);
         let return_ty = quote! { #struct_ident<'_> };
 
         match self.start_offset {
-            Some(offset) => {
+            GeneratedLen::Fixed(offset) => {
                 if offset.bit != 0 {
                     return Err(Error::InvalidAlignment(offset));
                 }
@@ -45,7 +44,7 @@ impl StructRefCtx<'_, '_> {
                 })
             }
 
-            None => todo!(),
+            GeneratedLen::Dynamic(_) => todo!(),
         }
     }
 }

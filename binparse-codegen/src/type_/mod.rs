@@ -4,7 +4,10 @@ use binparse::Len;
 use binparse_dsl as ast;
 use proc_macro2::TokenStream;
 
-use crate::struct_::{DoneField, GeneratedStruct};
+use crate::{
+    GeneratedLen,
+    struct_::{DoneField, GeneratedStruct},
+};
 
 pub(crate) mod array;
 pub(crate) mod bitfield;
@@ -13,7 +16,7 @@ pub(crate) mod primitive;
 pub(crate) mod struct_ref;
 
 pub(crate) struct GeneratedType {
-    pub(crate) len: Option<Len>,
+    pub(crate) len: GeneratedLen,
     pub(crate) definitions: TokenStream,
     pub(crate) helper_fns: TokenStream,
     pub(crate) helper_entities: TokenStream,
@@ -46,7 +49,7 @@ impl<'a> TypeCtx<'a> {
         &self,
         ty: &ast::Type,
         field_name: &syn::Ident,
-        start_offset: Option<Len>,
+        start_offset: GeneratedLen,
         done_fields: &'a [DoneField<'a>],
     ) -> Result<GeneratedType, Error> {
         match ty {

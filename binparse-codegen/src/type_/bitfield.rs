@@ -1,11 +1,14 @@
 use binparse::Len;
 use quote::quote;
 
-use super::{Error, GeneratedType};
+use crate::{
+    GeneratedLen,
+    type_::{Error, GeneratedType},
+};
 
 pub(crate) struct BitFieldCtx {
     pub(crate) width: usize,
-    pub(crate) start_offset: Option<Len>,
+    pub(crate) start_offset: GeneratedLen,
 }
 
 impl BitFieldCtx {
@@ -17,7 +20,7 @@ impl BitFieldCtx {
         let return_ty = quote! { u8 };
 
         match self.start_offset {
-            Some(offset) => {
+            GeneratedLen::Fixed(offset) => {
                 let start_byte = offset.byte;
                 let start_bit = offset.bit;
 
@@ -43,7 +46,7 @@ impl BitFieldCtx {
                 };
 
                 Ok(GeneratedType {
-                    len: Some(len),
+                    len: GeneratedLen::Fixed(len),
                     definitions: quote! {},
                     helper_fns: quote! {},
                     helper_entities: quote! {},
@@ -52,7 +55,7 @@ impl BitFieldCtx {
                 })
             }
 
-            None => todo!(),
+            GeneratedLen::Dynamic(_) => todo!(),
         }
     }
 }

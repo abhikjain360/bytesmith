@@ -1,7 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::{Add, Mul},
+};
 
+use binparse::Len;
 use binparse_dsl as ast;
 use proc_macro2::TokenStream;
+use quote::quote;
 
 use struct_::*;
 
@@ -31,6 +36,42 @@ impl<'a> Todo<'a> {
             origin,
             dependencies: HashSet::new(),
             dependants: HashSet::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum GeneratedLen {
+    Fixed(Len),
+    Dynamic(TokenStream),
+}
+
+impl Add for GeneratedLen {
+    type Output = GeneratedLen;
+
+    fn add(self, other: Self) -> Self::Output {
+        match (self, other) {
+            (GeneratedLen::Dynamic(a), GeneratedLen::Fixed(Len { byte, bit })) => {
+                GeneratedLen::Dynamic(quote! { #a + ::binparse::Len { byte: #byte, bit: #bit } })
+            }
+            (GeneratedLen::Fixed(Len { byte, bit }), GeneratedLen::Dynamic(a)) => {
+                GeneratedLen::Dynamic(quote! { ::binparse::Len { byte: #byte, bit: #bit } + #a })
+            }
+            (GeneratedLen::Dynamic(a), GeneratedLen::Dynamic(b)) => {
+                GeneratedLen::Dynamic(quote! { #a + #b })
+            }
+            (GeneratedLen::Fixed(a), GeneratedLen::Fixed(b)) => GeneratedLen::Fixed(a + b),
+        }
+    }
+}
+
+impl Mul<usize> for GeneratedLen {
+    type Output = GeneratedLen;
+
+    fn mul(self, other: usize) -> Self::Output {
+        match self {
+            GeneratedLen::Dynamic(a) => GeneratedLen::Dynamic(quote! { #a * #other }),
+            GeneratedLen::Fixed(a) => GeneratedLen::Fixed(a * other),
         }
     }
 }
@@ -180,5 +221,30 @@ fn find_conditional_dependencies<'a>(
     find_dependencies(&conditional.then_branch, dependencies);
     if let Some(else_branch) = &conditional.else_branch {
         find_dependencies(else_branch, dependencies);
+    }
+}
+
+fn match_binop(binop: ast::NumericBinaryOp) -> (TokenStream, Box<dyn Fn(usize, usize) -> usize>) {
+    use ast::NumericBinaryOp::*;
+
+    match binop {
+        Add => (quote! { + }, Box::new(|a, b| a + b)),
+        Sub => (quote! { - }, Box::new(|a, b| a - b)),
+        Mul => (quote! { * }, Box::new(|a, b| a * b)),
+        Div => (quote! { / }, Box::new(|a, b| a / b)),
+        Mod => (quote! { % }, Box::new(|a, b| a % b)),
+        BitAnd => (quote! { & }, Box::new(|a, b| a & b)),
+        BitOr => (quote! { | }, Box::new(|a, b| a | b)),
+        BitXor => (quote! { ^ }, Box::new(|a, b| a ^ b)),
+    }
+}
+
+fn match_primitive(primitive: &ast::Primitive) -> (Len, TokenStream) {
+    match primitive {
+        ast::Primitive::U8 => (Len { byte: 1, bit: 0 }, quote! { u8 }),
+        ast::Primitive::U16 => (Len { byte: 2, bit: 0 }, quote! { u16 }),
+        ast::Primitive::U32 => (Len { byte: 4, bit: 0 }, quote! { u32 }),
+        ast::Primitive::U64 => (Len { byte: 8, bit: 0 }, quote! { u64 }),
+        ast::Primitive::U128 => (Len { byte: 16, bit: 0 }, quote! { u128 }),
     }
 }

@@ -5,11 +5,11 @@ use binparse_dsl as ast;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::field::FieldCtx;
+use crate::{GeneratedLen, field::FieldCtx};
 
 pub(crate) struct StructCtx<'a> {
     pub(crate) origin: &'a ast::Struct<'a>,
-    pub(crate) offset: Option<Len>,
+    pub(crate) offset: GeneratedLen,
     done_fields: Vec<DoneField<'a>>,
     pub(crate) done: &'a HashMap<&'a str, GeneratedStruct>,
 }
@@ -17,12 +17,12 @@ pub(crate) struct StructCtx<'a> {
 #[expect(dead_code)]
 pub(crate) struct DoneField<'a> {
     pub(crate) origin: &'a ast::Field<'a>,
-    pub(crate) len: Option<Len>,
+    pub(crate) len: GeneratedLen,
     pub(crate) offset_getter_fn_name: syn::Ident,
 }
 
 pub(crate) struct GeneratedStruct {
-    pub(crate) len: Option<Len>,
+    pub(crate) len: GeneratedLen,
     pub(crate) tokens: TokenStream,
 }
 
@@ -45,7 +45,7 @@ impl<'a> StructCtx<'a> {
     ) -> Self {
         Self {
             origin,
-            offset: Some(Len { byte: 0, bit: 0 }),
+            offset: GeneratedLen::Fixed(Len { byte: 0, bit: 0 }),
             done_fields: vec![],
             done,
         }
@@ -60,7 +60,7 @@ impl<'a> StructCtx<'a> {
 
         for item in &self.origin.items {
             if let ast::StructItem::Field(field) = item {
-                let current_offset = self.offset;
+                let current_offset = self.offset.clone();
                 let field_ctx = FieldCtx::new(field, current_offset, &self.done_fields, self.done);
                 let generated = field_ctx.generate().map_err(|error| Error::Field {
                     name: field.name.to_string(),
@@ -73,10 +73,7 @@ impl<'a> StructCtx<'a> {
                 functions.extend(generated.offset_getter);
                 other_entities.extend(generated.helper_entities);
 
-                self.offset = match (self.offset, generated.len) {
-                    (Some(current), Some(field_len)) => Some(current + field_len),
-                    _ => None,
-                };
+                self.offset = self.offset + generated.len.clone();
 
                 last_offset_getter_fn_name = Some(generated.offset_getter_fn_name.clone());
 
@@ -113,6 +110,8 @@ impl<'a> StructCtx<'a> {
         };
 
         let tokens = quote! {
+            #other_entities
+
             pub struct #name<'a> {
                 data: &'a [u8],
                 #field_definitions

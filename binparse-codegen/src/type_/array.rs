@@ -2,9 +2,12 @@ use binparse::Len;
 use binparse_dsl as ast;
 use quote::{format_ident, quote};
 
-use crate::struct_::{DoneField, GeneratedStruct};
+use crate::{
+    GeneratedLen,
+    struct_::{DoneField, GeneratedStruct},
+};
 
-use super::{GeneratedType, primitive::match_primitive};
+use super::GeneratedType;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -19,7 +22,7 @@ pub enum Error {
 pub(crate) struct ArrayCtx<'a, 'b> {
     pub(crate) array_type: &'a ast::ArrayType<'a>,
     pub(crate) field_name: &'b syn::Ident,
-    pub(crate) start_offset: Option<Len>,
+    pub(crate) start_offset: GeneratedLen,
     pub(crate) done_fields: &'a [DoneField<'a>],
     pub(crate) done: &'b std::collections::HashMap<&'a str, GeneratedStruct>,
 }
@@ -27,7 +30,7 @@ pub(crate) struct ArrayCtx<'a, 'b> {
 impl ArrayCtx<'_, '_> {
     pub(crate) fn generate(self) -> Result<GeneratedType, super::Error> {
         match self.start_offset {
-            Some(start_offset) => {
+            GeneratedLen::Fixed(start_offset) => {
                 if start_offset.bit != 0 {
                     return Err(super::Error::InvalidAlignment(start_offset));
                 }
@@ -51,8 +54,8 @@ impl ArrayCtx<'_, '_> {
                 let (elem_len, elem_return_ty, iterator_fields, iterator_init, next_body) =
                     match &self.array_type.elem_ty {
                         ast::ArrayElemType::Primitive(prim) => {
-                            let (len, prim_ty) = match_primitive(prim);
-                            let byte_len = len.byte;
+                            let (prim_len, prim_ty) = crate::match_primitive(prim);
+                            let byte_len = prim_len.byte;
                             let iterator_fields = quote! {
                                 idx: usize,
                                 count: usize,
@@ -68,7 +71,13 @@ impl ArrayCtx<'_, '_> {
                                 self.data = &self.data[#byte_len..];
                                 Some(Ok(value))
                             };
-                            (len, prim_ty, iterator_fields, iterator_init, next_body)
+                            (
+                                GeneratedLen::Fixed(prim_len),
+                                prim_ty,
+                                iterator_fields,
+                                iterator_init,
+                                next_body,
+                            )
                         }
 
                         ast::ArrayElemType::StructRef(struct_name) => {
@@ -76,7 +85,6 @@ impl ArrayCtx<'_, '_> {
                                 self.done.get(*struct_name).ok_or_else(|| {
                                     super::Error::UnknownType(struct_name.to_string())
                                 })?;
-                            let len = generated_struct.len.ok_or(super::Error::UnsizedType)?;
                             let struct_ident = format_ident!("{}", struct_name);
                             let return_ty = quote! { #struct_ident<'_> };
                             let iterator_fields = quote! {
@@ -96,7 +104,13 @@ impl ArrayCtx<'_, '_> {
                                 }
                                 Some(ret)
                             };
-                            (len, return_ty, iterator_fields, iterator_init, next_body)
+                            (
+                                generated_struct.len.clone(),
+                                return_ty,
+                                iterator_fields,
+                                iterator_init,
+                                next_body,
+                            )
                         }
 
                         ast::ArrayElemType::BitField(width) => {
@@ -136,7 +150,13 @@ impl ArrayCtx<'_, '_> {
                                 self.bit_offset += #width;
                                 Some(Ok(value))
                             };
-                            (len, return_ty, iterator_fields, iterator_init, next_body)
+                            (
+                                GeneratedLen::Fixed(len),
+                                return_ty,
+                                iterator_fields,
+                                iterator_init,
+                                next_body,
+                            )
                         }
                     };
 
@@ -158,22 +178,37 @@ impl ArrayCtx<'_, '_> {
                 };
 
                 let field_getter_body = quote! {
-                    #iterator_name {
+                    Ok(#iterator_name {
                         #iterator_init
-                    }
+                    })
+                };
+
+                let len = match static_count {
+                    Some(count) => elem_len * count,
+                    None => match elem_len {
+                        GeneratedLen::Fixed(Len { byte, bit }) => GeneratedLen::Dynamic(quote! {
+                            let count = #count;
+                            let extra_bits = #bit * count;
+                            ::binparse::Len {
+                                byte: #byte * count + (extra_bits / 8),
+                                bit: extra_bits % 8,
+                            }
+                        }),
+                        GeneratedLen::Dynamic(a) => GeneratedLen::Dynamic(quote! { #a * #count }),
+                    },
                 };
 
                 Ok(GeneratedType {
-                    len: static_count.map(|c| elem_len * c),
+                    len,
                     definitions: quote! {},
                     helper_fns: quote! {},
                     helper_entities,
                     field_getter_body,
-                    return_ty: quote! { #iterator_name },
+                    return_ty: quote! { ::binparse::ParseResult<#iterator_name> },
                 })
             }
 
-            None => todo!(),
+            GeneratedLen::Dynamic(_) => todo!(),
         }
     }
 
@@ -210,7 +245,18 @@ impl ArrayCtx<'_, '_> {
                 Ok((quote! { #v }, Some(v)))
             }
 
-            ast::ArraySize::Binary(_) => todo!(),
+            ast::ArraySize::Binary(array_size) => {
+                let (lhs_tokens, lhs_count) = self.generate_array_size(&array_size.lhs)?;
+                let (rhs_tokens, rhs_count) = self.generate_array_size(&array_size.rhs)?;
+                let (op_tokens, op_fn) = crate::match_binop(array_size.op);
+
+                Ok((
+                    quote! { #op_tokens(#lhs_tokens, #rhs_tokens) as usize },
+                    lhs_count.and_then(|lhs_count| {
+                        rhs_count.map(|rhs_count| op_fn(lhs_count, rhs_count))
+                    }),
+                ))
+            }
         }
     }
 }
