@@ -36,17 +36,21 @@ impl UnionCtx<'_, '_> {
             todo!("multi-discriminant unions");
         }
 
-        let GeneratedLen::Fixed(start_offset) = self.start_offset else {
-            todo!("dynamic start offset for unions");
+        let start_byte: TokenStream = match &self.start_offset {
+            GeneratedLen::Fixed(offset) => {
+                if offset.bit != 0 {
+                    return Err(type_::Error::InvalidAlignment(*offset));
+                }
+                let byte = offset.byte;
+                quote! { #byte }
+            }
+            GeneratedLen::Dynamic(tokens) => {
+                quote! { (#tokens).byte }
+            }
         };
-
-        if start_offset.bit != 0 {
-            return Err(type_::Error::InvalidAlignment(start_offset));
-        }
 
         let discriminant = format_ident!("{}", self.union.args[0]);
         let enum_name = format_ident!("{}_{}", self.parent_struct_name, self.field_name);
-        let start_byte = start_offset.byte;
 
         let mut variant_structs = TokenStream::new();
         let mut enum_variants = TokenStream::new();
