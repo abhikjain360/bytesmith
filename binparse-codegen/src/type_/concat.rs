@@ -6,7 +6,7 @@ use quote::{format_ident, quote};
 use crate::{
     GeneratedLen,
     struct_::{DoneField, GeneratedStruct},
-    type_::{GeneratedType, TypeCtx},
+    type_::{self, GeneratedType, TypeCtx},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -25,7 +25,7 @@ pub(crate) struct ConcatCtx<'a, 'b> {
 }
 
 impl ConcatCtx<'_, '_> {
-    pub(crate) fn generate(self) -> Result<GeneratedType, super::Error> {
+    pub(crate) fn generate(self) -> Result<GeneratedType, type_::Error> {
         match self.start_offset {
             GeneratedLen::Fixed(start_offset) => {
                 let mut total_len = GeneratedLen::Fixed(Len::default());

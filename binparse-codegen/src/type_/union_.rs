@@ -9,9 +9,8 @@ use crate::{
     GeneratedLen,
     field::FieldCtx,
     struct_::{DoneField, GeneratedStruct},
+    type_::{self, GeneratedType},
 };
-
-use super::GeneratedType;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -42,7 +41,7 @@ impl UnionCtx<'_, '_> {
         };
 
         if start_offset.bit != 0 {
-            return Err(super::Error::InvalidAlignment(start_offset));
+            return Err(type_::Error::InvalidAlignment(start_offset));
         }
 
         let discriminant = format_ident!("{}", self.union.args[0]);
@@ -60,12 +59,15 @@ impl UnionCtx<'_, '_> {
             };
 
             let variant_ident = format_ident!("{}", variant_name);
-            let struct_name = format_ident!("{}_{}_{}", self.parent_struct_name, self.field_name, variant_name);
+            let struct_name = format_ident!(
+                "{}_{}_{}",
+                self.parent_struct_name,
+                self.field_name,
+                variant_name
+            );
 
-            let (variant_struct, variant_len) = self.generate_variant_struct(
-                &struct_name,
-                items,
-            )?;
+            let (variant_struct, variant_len) =
+                self.generate_variant_struct(&struct_name, items)?;
             variant_structs.extend(variant_struct);
 
             enum_variants.extend(quote! {
@@ -73,12 +75,12 @@ impl UnionCtx<'_, '_> {
             });
 
             let matchers = self.generate_matchers(&variant.matchers);
-            let variant_len_byte = match &variant_len {
+            let variant_len_byte = match variant_len {
                 GeneratedLen::Fixed(len) => {
                     let byte = len.byte;
                     quote! { #byte }
                 }
-                GeneratedLen::Dynamic(tokens) => tokens.clone(),
+                GeneratedLen::Dynamic(tokens) => tokens,
             };
 
             match_arms.extend(quote! {
@@ -134,8 +136,11 @@ impl UnionCtx<'_, '_> {
                 todo!("conditional fields in union variants");
             };
 
-            let field_ctx = FieldCtx::new(field, offset.clone(), &done_fields, self.done, struct_name);
-            let generated = field_ctx.generate().map_err(|e| super::Error::Field(Box::new(e)))?;
+            let field_ctx =
+                FieldCtx::new(field, offset.clone(), &done_fields, self.done, struct_name);
+            let generated = field_ctx
+                .generate()
+                .map_err(|e| super::Error::Field(Box::new(e)))?;
 
             functions.extend(generated.field_getter);
             functions.extend(generated.offset_getter);
@@ -163,34 +168,25 @@ impl UnionCtx<'_, '_> {
         Ok((variant_struct, offset))
     }
 
-    fn generate_matchers(&self, matchers: &[ast::Expr<'_>]) -> TokenStream {
+    fn generate_matchers(&self, matchers: &[ast::UnionMatcher<'_>]) -> TokenStream {
         let patterns: Vec<TokenStream> = matchers
             .iter()
-            .map(|m| self.generate_single_matcher(m))
+            .map(|m| match m {
+                ast::UnionMatcher::Literal(ast::Literal::Int(int_lit)) => {
+                    let value = proc_macro2::Literal::usize_unsuffixed(int_lit.value);
+                    quote! { #value }
+                }
+                ast::UnionMatcher::Literal(other) => {
+                    todo!("non-integer literal matcher: {:?}", other)
+                }
+                ast::UnionMatcher::Wildcard => quote! { _ },
+            })
             .collect();
 
         if patterns.len() == 1 {
             patterns.into_iter().next().unwrap()
         } else {
             quote! { #(#patterns)|* }
-        }
-    }
-
-    fn generate_single_matcher(&self, expr: &ast::Expr<'_>) -> TokenStream {
-        match expr {
-            ast::Expr::Literal(ast::Literal::Int(int_lit)) => {
-                let value = proc_macro2::Literal::usize_unsuffixed(int_lit.value);
-                quote! { #value }
-            }
-            ast::Expr::Path(path) if path.len() == 1 && path[0] == "_" => {
-                quote! { _ }
-            }
-            ast::Expr::Binary(binary) if matches!(binary.op, ast::BinaryOp::Numeric(ast::NumericBinaryOp::BitOr)) => {
-                let lhs = self.generate_single_matcher(&binary.lhs);
-                let rhs = self.generate_single_matcher(&binary.rhs);
-                quote! { #lhs | #rhs }
-            }
-            other => todo!("complex union matchers: {:?}", other),
         }
     }
 }

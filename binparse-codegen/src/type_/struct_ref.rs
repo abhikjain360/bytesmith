@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use quote::{format_ident, quote};
 
-use crate::struct_::GeneratedStruct;
-
-use super::{Error, GeneratedLen, GeneratedType};
+use crate::{
+    struct_::GeneratedStruct,
+    type_::{Error, GeneratedLen, GeneratedType},
+};
 
 pub(crate) struct StructRefCtx<'a, 'b> {
     pub(crate) struct_name: &'a str,

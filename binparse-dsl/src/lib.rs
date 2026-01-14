@@ -106,9 +106,15 @@ pub enum StructItem<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum UnionMatcher<'a> {
+    Literal(Literal<'a>),
+    Wildcard,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnionVariant<'a> {
-    pub matchers: Vec<Expr<'a>>, // 0 | 8 => ...
-    pub body: UnionBody<'a>,     // struct definition or reference
+    pub matchers: Vec<UnionMatcher<'a>>,
+    pub body: UnionBody<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

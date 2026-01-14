@@ -549,9 +549,17 @@ fn union_body<'a>(input: &mut Input<'a>) -> ModalResult<ast::UnionBody<'a>> {
     .parse_next(input)
 }
 
+fn union_matcher<'a>(input: &mut Input<'a>) -> ModalResult<ast::UnionMatcher<'a>> {
+    padded(alt((
+        "_".map(|_| ast::UnionMatcher::Wildcard),
+        literal.map(ast::UnionMatcher::Literal),
+    )))
+    .parse_next(input)
+}
+
 fn union_variant<'a>(input: &mut Input<'a>) -> ModalResult<ast::UnionVariant<'a>> {
     seq! {ast::UnionVariant {
-        matchers: separated(1.., expr, padded('|')),
+        matchers: separated(1.., union_matcher, padded('|')),
         _: padded("=>"),
         body: union_body,
     }}
@@ -973,23 +981,6 @@ mod tests {
                     0 | 8 => Echo { id: u16, seq: u16 },
                     3 => DestUnreach { unused: u32 },
                     _ => Raw { },
-                }
-            }
-        "#;
-        parse_helper(src);
-    }
-
-    #[test]
-    fn test_tuple_union() {
-        let src = r#"
-            struct Version {
-                major: u8,
-                minor: u8,
-                data: union(major, minor) {
-                    (1, 0) => V1_0 { },
-                    (1, 1) => V1_1 { },
-                    (2, _) => V2Any { },
-                    _ => Unknown { },
                 }
             }
         "#;

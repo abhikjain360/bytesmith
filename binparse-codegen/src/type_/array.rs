@@ -5,9 +5,8 @@ use quote::{format_ident, quote};
 use crate::{
     GeneratedLen,
     struct_::{DoneField, GeneratedStruct},
+    type_::{self, GeneratedType},
 };
-
-use super::GeneratedType;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -28,11 +27,11 @@ pub(crate) struct ArrayCtx<'a, 'b> {
 }
 
 impl ArrayCtx<'_, '_> {
-    pub(crate) fn generate(self) -> Result<GeneratedType, super::Error> {
+    pub(crate) fn generate(self) -> Result<GeneratedType, type_::Error> {
         match self.start_offset {
             GeneratedLen::Fixed(start_offset) => {
                 if start_offset.bit != 0 {
-                    return Err(super::Error::InvalidAlignment(start_offset));
+                    return Err(type_::Error::InvalidAlignment(start_offset));
                 }
 
                 let (count, static_count) = self.generate_array_size(&self.array_type.size)?;
@@ -83,7 +82,7 @@ impl ArrayCtx<'_, '_> {
                         ast::ArrayElemType::StructRef(struct_name) => {
                             let generated_struct =
                                 self.done.get(*struct_name).ok_or_else(|| {
-                                    super::Error::UnknownType(struct_name.to_string())
+                                    type_::Error::UnknownType(struct_name.to_string())
                                 })?;
                             let struct_ident = format_ident!("{}", struct_name);
                             let return_ty = quote! { #struct_ident<'_> };
