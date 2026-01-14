@@ -251,7 +251,7 @@ impl ArrayCtx<'_, '_> {
                 let (op_tokens, op_fn) = crate::match_binop(array_size.op);
 
                 Ok((
-                    quote! { #op_tokens(#lhs_tokens, #rhs_tokens) as usize },
+                    quote! { (#lhs_tokens #op_tokens #rhs_tokens) as usize },
                     lhs_count.and_then(|lhs_count| {
                         rhs_count.map(|rhs_count| op_fn(lhs_count, rhs_count))
                     }),

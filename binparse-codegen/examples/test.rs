@@ -1,26 +1,14 @@
 const DSL_STRING: &str = r#"
-struct IpAddr {
-    a: u8,
-    b: u8,
-    c: u8,
-    d: u8,
-}
-
-struct Header {
-    version: b<4>,
-    ihl: b<4>,
-    dscp: b<6>,
-    ecn: b<2>,
-    total_length: u16,
-    id: u16,
-    flags: b<3>,
-    fragment_offset: concat(b<5>, u8),
-    ttl: u8,
-    protocol: u8,
-    header_checksum: u16,
-    src: IpAddr,
-    dst: IpAddr,
-    options: [u8; ihl],
+struct IcmpPacket {
+    icmp_type: u8,
+    code: u8,
+    checksum: u16,
+    payload: union(icmp_type) {
+        0 | 8 => Echo { id: u16, seq: u16 },
+        3 => DestUnreachable { unused: u32 },
+        11 => TimeExceeded { unused: u32 },
+        _ => Unknown { },
+    },
 }
 "#;
 
