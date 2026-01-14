@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use binparse::Len;
 use binparse_dsl as ast;
@@ -20,6 +20,8 @@ pub enum Error {
     NoVariants,
     #[error("matcher has {got} elements but union has {expected} arguments")]
     MatcherCountMismatch { expected: usize, got: usize },
+    #[error("argument not found {0}")]
+    InvalidArgument(String),
 }
 
 pub(crate) struct UnionCtx<'a, 'b> {
@@ -27,7 +29,6 @@ pub(crate) struct UnionCtx<'a, 'b> {
     pub(crate) field_name: &'b syn::Ident,
     pub(crate) parent_struct_name: &'b syn::Ident,
     pub(crate) start_offset: GeneratedLen,
-    #[expect(dead_code)]
     pub(crate) done_fields: &'a [DoneField<'a>],
     pub(crate) done: &'b HashMap<&'a str, GeneratedStruct>,
 }
@@ -40,6 +41,19 @@ impl UnionCtx<'_, '_> {
         }
         if self.union.variants.is_empty() {
             return Err(super::Error::Union(Error::NoVariants));
+        }
+        let done_fields = self
+            .done_fields
+            .iter()
+            .map(|done| done.origin.name)
+            .collect::<HashSet<_>>();
+        if let Some(argument) = self
+            .union
+            .args
+            .iter()
+            .find(|arg| !done_fields.contains(*arg))
+        {
+            return Err(Error::InvalidArgument(argument.to_string()).into());
         }
 
         let start_byte: TokenStream = match &self.start_offset {
@@ -76,16 +90,6 @@ impl UnionCtx<'_, '_> {
         let mut len_match_arms = TokenStream::new();
 
         for variant in &self.union.variants {
-            for matcher in &variant.matchers {
-                let arity = Self::matcher_arity(matcher);
-                if arity != num_args {
-                    return Err(super::Error::Union(Error::MatcherCountMismatch {
-                        expected: num_args,
-                        got: arity,
-                    }));
-                }
-            }
-
             let ast::UnionBody::NamedInline(variant_name, items) = &variant.body else {
                 todo!("@error union variants");
             };
@@ -106,7 +110,7 @@ impl UnionCtx<'_, '_> {
                 #variant_ident(#struct_name<'a>),
             });
 
-            let matchers = self.generate_matchers(&variant.matchers);
+            let matchers = self.generate_matchers(&variant.matchers)?;
             let variant_len_byte = match variant_len {
                 GeneratedLen::Fixed(len) => {
                     let byte = len.byte;
@@ -127,6 +131,7 @@ impl UnionCtx<'_, '_> {
         let helper_entities = quote! {
             #variant_structs
 
+            #[allow(non_camel_case_types)]
             pub enum #enum_name<'a> {
                 #enum_variants
             }
@@ -161,7 +166,7 @@ impl UnionCtx<'_, '_> {
     ) -> Result<(TokenStream, GeneratedLen), super::Error> {
         let mut functions = TokenStream::new();
         let mut offset = GeneratedLen::Fixed(Len { byte: 0, bit: 0 });
-        let mut done_fields: Vec<DoneField> = vec![];
+        let mut done_fields = vec![];
 
         for item in items {
             let ast::StructItem::Field(field) = item else {
@@ -189,6 +194,7 @@ impl UnionCtx<'_, '_> {
         let variant_struct = quote! {
             #[allow(non_camel_case_types)]
             pub struct #struct_name<'a> {
+                #[allow(dead_code)]
                 data: &'a [u8],
             }
 
@@ -200,21 +206,22 @@ impl UnionCtx<'_, '_> {
         Ok((variant_struct, offset))
     }
 
-    fn generate_matchers(&self, matchers: &[ast::UnionMatcher<'_>]) -> TokenStream {
-        let patterns: Vec<TokenStream> = matchers.iter().map(Self::generate_matcher).collect();
+    fn generate_matchers(&self, matchers: &[ast::UnionMatcher<'_>]) -> Result<TokenStream, Error> {
+        let patterns = matchers
+            .iter()
+            .map(Self::generate_matcher)
+            .collect::<Vec<_>>();
 
-        if patterns.len() == 1 {
-            patterns.into_iter().next().unwrap()
-        } else {
-            quote! { #(#patterns)|* }
+        if patterns.len() != matchers.len()
+            && !(matchers.len() == 1 && matches!(matchers[1], ast::UnionMatcher::Wildcard))
+        {
+            return Err(Error::MatcherCountMismatch {
+                expected: matchers.len(),
+                got: patterns.len(),
+            });
         }
-    }
 
-    fn matcher_arity(matcher: &ast::UnionMatcher<'_>) -> usize {
-        match matcher {
-            ast::UnionMatcher::Literal(_) | ast::UnionMatcher::Wildcard => 1,
-            ast::UnionMatcher::Tuple(elements) => elements.len(),
-        }
+        Ok(quote! { #(#patterns)|* })
     }
 
     fn generate_matcher(matcher: &ast::UnionMatcher<'_>) -> TokenStream {

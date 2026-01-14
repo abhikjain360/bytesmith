@@ -63,7 +63,8 @@ impl<'a> StructCtx<'a> {
         for item in &self.origin.items {
             if let ast::StructItem::Field(field) = item {
                 let current_offset = self.offset.clone();
-                let field_ctx = FieldCtx::new(field, current_offset, &self.done_fields, self.done, &name);
+                let field_ctx =
+                    FieldCtx::new(field, current_offset, &self.done_fields, self.done, &name);
                 let generated = field_ctx.generate().map_err(|error| Error::Field {
                     name: field.name.to_string(),
                     error,
@@ -113,6 +114,7 @@ impl<'a> StructCtx<'a> {
             #other_entities
 
             pub struct #name<'a> {
+                #[allow(dead_code)]
                 data: &'a [u8],
                 #field_definitions
             }

@@ -1,12 +1,13 @@
 const DSL_STRING: &str = r#"
-struct IcmpPacket {
-    icmp_type: u8,
+struct MyPacket {
+    ty: u8,
     code: u8,
     checksum: u16,
-    payload: union(icmp_type) {
-        0 | 8 => Echo { id: u16, seq: u16 },
-        3 => DestUnreachable { unused: u32 },
-        11 => TimeExceeded { unused: u32 },
+    something: u16,
+    payload: union(ty, something) {
+        (0, 0) | (0, 8) => Echo { id: u16, seq: u16 },
+        (3, 0) => DestUnreachable { unused: u32 },
+        (11, 2) => TimeExceeded { unused: u32 },
         _ => Unknown { },
     },
 }
