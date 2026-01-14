@@ -21,6 +21,7 @@ pub(crate) struct ConcatCtx<'a, 'b> {
     pub(crate) start_offset: GeneratedLen,
     pub(crate) done_fields: &'a [DoneField<'a>],
     pub(crate) done: &'b std::collections::HashMap<&'a str, GeneratedStruct>,
+    pub(crate) parent_struct_name: &'b syn::Ident,
 }
 
 impl ConcatCtx<'_, '_> {
@@ -46,7 +47,11 @@ impl ConcatCtx<'_, '_> {
                         helper_entities: type_helper_entities,
                         field_getter_body,
                         return_ty,
-                    } = TypeCtx { done: self.done }.generate(
+                    } = TypeCtx {
+                        done: self.done,
+                        parent_struct_name: self.parent_struct_name,
+                    }
+                    .generate(
                         &item.ty,
                         &item_name,
                         current_offset.clone(),

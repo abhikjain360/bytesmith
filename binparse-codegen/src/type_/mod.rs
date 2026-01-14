@@ -14,6 +14,7 @@ pub(crate) mod bitfield;
 pub(crate) mod concat;
 pub(crate) mod primitive;
 pub(crate) mod struct_ref;
+pub(crate) mod union_;
 
 pub(crate) struct GeneratedType {
     pub(crate) len: GeneratedLen,
@@ -38,16 +39,21 @@ pub enum Error {
     Concat(#[from] concat::Error),
     #[error(transparent)]
     Array(#[from] array::Error),
+    #[error(transparent)]
+    Union(#[from] union_::Error),
+    #[error("field error: {0}")]
+    Field(Box<crate::field::Error>),
 }
 
-pub(crate) struct TypeCtx<'a> {
+pub(crate) struct TypeCtx<'a, 'b> {
     pub(crate) done: &'a HashMap<&'a str, GeneratedStruct>,
+    pub(crate) parent_struct_name: &'b syn::Ident,
 }
 
-impl<'a> TypeCtx<'a> {
+impl<'a, 'b> TypeCtx<'a, 'b> {
     pub(crate) fn generate(
         &self,
-        ty: &ast::Type,
+        ty: &'a ast::Type<'a>,
         field_name: &syn::Ident,
         start_offset: GeneratedLen,
         done_fields: &'a [DoneField<'a>],
@@ -71,6 +77,7 @@ impl<'a> TypeCtx<'a> {
                 start_offset,
                 done_fields,
                 done: self.done,
+                parent_struct_name: self.parent_struct_name,
             }
             .generate(),
 
@@ -90,7 +97,15 @@ impl<'a> TypeCtx<'a> {
             }
             .generate(),
 
-            _ => todo!(),
+            ast::Type::Union(u) => union_::UnionCtx {
+                union: u,
+                field_name,
+                parent_struct_name: self.parent_struct_name,
+                start_offset,
+                done_fields,
+                done: self.done,
+            }
+            .generate(),
         }
     }
 }

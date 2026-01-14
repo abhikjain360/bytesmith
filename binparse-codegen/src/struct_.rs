@@ -58,10 +58,12 @@ impl<'a> StructCtx<'a> {
 
         let mut last_offset_getter_fn_name = None;
 
+        let name = format_ident!("{}", self.origin.name);
+
         for item in &self.origin.items {
             if let ast::StructItem::Field(field) = item {
                 let current_offset = self.offset.clone();
-                let field_ctx = FieldCtx::new(field, current_offset, &self.done_fields, self.done);
+                let field_ctx = FieldCtx::new(field, current_offset, &self.done_fields, self.done, &name);
                 let generated = field_ctx.generate().map_err(|error| Error::Field {
                     name: field.name.to_string(),
                     error,
@@ -84,8 +86,6 @@ impl<'a> StructCtx<'a> {
                 });
             }
         }
-
-        let name = format_ident!("{}", self.origin.name);
 
         let parse_fn = if let Some(fn_name) = last_offset_getter_fn_name {
             quote! {

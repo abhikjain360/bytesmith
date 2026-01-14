@@ -10,11 +10,12 @@ use crate::{
     type_,
 };
 
-pub(crate) struct FieldCtx<'a> {
+pub(crate) struct FieldCtx<'a, 'b> {
     pub(crate) field: &'a ast::Field<'a>,
     pub(crate) start_offset: GeneratedLen,
     pub(crate) done_fields: &'a [DoneField<'a>],
     pub(crate) done: &'a HashMap<&'a str, GeneratedStruct>,
+    pub(crate) parent_struct_name: &'b syn::Ident,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -35,18 +36,20 @@ pub(crate) struct GeneratedField {
     pub(crate) offset_getter: TokenStream,
 }
 
-impl<'a> FieldCtx<'a> {
+impl<'a, 'b> FieldCtx<'a, 'b> {
     pub(crate) fn new(
         field: &'a ast::Field<'a>,
         start_offset: GeneratedLen,
         done_fields: &'a [DoneField<'a>],
         done: &'a HashMap<&'a str, GeneratedStruct>,
+        parent_struct_name: &'b syn::Ident,
     ) -> Self {
         Self {
             field,
             start_offset,
             done_fields,
             done,
+            parent_struct_name,
         }
     }
 
@@ -57,7 +60,11 @@ impl<'a> FieldCtx<'a> {
         let (len, definitions, helper_fns, helper_entities, field_getter) = match &self.field.value
         {
             ast::FieldValue::Type(ty) => {
-                let generated = type_::TypeCtx { done: self.done }.generate(
+                let generated = type_::TypeCtx {
+                    done: self.done,
+                    parent_struct_name: self.parent_struct_name,
+                }
+                .generate(
                     ty,
                     &field_name,
                     self.start_offset.clone(),
