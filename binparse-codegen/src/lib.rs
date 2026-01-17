@@ -53,13 +53,13 @@ impl Add for GeneratedLen {
     fn add(self, other: Self) -> Self::Output {
         match (self, other) {
             (GeneratedLen::Dynamic(a), GeneratedLen::Fixed(Len { byte, bit })) => {
-                GeneratedLen::Dynamic(quote! { (#a) + ::binparse::Len { byte: #byte, bit: #bit } })
+                GeneratedLen::Dynamic(quote! { {#a} + ::binparse::Len { byte: #byte, bit: #bit } })
             }
             (GeneratedLen::Fixed(Len { byte, bit }), GeneratedLen::Dynamic(a)) => {
-                GeneratedLen::Dynamic(quote! { ::binparse::Len { byte: #byte, bit: #bit } + (#a) })
+                GeneratedLen::Dynamic(quote! { ::binparse::Len { byte: #byte, bit: #bit } + {#a} })
             }
             (GeneratedLen::Dynamic(a), GeneratedLen::Dynamic(b)) => {
-                GeneratedLen::Dynamic(quote! { (#a) + (#b) })
+                GeneratedLen::Dynamic(quote! { {#a} + {#b} })
             }
             (GeneratedLen::Fixed(a), GeneratedLen::Fixed(b)) => GeneratedLen::Fixed(a + b),
         }

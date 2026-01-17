@@ -16,14 +16,14 @@ pub(crate) fn generate(
         bit: width,
     };
     let return_ty = quote! { u8 };
+    let mask = (1u8 << width) - 1;
 
-    match start_offset {
+    let field_getter_body = match start_offset {
         GeneratedLen::Fixed(offset) => {
             let start_byte = offset.byte;
             let start_bit = offset.bit;
 
-            let field_getter_body = if start_bit + width <= 8 {
-                let mask = (1u8 << width) - 1;
+            if start_bit + width <= 8 {
                 quote! {
                     (self.data[#start_byte] >> #start_bit) & #mask
                 }
@@ -41,16 +41,34 @@ pub(crate) fn generate(
                         first_part | (second_part << #bits_in_first_byte)
                     }
                 }
-            };
-
-            Ok(GeneratedTypeInfo {
-                len: GeneratedLen::Fixed(len),
-                field_getter_body,
-                return_ty,
-                field_type: DoneFieldType::BitField,
-            })
+            }
         }
 
-        GeneratedLen::Dynamic(_) => todo!(),
-    }
+        GeneratedLen::Dynamic(offset_expr) => {
+            quote! {
+                {
+                    let offset = #offset_expr;
+                    let start_byte = offset.byte;
+                    let start_bit = offset.bit;
+                    if start_bit + #width <= 8 {
+                        (self.data[start_byte] >> start_bit) & #mask
+                    } else {
+                        let bits_in_first = 8 - start_bit;
+                        let first_mask = (1u8 << bits_in_first) - 1;
+                        let second_mask = (1u8 << (#width - bits_in_first)) - 1;
+                        let first_part = (self.data[start_byte] >> start_bit) & first_mask;
+                        let second_part = self.data[start_byte + 1] & second_mask;
+                        first_part | (second_part << bits_in_first)
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(GeneratedTypeInfo {
+        len: GeneratedLen::Fixed(len),
+        field_getter_body,
+        return_ty,
+        field_type: DoneFieldType::BitField,
+    })
 }

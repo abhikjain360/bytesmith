@@ -15,8 +15,14 @@ pub(crate) fn generate(
 ) -> Result<GeneratedTypeInfo, Error> {
     let (len, def) = crate::match_primitive(&primitive);
     let return_ty = def.clone();
+    let byte_len = len.byte;
 
-    match start_offset {
+    let from_bytes = match endian {
+        Endian::Big => quote! { from_be_bytes },
+        Endian::Little => quote! { from_le_bytes },
+    };
+
+    let field_getter_body = match start_offset {
         GeneratedLen::Fixed(offset) => {
             if offset.bit != 0 {
                 return Err(Error::InvalidAlignment(offset));
@@ -24,29 +30,43 @@ pub(crate) fn generate(
 
             let start_byte = offset.byte;
 
-            let field_getter_body = if matches!(primitive, ast::Primitive::U8) {
+            if matches!(primitive, ast::Primitive::U8) {
                 quote! { self.data[#start_byte] }
             } else {
-                let end = offset + len;
-                let end_byte = end.byte;
-                match endian {
-                    Endian::Big => quote! {
-                        #def::from_be_bytes(self.data[#start_byte..#end_byte].try_into().unwrap())
-                    },
-                    Endian::Little => quote! {
-                        #def::from_le_bytes(self.data[#start_byte..#end_byte].try_into().unwrap())
-                    },
+                let end_byte = offset.byte + len.byte;
+                quote! {
+                    #def::#from_bytes(self.data[#start_byte..#end_byte].try_into().unwrap())
                 }
-            };
-
-            Ok(GeneratedTypeInfo {
-                len: GeneratedLen::Fixed(len),
-                field_getter_body,
-                return_ty,
-                field_type: DoneFieldType::Primitive,
-            })
+            }
         }
 
-        GeneratedLen::Dynamic(_) => todo!(),
-    }
+        GeneratedLen::Dynamic(offset_expr) => {
+            if matches!(primitive, ast::Primitive::U8) {
+                quote! {
+                    {
+                        let offset = #offset_expr;
+                        debug_assert!(offset.bit == 0, "primitive requires byte alignment");
+                        self.data[offset.byte]
+                    }
+                }
+            } else {
+                quote! {
+                    {
+                        let offset = #offset_expr;
+                        debug_assert!(offset.bit == 0, "primitive requires byte alignment");
+                        let start = offset.byte;
+                        let end = start + #byte_len;
+                        #def::#from_bytes(self.data[start..end].try_into().unwrap())
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(GeneratedTypeInfo {
+        len: GeneratedLen::Fixed(len),
+        field_getter_body,
+        return_ty,
+        field_type: DoneFieldType::Primitive,
+    })
 }
