@@ -20,10 +20,8 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 
 ### Array Improvements
 
-- [ ] Consume-rest arrays: `[u8; ..]` - take remaining bytes
-- [ ] Sentinel-terminated arrays: `[u8; until 0x00]`
-- [ ] Arrays with expression-based size: `[u8; header.len - 4]`
-- [ ] Dynamic start offset support (currently `todo!()` in array.rs:224)
+- [x] Arrays with expression-based size: `[u8; header.len - 4]`
+- [x] Dynamic start offset support (previously `todo!()` in array.rs)
 
 ### Validation
 
