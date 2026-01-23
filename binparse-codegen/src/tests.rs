@@ -2206,4 +2206,67 @@ mod codegen_tests {
         assert!(code.contains("pub fn dst(&self) -> IpAddr<'_>"));
         assert!(code.contains("pub fn fragment_offset(&self) -> (u8, u8)"));
     }
+
+    #[test]
+    fn test_codegen_vla_hook() {
+        let code = generate(
+            r#"
+            struct WithVlaHook {
+                prefix: u8,
+                @hook(cstring, String)
+                name: [u8],
+            }
+            "#,
+        );
+
+        assert!(code.contains("fn name_raw(&self) -> (String, usize)"));
+        assert!(code.contains("cstring(&self.data[self.prefix_end_offset().byte..])"));
+        assert!(code.contains("pub fn name(&self) -> String"));
+        assert!(code.contains("self.name_raw().0"));
+        assert!(code.contains("self.name_raw().1"));
+    }
+
+    #[test]
+    fn test_codegen_fixed_hook() {
+        let code = generate(
+            r#"
+            struct WithFixedHook {
+                @hook(transform_u32, MyType)
+                value: u32,
+            }
+            "#,
+        );
+
+        assert!(code.contains("pub fn value(&self) -> MyType"));
+        assert!(code.contains("transform_u32("));
+    }
+
+    #[test]
+    fn test_codegen_vla_hook_first_field() {
+        let code = generate(
+            r#"
+            struct VlaFirst {
+                @hook(my_hook, Vec<u8>)
+                data: [u8],
+            }
+            "#,
+        );
+
+        assert!(code.contains("my_hook(&self.data[0..])"));
+    }
+
+    #[test]
+    fn test_codegen_hook_with_path() {
+        let code = generate(
+            r#"
+            struct WithPathHook {
+                @hook(my_mod::my_hook, my_mod::MyType)
+                field: u16,
+            }
+            "#,
+        );
+
+        assert!(code.contains("my_mod::my_hook("));
+        assert!(code.contains("-> my_mod::MyType"));
+    }
 }

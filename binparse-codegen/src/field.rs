@@ -6,7 +6,7 @@ use quote::{format_ident, quote};
 
 use crate::{
     GeneratedLen,
-    attr::{self, ParsedAttrs},
+    attr::{self, Hook, ParsedAttrs},
     struct_::{DoneField, DoneFieldType, GeneratedStruct, StructAccum},
     type_,
 };
@@ -71,22 +71,47 @@ pub(crate) fn generate<'a>(
                 }
             }
 
-            let start_offset = struct_accum.offset.clone();
-            let info =
-                type_::generate(ty, done, struct_accum, &mut field_accum, start_offset, field_endian)?;
-
-            field_accum.len = info.len;
-            field_accum.field_type = info.field_type;
-
-            let field_name = &field_accum.field_name;
-            let return_ty = info.return_ty;
-            let field_getter_body = info.field_getter_body;
-            field_accum.field_getter = quote! {
-                #[allow(clippy::identity_op)]
-                pub fn #field_name(&self) -> #return_ty {
-                    #field_getter_body
+            match (&attrs.hook, is_vla(ty)) {
+                (Some(hook), true) => {
+                    generate_vla_hook(hook, struct_accum, &mut field_accum)?;
                 }
-            };
+                (Some(hook), false) => {
+                    let start_offset = struct_accum.offset.clone();
+                    generate_fixed_hook(
+                        hook,
+                        ty,
+                        done,
+                        struct_accum,
+                        &mut field_accum,
+                        start_offset,
+                        field_endian,
+                    )?;
+                }
+                (None, _) => {
+                    let start_offset = struct_accum.offset.clone();
+                    let info = type_::generate(
+                        ty,
+                        done,
+                        struct_accum,
+                        &mut field_accum,
+                        start_offset,
+                        field_endian,
+                    )?;
+
+                    field_accum.len = info.len;
+                    field_accum.field_type = info.field_type;
+
+                    let field_name = &field_accum.field_name;
+                    let return_ty = info.return_ty;
+                    let field_getter_body = info.field_getter_body;
+                    field_accum.field_getter = quote! {
+                        #[allow(clippy::identity_op)]
+                        pub fn #field_name(&self) -> #return_ty {
+                            #field_getter_body
+                        }
+                    };
+                }
+            }
         }
 
         ast::FieldValue::Constraint(_) => todo!("handle constraint-type fields"),
@@ -133,6 +158,82 @@ pub(crate) fn generate<'a>(
         len,
         offset_getter_fn_name,
     });
+
+    Ok(())
+}
+
+fn is_vla(ty: &ast::Type<'_>) -> bool {
+    matches!(
+        ty,
+        ast::Type::Array(ast::ArrayType {
+            size: ast::ArraySize::Dynamic,
+            ..
+        })
+    )
+}
+
+fn generate_vla_hook(
+    hook: &Hook,
+    struct_accum: &mut StructAccum,
+    field_accum: &mut FieldAccum,
+) -> Result<(), Error> {
+    let field_name = &field_accum.field_name;
+    let hook_fn = &hook.fn_path;
+    let return_ty = &hook.return_ty;
+
+    let raw_fn_name = format_ident!("{}_raw", field_name);
+
+    let start_offset = match &struct_accum.last_offset_getter_fn_name {
+        Some(prev) => quote! { self.#prev().byte },
+        None => quote! { 0 },
+    };
+
+    field_accum.helper_fns = quote! {
+        fn #raw_fn_name(&self) -> (#return_ty, usize) {
+            #hook_fn(&self.data[#start_offset..])
+        }
+    };
+
+    field_accum.field_getter = quote! {
+        pub fn #field_name(&self) -> #return_ty {
+            self.#raw_fn_name().0
+        }
+    };
+
+    let len_expr = quote! {
+        binparse::Len { byte: self.#raw_fn_name().1, bit: 0 }
+    };
+    field_accum.len = GeneratedLen::Dynamic(len_expr);
+    field_accum.field_type = DoneFieldType::Other;
+
+    Ok(())
+}
+
+fn generate_fixed_hook<'a>(
+    hook: &Hook,
+    ty: &ast::Type<'a>,
+    done: &HashMap<&'a str, GeneratedStruct>,
+    struct_accum: &mut StructAccum,
+    field_accum: &mut FieldAccum,
+    start_offset: GeneratedLen,
+    endian: attr::Endian,
+) -> Result<(), Error> {
+    let info = type_::generate(ty, done, struct_accum, field_accum, start_offset, endian)?;
+
+    field_accum.len = info.len;
+    field_accum.field_type = DoneFieldType::Other;
+
+    let field_name = &field_accum.field_name;
+    let hook_fn = &hook.fn_path;
+    let return_ty = &hook.return_ty;
+    let field_getter_body = info.field_getter_body;
+
+    field_accum.field_getter = quote! {
+        #[allow(clippy::identity_op)]
+        pub fn #field_name(&self) -> #return_ty {
+            #hook_fn(#field_getter_body)
+        }
+    };
 
     Ok(())
 }

@@ -10,13 +10,11 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 
 ### Hooks (Rust Integration)
 
-- [ ] `@hook(fn_name)` attribute for custom parsing
-  - [ ] Hook returns `(value, bytes_consumed)` tuple
+- [ ] `@hook(fn_name, ReturnTypePathWithAllRequiredGenerics)` attribute for custom parsing
+  - [ ] Hook returns `(value in correct type, bytes consumed)` tuple
   - [ ] Hook has access to remaining slice
   - [ ] Propagate dynamic length to subsequent fields
 - [ ] Built-in hooks library
-  - [ ] `varint` - MQTT/protobuf style continuation-bit integers
-  - [ ] `utf8` - length-prefixed UTF-8 string returning `&str`
   - [ ] `cstring` - null-terminated string
   - [ ] `leb128` - signed/unsigned LEB128
 
@@ -158,13 +156,13 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 
 ## Immediate Priorities
 
-| Priority | Feature | Rationale |
-|----------|---------|-----------|
-| P0 | Hooks for VarInt | Unlocks MQTT, Protobuf, WebSocket |
-| P0 | Consume-rest arrays | Unlocks variable payloads |
-| P1 | Serialization | Symmetry; proves spec is complete |
-| P1 | No-panic guarantee | Key differentiator from AI |
-| P2 | Fuzzing integration | Proves correctness at scale |
-| P2 | Validation attributes | Catches bad data early |
-| P3 | Cross-language | Multiplies value of each spec |
-| P3 | Documentation gen | Specs become source of truth |
+| Priority | Feature               | Rationale                         |
+| -------- | --------------------- | --------------------------------- |
+| P0       | Hooks for VarInt      | Unlocks MQTT, Protobuf, WebSocket |
+| P0       | Consume-rest arrays   | Unlocks variable payloads         |
+| P1       | Serialization         | Symmetry; proves spec is complete |
+| P1       | No-panic guarantee    | Key differentiator from AI        |
+| P2       | Fuzzing integration   | Proves correctness at scale       |
+| P2       | Validation attributes | Catches bad data early            |
+| P3       | Cross-language        | Multiplies value of each spec     |
+| P3       | Documentation gen     | Specs become source of truth      |

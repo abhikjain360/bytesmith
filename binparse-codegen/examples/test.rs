@@ -24,6 +24,19 @@ struct LittleEndianPacket {
 struct BigEndianPacket {
     value: u64,
 }
+
+struct WithFixedHook {
+    prefix: u8,
+    @hook(double_it, u32)
+    value: u16,
+    suffix: u8,
+}
+
+struct WithVlaHook {
+    len: u8,
+    @hook(parse_cstring, String)
+    name: [u8],
+}
 "#;
 
 fn main() {
