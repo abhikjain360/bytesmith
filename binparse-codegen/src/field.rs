@@ -127,6 +127,13 @@ pub(crate) fn generate<'a>(
     );
     let end_offset = start_offset + len.clone();
 
+    let start_offset_getter_fn_name = format_ident!("{}_start_offset", ast.name);
+    let bit_range_fn_name = format_ident!("{}_bit_range", ast.name);
+    let start_offset_body = match &struct_accum.last_offset_getter_fn_name {
+        Some(prev) => quote! { self.#prev() },
+        None => quote! { binparse::Len::ZERO },
+    };
+
     field_accum.offset_getter = match &end_offset {
         GeneratedLen::Fixed(total_len) => {
             let total_byte = total_len.byte;
@@ -145,6 +152,15 @@ pub(crate) fn generate<'a>(
             }
         }
     };
+    field_accum.offset_getter.extend(quote! {
+        pub fn #start_offset_getter_fn_name(&self) -> binparse::Len {
+            #start_offset_body
+        }
+
+        pub fn #bit_range_fn_name(&self) -> ::core::ops::Range<usize> {
+            self.#start_offset_getter_fn_name().bits()..self.#offset_getter_fn_name().bits()
+        }
+    });
 
     struct_accum.offset = end_offset;
     struct_accum.field_definitions.extend(field_accum.definitions);
@@ -154,7 +170,7 @@ pub(crate) fn generate<'a>(
     struct_accum.parse_checks.extend(quote! {
         {
             let len = me.#offset_getter_fn_name();
-            let expected = len.byte + usize::from(len.bit > 0);
+            let expected = len.byte_ceil();
             if data.len() < expected {
                 return Err(binparse::ParseError::NotEnoughData {
                     expected,

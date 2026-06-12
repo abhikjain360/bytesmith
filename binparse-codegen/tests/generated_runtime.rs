@@ -115,6 +115,68 @@ mod tests {{
     }}
 
     #[test]
+    fn offsets_report_absolute_bit_ranges() {{
+        let data = [
+            1, 0x34, 0x12, 0x01, 0x02, 0x03, 0x04, 0b1010_1101, 9, 8, 7, 0xaa, 0x01, 0x02,
+            0x78, 0x56, 0x55, 0xcd, 0xab, 0xfe,
+        ];
+        let (packet, _) = Baseline::parse(&data).unwrap();
+        assert_eq!(packet.n_start_offset(), binparse::Len::ZERO);
+        assert_eq!(packet.n_bit_range(), 0..8);
+        assert_eq!(packet.word_bit_range(), 8..24);
+        assert_eq!(packet.be_bit_range(), 24..56);
+        assert_eq!(packet.flag_a_bit_range(), 56..59);
+        assert_eq!(packet.flag_b_bit_range(), 59..64);
+        assert_eq!(packet.fixed_bit_range(), 64..88);
+        assert_eq!(packet.inner_bit_range(), 88..112);
+        assert_eq!(packet.dyns_bit_range(), 112..128);
+        assert_eq!(packet.pair_bit_range(), 128..152);
+        assert_eq!(packet.payload_bit_range(), 152..160);
+        assert_eq!(packet.payload_end_offset(), binparse::Len {{ byte: 20, bit: 0 }});
+
+        let inner = packet.inner().unwrap();
+        assert_eq!(inner.a_bit_range(), 0..8);
+        assert_eq!(inner.b_bit_range(), 8..24);
+        let inner_base = packet.inner_start_offset().bits();
+        assert_eq!(inner_base + inner.b_bit_range().start, 96);
+        assert_eq!(inner_base + inner.b_bit_range().end, 112);
+    }}
+
+    #[test]
+    fn cross_byte_bitfield_offsets_and_values() {{
+        let data = [0xad, 0xad];
+        let (packet, rem) = CrossByte::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.high(), 13);
+        assert_eq!(packet.mid(), 45);
+        assert_eq!(packet.low(), 21);
+        assert_eq!(packet.high_bit_range(), 0..5);
+        assert_eq!(packet.mid_bit_range(), 5..11);
+        assert_eq!(packet.low_bit_range(), 11..16);
+        assert_eq!(packet.mid_start_offset(), binparse::Len {{ byte: 0, bit: 5 }});
+        assert_eq!(packet.mid_end_offset(), binparse::Len {{ byte: 1, bit: 3 }});
+        assert_parse_no_panic("CrossByte", &data, |data| {{
+            let _ = CrossByte::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn huge_array_count_errors_instead_of_overflowing() {{
+        let data = [0xff; 8];
+        let err = Huge::parse(&data).map(|_| ()).unwrap_err();
+        assert_eq!(
+            err,
+            binparse::ParseError::NotEnoughData {{
+                expected: usize::MAX,
+                got: 8,
+            }}
+        );
+        assert_parse_no_panic("Huge", &data, |data| {{
+            let _ = Huge::parse(data);
+        }});
+    }}
+
+    #[test]
     fn baseline_parse_does_not_panic_on_truncation() {{
         let data = [
             1, 0x34, 0x12, 0x01, 0x02, 0x03, 0x04, 0b1010_1101, 9, 8, 7, 0xaa, 0x01, 0x02,
@@ -133,6 +195,8 @@ mod tests {{
         assert_eq!(packet.prefix(), 3);
         assert_eq!(packet.value(), 4);
         assert_eq!(packet.name(), "hi");
+        assert_eq!(packet.value_bit_range(), 8..24);
+        assert_eq!(packet.name_bit_range(), 24..48);
         assert_parse_no_panic("Hooked", &data, |data| {{
             let _ = Hooked::parse(data);
         }});
@@ -153,6 +217,7 @@ mod tests {{
         assert_eq!(items[0].b(), 0x0203);
         assert_eq!(items[1].a(), 4);
         assert_eq!(items[1].b(), 0x0506);
+        assert_eq!(packet.items_bit_range(), 8..56);
         assert_parse_no_panic("StructArray", &data, |data| {{
             let _ = StructArray::parse(data);
         }});
@@ -207,6 +272,17 @@ struct Hooked {
 struct StructArray {
     count: u8,
     items: [Inner; count],
+}
+
+struct CrossByte {
+    high: b<5>,
+    mid: b<6>,
+    low: b<5>,
+}
+
+struct Huge {
+    n: u64,
+    xs: [u128; n],
 }
 "#;
 

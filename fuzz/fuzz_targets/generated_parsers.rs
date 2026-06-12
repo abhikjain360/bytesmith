@@ -29,6 +29,8 @@ fuzz_target!(|data: &[u8]| {
         if let Ok(dyns) = packet.dyns() {
             let _ = dyns.collect::<binparse::ParseResult<Vec<_>>>();
         }
+        let _ = packet.dyns_bit_range();
+        let _ = packet.payload_bit_range();
         let _ = packet.pair();
         match packet.payload() {
             Baseline_payload::One(one) => {
@@ -42,11 +44,13 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.prefix();
         let _ = packet.value();
         let _ = packet.name();
+        let _ = packet.name_bit_range();
     }
 
     if let Ok((packet, _)) = StructArray::parse(data)
         && let Ok(items) = packet.items()
     {
+        let _ = packet.items_bit_range();
         for item in items.flatten() {
             let _ = item.a();
             let _ = item.b();
