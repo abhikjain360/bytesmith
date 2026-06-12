@@ -206,6 +206,19 @@ pub(crate) fn generate(
     let len = match static_count {
         Some(count) => elem_len * count,
         None => match elem_len {
+            GeneratedLen::Fixed(Len { byte, bit: 0 }) => GeneratedLen::Dynamic(quote! {
+                ::binparse::Len {
+                    byte: #byte * (#count),
+                    bit: 0,
+                }
+            }),
+            GeneratedLen::Fixed(Len { byte: 0, bit }) => GeneratedLen::Dynamic(quote! {
+                let extra_bits = #bit * (#count);
+                ::binparse::Len {
+                    byte: extra_bits / 8,
+                    bit: extra_bits % 8,
+                }
+            }),
             GeneratedLen::Fixed(Len { byte, bit }) => GeneratedLen::Dynamic(quote! {
                 let count = #count;
                 let extra_bits = #bit * count;

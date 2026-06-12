@@ -1,0 +1,25 @@
+[package]
+name = "binparse-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+binparse = { path = "../binparse" }
+
+[build-dependencies]
+binparse-codegen = { path = "../binparse-codegen" }
+binparse-dsl-parse = { path = "../binparse-dsl-parse" }
+
+[[bin]]
+name = "generated_parsers"
+path = "fuzz_targets/generated_parsers.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

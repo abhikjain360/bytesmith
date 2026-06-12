@@ -1,2272 +1,1573 @@
-#[cfg(test)]
-mod test_utils {
-    use binparse_dsl as ast;
-    use proc_macro2::TokenStream;
+use crate::{CodeGen, Error};
 
-    pub fn tokens_to_string(tokens: TokenStream) -> String {
-        let file: syn::File =
-            syn::parse2(tokens).expect("failed to parse generated tokens as syn::File");
-        prettyplease::unparse(&file)
-    }
-
-    pub fn assert_tokens_eq(actual: TokenStream, expected: &str) {
-        let actual_str = tokens_to_string(actual);
-        let expected_str = {
-            let file: syn::File =
-                syn::parse_str(expected).expect("failed to parse expected string as syn::File");
-            prettyplease::unparse(&file)
-        };
-
-        if actual_str != expected_str {
-            panic!(
-                "Generated code does not match expected.\n\n--- Expected ---\n{}\n\n--- Actual ---\n{}\n",
-                expected_str, actual_str
-            );
-        }
-    }
-
-    pub fn parse_single_struct(dsl: &str) -> ast::Struct<'_> {
-        let defs = binparse_dsl_parse::parse_str(dsl).unwrap();
-        assert_eq!(defs.len(), 1);
-        match &defs[0] {
-            ast::Definition::Struct(s) => s.clone(),
-            _ => panic!("expected struct"),
-        }
-    }
-
-    pub fn extract_field_type<'a>(s: &'a ast::Struct<'a>) -> &'a ast::Type<'a> {
-        assert_eq!(s.items.len(), 1);
-        match &s.items[0] {
-            ast::StructItem::Field(f) => match &f.value {
-                ast::FieldValue::Type(ty) => ty,
-                _ => panic!("expected type"),
-            },
-            _ => panic!("expected field"),
-        }
-    }
+fn generate(dsl: &str) -> String {
+    let ast = binparse_dsl_parse::parse_str(dsl).expect("failed to parse DSL");
+    CodeGen::generate(&ast).expect("failed to generate code")
 }
 
-#[cfg(test)]
-mod primitive_tests {
-    use binparse::Len;
-    use binparse_dsl as ast;
-    use quote::format_ident;
-
-    use crate::type_::primitive::PrimitiveCtx;
-
-    use super::test_utils::{assert_tokens_eq, extract_field_type, parse_single_struct};
-
-    fn extract_primitive<'a>(ty: &'a ast::Type<'a>) -> &'a ast::Primitive {
-        match ty {
-            ast::Type::Primitive(p) => p,
-            _ => panic!("expected primitive"),
-        }
-    }
-
-    #[test]
-    fn test_u8_at_offset_0() {
-        let dsl = "struct Foo { my_field: u8 }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let primitive = extract_primitive(ty);
-
-        let field_name = format_ident!("my_field");
-        let ctx = PrimitiveCtx {
-            primitive,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 1, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn my_field(&self) -> u8 {
-                u8::from_ne_bytes(self.data[0usize..1usize].try_into().unwrap())
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_u8_at_offset_5() {
-        let dsl = "struct Foo { byte_field: u8 }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let primitive = extract_primitive(ty);
-
-        let field_name = format_ident!("byte_field");
-        let ctx = PrimitiveCtx {
-            primitive,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 5, bit: 0 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 1, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn byte_field(&self) -> u8 {
-                u8::from_ne_bytes(self.data[5usize..6usize].try_into().unwrap())
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_u16_at_offset_0() {
-        let dsl = "struct Foo { short_field: u16 }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let primitive = extract_primitive(ty);
-
-        let field_name = format_ident!("short_field");
-        let ctx = PrimitiveCtx {
-            primitive,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 2, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn short_field(&self) -> u16 {
-                u16::from_ne_bytes(self.data[0usize..2usize].try_into().unwrap())
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_u32_at_offset_4() {
-        let dsl = "struct Foo { int_field: u32 }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let primitive = extract_primitive(ty);
-
-        let field_name = format_ident!("int_field");
-        let ctx = PrimitiveCtx {
-            primitive,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 4, bit: 0 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 4, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn int_field(&self) -> u32 {
-                u32::from_ne_bytes(self.data[4usize..8usize].try_into().unwrap())
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_u64_at_offset_0() {
-        let dsl = "struct Foo { long_field: u64 }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let primitive = extract_primitive(ty);
-
-        let field_name = format_ident!("long_field");
-        let ctx = PrimitiveCtx {
-            primitive,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 8, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn long_field(&self) -> u64 {
-                u64::from_ne_bytes(self.data[0usize..8usize].try_into().unwrap())
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_u128_at_offset_8() {
-        let dsl = "struct Foo { huge_field: u128 }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let primitive = extract_primitive(ty);
-
-        let field_name = format_ident!("huge_field");
-        let ctx = PrimitiveCtx {
-            primitive,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 8, bit: 0 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 16, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn huge_field(&self) -> u128 {
-                u128::from_ne_bytes(self.data[8usize..24usize].try_into().unwrap())
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_primitive_with_unaligned_offset_fails() {
-        let dsl = "struct Foo { bad_field: u16 }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let primitive = extract_primitive(ty);
-
-        let field_name = format_ident!("bad_field");
-        let ctx = PrimitiveCtx {
-            primitive,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 3 }),
-        };
-
-        let result = ctx.generate();
-        assert!(result.is_err());
-    }
+fn generate_err(dsl: &str) -> Error {
+    let ast = binparse_dsl_parse::parse_str(dsl).expect("failed to parse DSL");
+    CodeGen::generate(&ast).expect_err("expected codegen to fail")
 }
 
-#[cfg(test)]
-mod bitfield_tests {
-    use binparse::Len;
-    use binparse_dsl as ast;
-    use quote::format_ident;
-
-    use crate::type_::bitfield::BitFieldCtx;
-
-    use super::test_utils::{assert_tokens_eq, extract_field_type, parse_single_struct};
-
-    fn extract_bitfield_width(ty: &ast::Type<'_>) -> usize {
-        match ty {
-            ast::Type::BitField(w) => *w as usize,
-            _ => panic!("expected bitfield"),
-        }
-    }
-
-    #[test]
-    fn test_4bit_at_bit_0() {
-        let dsl = "struct Foo { nibble: b<4> }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let width = extract_bitfield_width(ty);
-
-        let field_name = format_ident!("nibble");
-        let ctx = BitFieldCtx {
-            width,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 4 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn nibble(&self) -> u8 {
-                (self.data[0usize] >> 0usize) & 15u8
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_4bit_at_bit_4() {
-        let dsl = "struct Foo { high_nibble: b<4> }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let width = extract_bitfield_width(ty);
-
-        let field_name = format_ident!("high_nibble");
-        let ctx = BitFieldCtx {
-            width,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 4 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 4 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn high_nibble(&self) -> u8 {
-                (self.data[0usize] >> 4usize) & 15u8
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_3bit_at_bit_0() {
-        let dsl = "struct Foo { flags: b<3> }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let width = extract_bitfield_width(ty);
-
-        let field_name = format_ident!("flags");
-        let ctx = BitFieldCtx {
-            width,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 3 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn flags(&self) -> u8 {
-                (self.data[0usize] >> 0usize) & 7u8
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_6bit_at_bit_0() {
-        let dsl = "struct Foo { dscp: b<6> }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let width = extract_bitfield_width(ty);
-
-        let field_name = format_ident!("dscp");
-        let ctx = BitFieldCtx {
-            width,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 1, bit: 0 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 6 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn dscp(&self) -> u8 {
-                (self.data[1usize] >> 0usize) & 63u8
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_2bit_at_bit_6() {
-        let dsl = "struct Foo { ecn: b<2> }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let width = extract_bitfield_width(ty);
-
-        let field_name = format_ident!("ecn");
-        let ctx = BitFieldCtx {
-            width,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 1, bit: 6 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 2 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn ecn(&self) -> u8 {
-                (self.data[1usize] >> 6usize) & 3u8
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_5bit_crossing_byte_boundary() {
-        let dsl = "struct Foo { frag_hi: b<5> }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let width = extract_bitfield_width(ty);
-
-        let field_name = format_ident!("frag_hi");
-        let ctx = BitFieldCtx {
-            width,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 5 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 5 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn frag_hi(&self) -> u8 {
-                let first_part = (self.data[0usize] >> 5usize) & 7u8;
-                let second_part = self.data[1usize] & 3u8;
-                first_part | (second_part << 3usize)
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_7bit_crossing_byte_boundary() {
-        let dsl = "struct Foo { big_field: b<7> }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let width = extract_bitfield_width(ty);
-
-        let field_name = format_ident!("big_field");
-        let ctx = BitFieldCtx {
-            width,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 2, bit: 3 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 7 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn big_field(&self) -> u8 {
-                let first_part = (self.data[2usize] >> 3usize) & 31u8;
-                let second_part = self.data[3usize] & 3u8;
-                first_part | (second_part << 5usize)
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_1bit_field() {
-        let dsl = "struct Foo { single_bit: b<1> }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let width = extract_bitfield_width(ty);
-
-        let field_name = format_ident!("single_bit");
-        let ctx = BitFieldCtx {
-            width,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 7 }),
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 1 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn single_bit(&self) -> u8 {
-                (self.data[0usize] >> 7usize) & 1u8
-            }
-            "#,
-        );
-    }
-}
-
-#[cfg(test)]
-mod struct_ref_tests {
-    use std::collections::HashMap;
-
-    use binparse::Len;
-    use binparse_dsl as ast;
-    use quote::{format_ident, quote};
-
-    use crate::struct_::GeneratedStruct;
-    use crate::type_::struct_ref::StructRefCtx;
-
-    use super::test_utils::{assert_tokens_eq, extract_field_type, parse_single_struct};
-
-    fn extract_struct_ref<'a>(ty: &'a ast::Type<'a>) -> &'a str {
-        match ty {
-            ast::Type::StructRef(name) => name,
-            _ => panic!("expected struct ref"),
-        }
-    }
-
-    #[test]
-    fn test_struct_ref_at_offset_0() {
-        let dsl = "struct Foo { inner: Inner }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let struct_name = extract_struct_ref(ty);
-
-        let field_name = format_ident!("inner");
-
-        let mut done = HashMap::new();
-        done.insert(
-            "Inner",
-            GeneratedStruct {
-                len: Some(Len { byte: 4, bit: 0 }),
-                tokens: quote! {},
-            },
-        );
-
-        let ctx = StructRefCtx {
-            struct_name,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-            done: &done,
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 4, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn inner(&self) -> Inner<'_> {
-                Inner::parse(&self.data[0usize..]).unwrap().0
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_struct_ref_at_offset_8() {
-        let dsl = "struct Foo { nested: NestedStruct }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let struct_name = extract_struct_ref(ty);
-
-        let field_name = format_ident!("nested");
-
-        let mut done = HashMap::new();
-        done.insert(
-            "NestedStruct",
-            GeneratedStruct {
-                len: Some(Len { byte: 12, bit: 0 }),
-                tokens: quote! {},
-            },
-        );
-
-        let ctx = StructRefCtx {
-            struct_name,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 8, bit: 0 }),
-            done: &done,
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 12, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn nested(&self) -> NestedStruct<'_> {
-                NestedStruct::parse(&self.data[8usize..]).unwrap().0
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_struct_ref_unknown_type() {
-        let dsl = "struct Foo { unknown: UnknownType }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let struct_name = extract_struct_ref(ty);
-
-        let field_name = format_ident!("unknown");
-        let done = HashMap::new();
-
-        let ctx = StructRefCtx {
-            struct_name,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-            done: &done,
-        };
-
-        let result = ctx.generate();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_struct_ref_unaligned_offset_fails() {
-        let dsl = "struct Foo { bad: Inner }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let struct_name = extract_struct_ref(ty);
-
-        let field_name = format_ident!("bad");
-
-        let mut done = HashMap::new();
-        done.insert(
-            "Inner",
-            GeneratedStruct {
-                len: Some(Len { byte: 4, bit: 0 }),
-                tokens: quote! {},
-            },
-        );
-
-        let ctx = StructRefCtx {
-            struct_name,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 2 }),
-            done: &done,
-        };
-
-        let result = ctx.generate();
-        assert!(result.is_err());
-    }
-}
-
-#[cfg(test)]
-mod concat_tests {
-    use std::collections::HashMap;
-
-    use binparse::Len;
-    use binparse_dsl as ast;
-    use quote::format_ident;
-
-    use crate::struct_::GeneratedStruct;
-    use crate::type_::concat::ConcatCtx;
-
-    use super::test_utils::{assert_tokens_eq, extract_field_type, parse_single_struct};
-
-    fn extract_concat_items<'a>(ty: &'a ast::Type<'a>) -> &'a [ast::ConcatItem<'a>] {
-        match ty {
-            ast::Type::Concat(items) => items,
-            _ => panic!("expected concat"),
-        }
-    }
-
-    #[test]
-    fn test_concat_two_bitfields() {
-        let dsl = "struct Foo { fragment: concat(b<5>, b<3>) }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let items = extract_concat_items(ty);
-
-        let field_name = format_ident!("fragment");
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = ConcatCtx {
-            items,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-            done: &done,
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 1, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn fragment_0(&self) -> u8 {
-                (self.data[0usize] >> 0usize) & 31u8
-            }
-            #[allow(clippy::identity_op)]
-            pub fn fragment_1(&self) -> u8 {
-                (self.data[0usize] >> 5usize) & 7u8
-            }
-            pub fn fragment(&self) -> (u8, u8) {
-                (self.fragment_0(), self.fragment_1())
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_concat_bitfield_and_primitive() {
-        let dsl = "struct Foo { mixed: concat(b<5>, u8) }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let items = extract_concat_items(ty);
-
-        let field_name = format_ident!("mixed");
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = ConcatCtx {
-            items,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 3 }),
-            done: &done,
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 1, bit: 5 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn mixed_0(&self) -> u8 {
-                (self.data[0usize] >> 3usize) & 31u8
-            }
-            pub fn mixed_1(&self) -> u8 {
-                u8::from_ne_bytes(self.data[1usize..2usize].try_into().unwrap())
-            }
-            pub fn mixed(&self) -> (u8, u8) {
-                (self.mixed_0(), self.mixed_1())
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_concat_three_primitives() {
-        let dsl = "struct Foo { triple: concat(u8, u16, u8) }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let items = extract_concat_items(ty);
-
-        let field_name = format_ident!("triple");
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = ConcatCtx {
-            items,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-            done: &done,
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 4, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn triple_0(&self) -> u8 {
-                u8::from_ne_bytes(self.data[0usize..1usize].try_into().unwrap())
-            }
-            pub fn triple_1(&self) -> u16 {
-                u16::from_ne_bytes(self.data[1usize..3usize].try_into().unwrap())
-            }
-            pub fn triple_2(&self) -> u8 {
-                u8::from_ne_bytes(self.data[3usize..4usize].try_into().unwrap())
-            }
-            pub fn triple(&self) -> (u8, u16, u8) {
-                (self.triple_0(), self.triple_1(), self.triple_2())
-            }
-            "#,
-        );
-    }
-}
-
-#[cfg(test)]
-mod array_tests {
-    use std::collections::HashMap;
-
-    use binparse::Len;
-    use binparse_dsl as ast;
-    use quote::{format_ident, quote};
-
-    use crate::struct_::GeneratedStruct;
-    use crate::type_::array::ArrayCtx;
-
-    use super::test_utils::{assert_tokens_eq, extract_field_type, parse_single_struct};
-
-    fn extract_array_type<'a>(ty: &'a ast::Type<'a>) -> &'a ast::ArrayType<'a> {
-        match ty {
-            ast::Type::Array(arr) => arr,
-            _ => panic!("expected array"),
-        }
-    }
-
-    #[test]
-    fn test_array_u8_fixed_size() {
-        let dsl = "struct Foo { bytes: [u8; 4] }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let array_type = extract_array_type(ty);
-
-        let field_name = format_ident!("bytes");
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = ArrayCtx {
-            array_type,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-            done: &done,
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 4, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn bytes(&self) -> impl Iterator<Item = u8> + '_ {
-                (0..4usize).map(move |i| {
-                    let offset = 0usize + i * 1usize;
-                    u8::from_ne_bytes(self.data[offset..offset + 1usize].try_into().unwrap())
-                })
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_array_u16_fixed_size() {
-        let dsl = "struct Foo { shorts: [u16; 8] }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let array_type = extract_array_type(ty);
-
-        let field_name = format_ident!("shorts");
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = ArrayCtx {
-            array_type,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 4, bit: 0 }),
-            done: &done,
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 16, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn shorts(&self) -> impl Iterator<Item = u16> + '_ {
-                (0..8usize).map(move |i| {
-                    let offset = 4usize + i * 2usize;
-                    u16::from_ne_bytes(self.data[offset..offset + 2usize].try_into().unwrap())
-                })
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_array_u32_fixed_size() {
-        let dsl = "struct Foo { ints: [u32; 3] }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let array_type = extract_array_type(ty);
-
-        let field_name = format_ident!("ints");
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = ArrayCtx {
-            array_type,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-            done: &done,
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 12, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn ints(&self) -> impl Iterator<Item = u32> + '_ {
-                (0..3usize).map(move |i| {
-                    let offset = 0usize + i * 4usize;
-                    u32::from_ne_bytes(self.data[offset..offset + 4usize].try_into().unwrap())
-                })
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_array_struct_ref_fixed_size() {
-        let dsl = "struct Foo { items: [Item; 5] }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let array_type = extract_array_type(ty);
-
-        let field_name = format_ident!("items");
-
-        let mut done = HashMap::new();
-        done.insert(
-            "Item",
-            GeneratedStruct {
-                len: Some(Len { byte: 8, bit: 0 }),
-                tokens: quote! {},
-            },
-        );
-
-        let ctx = ArrayCtx {
-            array_type,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 0 }),
-            done: &done,
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 40, bit: 0 }));
-        let getter_str = result.field_getter.to_string();
-        assert!(getter_str.contains("items"));
-        assert!(getter_str.contains("Iterator"));
-        assert!(getter_str.contains("Item"));
-    }
-
-    #[test]
-    fn test_array_bitfield_fixed_size() {
-        let dsl = "struct Foo { nibbles: [b<4>; 3] }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let array_type = extract_array_type(ty);
-
-        let field_name = format_ident!("nibbles");
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = ArrayCtx {
-            array_type,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 2, bit: 0 }),
-            done: &done,
-        };
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 3, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn nibbles(&self) -> impl Iterator<Item = u8> + '_ {
-                (0..3usize).map(move |i| {
-                    let offset = 2usize + i * 1usize;
-                    self.data[offset] & 15u8
-                })
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_array_unaligned_offset_fails() {
-        let dsl = "struct Foo { bad: [u8; 4] }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let array_type = extract_array_type(ty);
-
-        let field_name = format_ident!("bad");
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = ArrayCtx {
-            array_type,
-            field_name: &field_name,
-            start_offset: Some(Len { byte: 0, bit: 3 }),
-            done: &done,
-        };
-
-        let result = ctx.generate();
-        assert!(result.is_err());
-    }
-}
-
-#[cfg(test)]
-mod type_ctx_tests {
-    use std::collections::HashMap;
-
-    use binparse::Len;
-    use binparse_dsl as ast;
-    use quote::{format_ident, quote};
-
-    use crate::struct_::GeneratedStruct;
-    use crate::type_::TypeCtx;
-
-    use super::test_utils::{assert_tokens_eq, extract_field_type, parse_single_struct};
-
-    fn extract_array_elem_type<'a>(ty: &'a ast::Type<'a>) -> &'a ast::ArrayElemType<'a> {
-        match ty {
-            ast::Type::Array(arr) => &arr.elem_ty,
-            _ => panic!("expected array"),
-        }
-    }
-
-    #[test]
-    fn test_type_ctx_dispatches_to_primitive() {
-        let dsl = "struct Foo { value: u32 }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-        let ctx = TypeCtx { done: &done };
-        let field_name = format_ident!("value");
-
-        let result = ctx
-            .generate(ty, &field_name, Some(Len { byte: 0, bit: 0 }))
-            .unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 4, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn value(&self) -> u32 {
-                u32::from_ne_bytes(self.data[0usize..4usize].try_into().unwrap())
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_type_ctx_dispatches_to_bitfield() {
-        let dsl = "struct Foo { flags: b<3> }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-        let ctx = TypeCtx { done: &done };
-        let field_name = format_ident!("flags");
-
-        let result = ctx
-            .generate(ty, &field_name, Some(Len { byte: 0, bit: 0 }))
-            .unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 3 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn flags(&self) -> u8 {
-                (self.data[0usize] >> 0usize) & 7u8
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_type_ctx_dispatches_to_struct_ref() {
-        let dsl = "struct Foo { header: Header }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-
-        let mut done = HashMap::new();
-        done.insert(
-            "Header",
-            GeneratedStruct {
-                len: Some(Len { byte: 20, bit: 0 }),
-                tokens: quote! {},
-            },
-        );
-        let ctx = TypeCtx { done: &done };
-        let field_name = format_ident!("header");
-
-        let result = ctx
-            .generate(ty, &field_name, Some(Len { byte: 0, bit: 0 }))
-            .unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 20, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn header(&self) -> Header<'_> {
-                Header::parse(&self.data[0usize..]).unwrap().0
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_type_ctx_dispatches_to_array() {
-        let dsl = "struct Foo { data: [u8; 10] }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-        let ctx = TypeCtx { done: &done };
-        let field_name = format_ident!("data");
-
-        let result = ctx
-            .generate(ty, &field_name, Some(Len { byte: 0, bit: 0 }))
-            .unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 10, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn data(&self) -> impl Iterator<Item = u8> + '_ {
-                (0..10usize).map(move |i| {
-                    let offset = 0usize + i * 1usize;
-                    u8::from_ne_bytes(self.data[offset..offset + 1usize].try_into().unwrap())
-                })
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_type_ctx_dispatches_to_concat() {
-        let dsl = "struct Foo { combo: concat(b<4>, b<4>) }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-        let ctx = TypeCtx { done: &done };
-        let field_name = format_ident!("combo");
-
-        let result = ctx
-            .generate(ty, &field_name, Some(Len { byte: 0, bit: 0 }))
-            .unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 1, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            #[allow(clippy::identity_op)]
-            pub fn combo_0(&self) -> u8 {
-                (self.data[0usize] >> 0usize) & 15u8
-            }
-            #[allow(clippy::identity_op)]
-            pub fn combo_1(&self) -> u8 {
-                (self.data[0usize] >> 4usize) & 15u8
-            }
-            pub fn combo(&self) -> (u8, u8) {
-                (self.combo_0(), self.combo_1())
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_generate_array_elem_primitive() {
-        let dsl = "struct Foo { elem: [u16; 1] }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let elem_ty = extract_array_elem_type(ty);
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-        let ctx = TypeCtx { done: &done };
-        let field_name = format_ident!("elem");
-
-        let result = ctx
-            .generate_array_elem(elem_ty, &field_name, Some(Len { byte: 0, bit: 0 }))
-            .unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 2, bit: 0 }));
-    }
-
-    #[test]
-    fn test_generate_array_elem_bitfield() {
-        let dsl = "struct Foo { elem: [b<4>; 1] }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let elem_ty = extract_array_elem_type(ty);
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-        let ctx = TypeCtx { done: &done };
-        let field_name = format_ident!("elem");
-
-        let result = ctx
-            .generate_array_elem(elem_ty, &field_name, Some(Len { byte: 0, bit: 0 }))
-            .unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 4 }));
-    }
-
-    #[test]
-    fn test_generate_array_elem_struct_ref() {
-        let dsl = "struct Foo { elem: [Inner; 1] }";
-        let s = parse_single_struct(dsl);
-        let ty = extract_field_type(&s);
-        let elem_ty = extract_array_elem_type(ty);
-
-        let mut done = HashMap::new();
-        done.insert(
-            "Inner",
-            GeneratedStruct {
-                len: Some(Len { byte: 4, bit: 0 }),
-                tokens: quote! {},
-            },
-        );
-        let ctx = TypeCtx { done: &done };
-        let field_name = format_ident!("elem");
-
-        let result = ctx
-            .generate_array_elem(elem_ty, &field_name, Some(Len { byte: 0, bit: 0 }))
-            .unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 4, bit: 0 }));
-    }
-}
-
-#[cfg(test)]
-mod field_ctx_tests {
-    use std::collections::HashMap;
-
-    use binparse::Len;
-    use binparse_dsl as ast;
-    use quote::{format_ident, quote};
-
-    use crate::field::FieldCtx;
-    use crate::struct_::{DoneField, GeneratedStruct};
-
-    use super::test_utils::{assert_tokens_eq, parse_single_struct};
-
-    fn extract_field<'a>(s: &'a ast::Struct<'a>) -> &'a ast::Field<'a> {
-        assert_eq!(s.items.len(), 1);
-        match &s.items[0] {
-            ast::StructItem::Field(f) => f,
-            _ => panic!("expected field"),
-        }
-    }
-
-    fn extract_fields<'a>(s: &'a ast::Struct<'a>) -> Vec<&'a ast::Field<'a>> {
-        s.items
-            .iter()
-            .map(|item| match item {
-                ast::StructItem::Field(f) => f,
-                _ => panic!("expected field"),
+fn normalized_items(code: &str) -> Vec<String> {
+    let file: syn::File = syn::parse_str(code).expect("failed to parse code as Rust");
+    let mut items = file
+        .items
+        .into_iter()
+        .map(|item| {
+            prettyplease::unparse(&syn::File {
+                shebang: None,
+                attrs: vec![],
+                items: vec![item],
             })
-            .collect()
-    }
+        })
+        .collect::<Vec<_>>();
+    items.sort();
+    items
+}
 
-    #[test]
-    fn test_field_with_primitive_type() {
-        let dsl = "struct Foo { count: u32 }";
-        let s = parse_single_struct(dsl);
-        let field = extract_field(&s);
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-        let done_fields = vec![];
-
-        let ctx = FieldCtx::new(field, Some(Len { byte: 0, bit: 0 }), &done_fields, &done);
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 4, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn count(&self) -> u32 {
-                u32::from_ne_bytes(self.data[0usize..4usize].try_into().unwrap())
-            }
-            "#,
+fn assert_generated_eq(dsl: &str, expected: &str) {
+    let actual = normalized_items(&generate(dsl));
+    let expected = normalized_items(expected);
+    if actual != expected {
+        panic!(
+            "generated code does not match expected\n\n--- expected ---\n{}\n--- actual ---\n{}",
+            expected.join("\n"),
+            actual.join("\n")
         );
-        assert_tokens_eq(
-            result.offset_getter,
-            r#"
-            pub fn count_end_offset(&self) -> binparse::Len {
+    }
+}
+
+#[test]
+fn golden_empty_struct() {
+    assert_generated_eq(
+        "struct Empty {}",
+        r#"
+        pub struct Empty<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Empty<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                Ok((Self { data }, data))
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_simple_primitive() {
+    assert_generated_eq(
+        "struct Simple { value: u32 }",
+        r#"
+        pub struct Simple<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Simple<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.value_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.value_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn value(&self) -> u32 {
+                u32::from_be_bytes(self.data[0usize..4usize].try_into().unwrap())
+            }
+            pub fn value_end_offset(&self) -> binparse::Len {
                 binparse::Len {
                     byte: 4usize,
                     bit: 0usize,
                 }
             }
-            "#,
-        );
-    }
+        }
+        "#,
+    );
+}
 
-    #[test]
-    fn test_field_with_bitfield_type() {
-        let dsl = "struct Foo { version: b<4> }";
-        let s = parse_single_struct(dsl);
-        let field = extract_field(&s);
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-        let done_fields = vec![];
-
-        let ctx = FieldCtx::new(field, Some(Len { byte: 0, bit: 0 }), &done_fields, &done);
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 4 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
+#[test]
+fn golden_bitfields() {
+    assert_generated_eq(
+        "struct IpFlags { version: b<4>, ihl: b<4>, dscp: b<6>, ecn: b<2> }",
+        r#"
+        pub struct IpFlags<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> IpFlags<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.version_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.ihl_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.dscp_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.ecn_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.ecn_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
             #[allow(clippy::identity_op)]
             pub fn version(&self) -> u8 {
                 (self.data[0usize] >> 0usize) & 15u8
             }
-            "#,
-        );
-        assert_tokens_eq(
-            result.offset_getter,
-            r#"
             pub fn version_end_offset(&self) -> binparse::Len {
                 binparse::Len {
                     byte: 0usize,
                     bit: 4usize,
                 }
             }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_field_at_nonzero_offset() {
-        let dsl = "struct Foo { length: u16 }";
-        let s = parse_single_struct(dsl);
-        let field = extract_field(&s);
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-        let done_fields = vec![];
-
-        let ctx = FieldCtx::new(field, Some(Len { byte: 4, bit: 0 }), &done_fields, &done);
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 2, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn length(&self) -> u16 {
-                u16::from_ne_bytes(self.data[4usize..6usize].try_into().unwrap())
+            #[allow(clippy::identity_op)]
+            pub fn ihl(&self) -> u8 {
+                (self.data[0usize] >> 4usize) & 15u8
             }
-            "#,
-        );
-        assert_tokens_eq(
-            result.offset_getter,
-            r#"
-            pub fn length_end_offset(&self) -> binparse::Len {
+            pub fn ihl_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn dscp(&self) -> u8 {
+                (self.data[1usize] >> 0usize) & 63u8
+            }
+            pub fn dscp_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 6usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn ecn(&self) -> u8 {
+                (self.data[1usize] >> 6usize) & 3u8
+            }
+            pub fn ecn_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_cross_byte_bitfield() {
+    assert_generated_eq(
+        "struct Cross { a: b<5>, b: b<6>, c: b<5> }",
+        r#"
+        pub struct Cross<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Cross<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.a_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.b_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.c_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.c_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn a(&self) -> u8 {
+                (self.data[0usize] >> 0usize) & 31u8
+            }
+            pub fn a_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 0usize,
+                    bit: 5usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn b(&self) -> u8 {
+                {
+                    let first_part = (self.data[0usize] >> 5usize) & 7u8;
+                    let second_part = self.data[1usize] & 7u8;
+                    first_part | (second_part << 3usize)
+                }
+            }
+            pub fn b_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 3usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn c(&self) -> u8 {
+                (self.data[1usize] >> 3usize) & 31u8
+            }
+            pub fn c_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_nested_structs() {
+    assert_generated_eq(
+        "struct Inner { a: u8, b: u8 } struct Outer { prefix: u16, inner: Inner, suffix: u16 }",
+        r#"
+        pub struct Inner<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Inner<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.a_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.b_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.b_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn a(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn a_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn b(&self) -> u8 {
+                self.data[1usize]
+            }
+            pub fn b_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        pub struct Outer<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Outer<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.prefix_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.inner_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.suffix_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.suffix_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn prefix(&self) -> u16 {
+                u16::from_be_bytes(self.data[0usize..2usize].try_into().unwrap())
+            }
+            pub fn prefix_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn inner(&self) -> ::binparse::ParseResult<Inner<'_>> {
+                Inner::parse(&self.data[2usize..]).map(|(value, _)| value)
+            }
+            pub fn inner_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 4usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn suffix(&self) -> u16 {
+                u16::from_be_bytes(self.data[4usize..6usize].try_into().unwrap())
+            }
+            pub fn suffix_end_offset(&self) -> binparse::Len {
                 binparse::Len {
                     byte: 6usize,
                     bit: 0usize,
                 }
             }
-            "#,
-        );
-    }
+        }
+        "#,
+    );
+}
 
-    #[test]
-    #[ignore = "None offset not yet implemented for bitfields"]
-    fn test_field_uses_prev_offset_when_no_start_offset() {
-        let dsl = "struct Foo { prev: u8, current: b<4> }";
-        let s = parse_single_struct(dsl);
-        let fields = extract_fields(&s);
-        let prev_field = fields[0];
-        let field = fields[1];
-
-        let done_fields = vec![DoneField {
-            origin: prev_field,
-            len: Some(Len { byte: 1, bit: 0 }),
-            offset_getter_fn_name: format_ident!("prev_end_offset"),
-        }];
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = FieldCtx::new(field, None, &done_fields, &done);
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 4 }));
-        assert_tokens_eq(
-            result.offset_getter,
-            r#"
-            pub fn current_end_offset(&self) -> binparse::Len {
-                let prev = self.prev_end_offset();
+#[test]
+fn golden_fixed_array() {
+    assert_generated_eq(
+        "struct WithArray { count: u8, data: [u32; 4] }",
+        r#"
+        #[allow(non_camel_case_types)]
+        pub struct data_Iterator<'a> {
+            idx: usize,
+            count: usize,
+            data: &'a [u8],
+        }
+        impl<'a> ::std::iter::Iterator for data_Iterator<'a> {
+            type Item = ::binparse::ParseResult<u32>;
+            fn next(&mut self) -> std::option::Option<Self::Item> {
+                if self.idx == self.count {
+                    return None;
+                }
+                self.idx += 1;
+                let value = u32::from_be_bytes(self.data[..4usize].try_into().unwrap());
+                self.data = &self.data[4usize..];
+                Some(Ok(value))
+            }
+        }
+        pub struct WithArray<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> WithArray<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.count_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.data_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.data_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn count(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn count_end_offset(&self) -> binparse::Len {
                 binparse::Len {
-                    byte: prev.byte + 0usize,
-                    bit: prev.bit + 4usize,
+                    byte: 1usize,
+                    bit: 0usize,
                 }
             }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_field_with_struct_ref() {
-        let dsl = "struct Foo { header: Header }";
-        let s = parse_single_struct(dsl);
-        let field = extract_field(&s);
-
-        let mut done = HashMap::new();
-        done.insert(
-            "Header",
-            GeneratedStruct {
-                len: Some(Len { byte: 20, bit: 0 }),
-                tokens: quote! {},
-            },
-        );
-        let done_fields = vec![];
-
-        let ctx = FieldCtx::new(field, Some(Len { byte: 0, bit: 0 }), &done_fields, &done);
-
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 20, bit: 0 }));
-        assert_tokens_eq(
-            result.field_getter,
-            r#"
-            pub fn header(&self) -> Header<'_> {
-                Header::parse(&self.data[0usize..]).unwrap().0
+            #[allow(clippy::identity_op)]
+            pub fn data(&self) -> ::binparse::ParseResult<data_Iterator<'_>> {
+                Ok(data_Iterator {
+                    idx: 0,
+                    count: 4usize,
+                    data: &self.data[1usize..],
+                })
             }
-            "#,
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "not yet implemented")]
-    fn test_field_no_start_offset_no_prev_panics() {
-        let dsl = "struct Foo { orphan: u8 }";
-        let s = parse_single_struct(dsl);
-        let field = extract_field(&s);
-
-        let done = HashMap::<&str, GeneratedStruct>::new();
-        let done_fields = vec![];
-
-        let ctx = FieldCtx::new(field, None, &done_fields, &done);
-
-        let _ = ctx.generate();
-    }
+            pub fn data_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 17usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        "#,
+    );
 }
 
-#[cfg(test)]
-mod struct_ctx_tests {
-    use std::collections::HashMap;
-
-    use binparse::Len;
-    use quote::quote;
-
-    use crate::struct_::{GeneratedStruct, StructCtx};
-
-    use super::test_utils::{assert_tokens_eq, parse_single_struct};
-
-    #[test]
-    fn test_simple_struct_single_field() {
-        let dsl = "struct Simple { value: u32 }";
-        let struct_ast = parse_single_struct(dsl);
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = StructCtx::new(&struct_ast, &done);
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 4, bit: 0 }));
-        assert_tokens_eq(
-            result.tokens,
-            r#"
-            pub struct Simple<'a> {
-                data: &'a [u8],
+#[test]
+fn golden_expression_sized_array() {
+    assert_generated_eq(
+        "struct ExprArray { n: u8, items: [u16; n * 2] }",
+        r#"
+        #[allow(non_camel_case_types)]
+        pub struct items_Iterator<'a> {
+            idx: usize,
+            count: usize,
+            data: &'a [u8],
+        }
+        impl<'a> ::std::iter::Iterator for items_Iterator<'a> {
+            type Item = ::binparse::ParseResult<u16>;
+            fn next(&mut self) -> std::option::Option<Self::Item> {
+                if self.idx == self.count {
+                    return None;
+                }
+                self.idx += 1;
+                let value = u16::from_be_bytes(self.data[..2usize].try_into().unwrap());
+                self.data = &self.data[2usize..];
+                Some(Ok(value))
             }
-            impl<'a> Simple<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
-                    let len = me.value_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
+        }
+        pub struct ExprArray<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> ExprArray<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.n_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
                         return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
+                            expected,
                             got: data.len(),
                         });
                     }
-                    Ok((me, &data[len.byte..]))
                 }
-                pub fn value(&self) -> u32 {
-                    u32::from_ne_bytes(self.data[0usize..4usize].try_into().unwrap())
-                }
-                pub fn value_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 4usize,
-                        bit: 0usize,
-                    }
-                }
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_struct_multiple_primitives() {
-        let dsl = "struct Header { a: u8, b: u16, c: u8 }";
-        let struct_ast = parse_single_struct(dsl);
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = StructCtx::new(&struct_ast, &done);
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 4, bit: 0 }));
-        assert_tokens_eq(
-            result.tokens,
-            r#"
-            pub struct Header<'a> {
-                data: &'a [u8],
-            }
-            impl<'a> Header<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
-                    let len = me.c_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
+                {
+                    let len = me.items_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
                         return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
+                            expected,
                             got: data.len(),
                         });
                     }
-                    Ok((me, &data[len.byte..]))
                 }
-                pub fn a(&self) -> u8 {
-                    u8::from_ne_bytes(self.data[0usize..1usize].try_into().unwrap())
+                let len = me.items_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
                 }
-                pub fn a_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 1usize,
-                        bit: 0usize,
-                    }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
                 }
-                pub fn b(&self) -> u16 {
-                    u16::from_ne_bytes(self.data[1usize..3usize].try_into().unwrap())
-                }
-                pub fn b_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 3usize,
-                        bit: 0usize,
-                    }
-                }
-                pub fn c(&self) -> u8 {
-                    u8::from_ne_bytes(self.data[3usize..4usize].try_into().unwrap())
-                }
-                pub fn c_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 4usize,
-                        bit: 0usize,
-                    }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn n(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn n_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
                 }
             }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_struct_with_bitfields() {
-        let dsl = "struct Flags { version: b<4>, ihl: b<4> }";
-        let struct_ast = parse_single_struct(dsl);
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = StructCtx::new(&struct_ast, &done);
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 1, bit: 0 }));
-        assert_tokens_eq(
-            result.tokens,
-            r#"
-            pub struct Flags<'a> {
-                data: &'a [u8],
+            #[allow(clippy::identity_op)]
+            pub fn items(&self) -> ::binparse::ParseResult<items_Iterator<'_>> {
+                Ok(items_Iterator {
+                    idx: 0,
+                    count: (self.n() as usize * 2usize) as usize,
+                    data: &self.data[1usize..],
+                })
             }
-            impl<'a> Flags<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
-                    let len = me.ihl_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
-                        return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
-                            got: data.len(),
-                        });
-                    }
-                    Ok((me, &data[len.byte..]))
+            pub fn items_end_offset(&self) -> binparse::Len {
+                ::binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
                 }
-                #[allow(clippy::identity_op)]
-                pub fn version(&self) -> u8 {
-                    (self.data[0usize] >> 0usize) & 15u8
-                }
-                pub fn version_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 0usize,
-                        bit: 4usize,
-                    }
-                }
-                #[allow(clippy::identity_op)]
-                pub fn ihl(&self) -> u8 {
-                    (self.data[0usize] >> 4usize) & 15u8
-                }
-                pub fn ihl_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 1usize,
-                        bit: 0usize,
-                    }
-                }
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_struct_with_nested_struct() {
-        let dsl = "struct Outer { prefix: u8, inner: Inner }";
-        let struct_ast = parse_single_struct(dsl);
-
-        let mut done = HashMap::new();
-        done.insert(
-            "Inner",
-            GeneratedStruct {
-                len: Some(Len { byte: 4, bit: 0 }),
-                tokens: quote! {},
-            },
-        );
-
-        let ctx = StructCtx::new(&struct_ast, &done);
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 5, bit: 0 }));
-        assert_tokens_eq(
-            result.tokens,
-            r#"
-            pub struct Outer<'a> {
-                data: &'a [u8],
-            }
-            impl<'a> Outer<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
-                    let len = me.inner_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
-                        return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
-                            got: data.len(),
-                        });
-                    }
-                    Ok((me, &data[len.byte..]))
-                }
-                pub fn prefix(&self) -> u8 {
-                    u8::from_ne_bytes(self.data[0usize..1usize].try_into().unwrap())
-                }
-                pub fn prefix_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 1usize,
-                        bit: 0usize,
-                    }
-                }
-                pub fn inner(&self) -> Inner<'_> {
-                    Inner::parse(&self.data[1usize..]).unwrap().0
-                }
-                pub fn inner_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 5usize,
-                        bit: 0usize,
-                    }
-                }
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_struct_with_array() {
-        let dsl = "struct WithArray { data: [u8; 8] }";
-        let struct_ast = parse_single_struct(dsl);
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = StructCtx::new(&struct_ast, &done);
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 8, bit: 0 }));
-        assert_tokens_eq(
-            result.tokens,
-            r#"
-            pub struct WithArray<'a> {
-                data: &'a [u8],
-            }
-            impl<'a> WithArray<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
-                    let len = me.data_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
-                        return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
-                            got: data.len(),
-                        });
-                    }
-                    Ok((me, &data[len.byte..]))
-                }
-                pub fn data(&self) -> impl Iterator<Item = u8> + '_ {
-                    (0..8usize).map(move |i| {
-                        let offset = 0usize + i * 1usize;
-                        u8::from_ne_bytes(self.data[offset..offset + 1usize].try_into().unwrap())
+                    + ({
+                        ::binparse::Len {
+                            byte: 2usize * ((self.n() as usize * 2usize) as usize),
+                            bit: 0,
+                        }
                     })
-                }
-                pub fn data_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 8usize,
-                        bit: 0usize,
-                    }
-                }
             }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_struct_with_concat() {
-        let dsl = "struct WithConcat { fragment_offset: concat(b<5>, b<3>) }";
-        let struct_ast = parse_single_struct(dsl);
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = StructCtx::new(&struct_ast, &done);
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 1, bit: 0 }));
-        assert_tokens_eq(
-            result.tokens,
-            r#"
-            pub struct WithConcat<'a> {
-                data: &'a [u8],
-            }
-            impl<'a> WithConcat<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
-                    let len = me.fragment_offset_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
-                        return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
-                            got: data.len(),
-                        });
-                    }
-                    Ok((me, &data[len.byte..]))
-                }
-                #[allow(clippy::identity_op)]
-                pub fn fragment_offset_0(&self) -> u8 {
-                    (self.data[0usize] >> 0usize) & 31u8
-                }
-                #[allow(clippy::identity_op)]
-                pub fn fragment_offset_1(&self) -> u8 {
-                    (self.data[0usize] >> 5usize) & 7u8
-                }
-                pub fn fragment_offset(&self) -> (u8, u8) {
-                    (self.fragment_offset_0(), self.fragment_offset_1())
-                }
-                pub fn fragment_offset_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 1usize,
-                        bit: 0usize,
-                    }
-                }
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_empty_struct() {
-        let dsl = "struct Empty {}";
-        let struct_ast = parse_single_struct(dsl);
-        let done = HashMap::<&str, GeneratedStruct>::new();
-
-        let ctx = StructCtx::new(&struct_ast, &done);
-        let result = ctx.generate().unwrap();
-
-        assert_eq!(result.len, Some(Len { byte: 0, bit: 0 }));
-        assert_tokens_eq(
-            result.tokens,
-            r#"
-            pub struct Empty<'a> {
-                data: &'a [u8],
-            }
-            impl<'a> Empty<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    Ok((Self { data }, data))
-                }
-            }
-            "#,
-        );
-    }
+        }
+        "#,
+    );
 }
 
-#[cfg(test)]
-mod codegen_tests {
-    use crate::CodeGen;
-
-    use super::test_utils::assert_tokens_eq;
-
-    fn generate(dsl: &str) -> String {
-        let ast = binparse_dsl_parse::parse_str(dsl).unwrap();
-        CodeGen::generate(&ast).unwrap()
-    }
-
-    #[test]
-    fn test_codegen_simple_struct() {
-        let code = generate(
-            r#"
-            struct Simple {
-                value: u32,
+#[test]
+fn golden_struct_ref_array() {
+    assert_generated_eq(
+        "struct Inner { a: u8 } struct StructArray { count: u8, items: [Inner; count] }",
+        r#"
+        #[allow(non_camel_case_types)]
+        pub struct items_Iterator<'a> {
+            idx: usize,
+            count: usize,
+            data: &'a [u8],
+        }
+        impl<'a> ::std::iter::Iterator for items_Iterator<'a> {
+            type Item = ::binparse::ParseResult<Inner<'a>>;
+            fn next(&mut self) -> std::option::Option<Self::Item> {
+                if self.idx == self.count {
+                    return None;
+                }
+                self.idx += 1;
+                match Inner::parse(self.data) {
+                    Ok((value, rem)) => {
+                        self.data = rem;
+                        Some(Ok(value))
+                    }
+                    Err(error) => Some(Err(error)),
+                }
             }
-            "#,
-        );
-
-        assert_tokens_eq(
-            code.parse().unwrap(),
-            r#"
-            pub struct Simple<'a> {
-                data: &'a [u8],
+        }
+        pub struct StructArray<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> StructArray<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.count_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.items_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.items_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
             }
-            impl<'a> Simple<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
+            #[allow(clippy::identity_op)]
+            pub fn count(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn count_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn items(&self) -> ::binparse::ParseResult<items_Iterator<'_>> {
+                Ok(items_Iterator {
+                    idx: 0,
+                    count: self.count() as usize,
+                    data: &self.data[1usize..],
+                })
+            }
+            pub fn items_end_offset(&self) -> binparse::Len {
+                ::binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+                    + ({
+                        ::binparse::Len {
+                            byte: 1usize * (self.count() as usize),
+                            bit: 0,
+                        }
+                    })
+            }
+        }
+        pub struct Inner<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Inner<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.a_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.a_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn a(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn a_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_bitfield_array() {
+    assert_generated_eq(
+        "struct BitArray { nibbles: [b<4>; 4] }",
+        r#"
+        #[allow(non_camel_case_types)]
+        pub struct nibbles_Iterator<'a> {
+            idx: usize,
+            count: usize,
+            data: &'a [u8],
+            bit_offset: usize,
+        }
+        impl<'a> ::std::iter::Iterator for nibbles_Iterator<'a> {
+            type Item = ::binparse::ParseResult<u8>;
+            fn next(&mut self) -> std::option::Option<Self::Item> {
+                if self.idx == self.count {
+                    return None;
+                }
+                self.idx += 1;
+                let byte_idx = self.bit_offset / 8;
+                let bit_idx = self.bit_offset % 8;
+                let value = if bit_idx + 4usize <= 8 {
+                    let mask = (1u8 << 4usize) - 1;
+                    (self.data[byte_idx] >> bit_idx) & mask
+                } else {
+                    let bits_in_first = 8 - bit_idx;
+                    let bits_in_second = 4usize - bits_in_first;
+                    let first_mask = (1u8 << bits_in_first) - 1;
+                    let second_mask = (1u8 << bits_in_second) - 1;
+                    let first_part = (self.data[byte_idx] >> bit_idx) & first_mask;
+                    let second_part = self.data[byte_idx + 1] & second_mask;
+                    first_part | (second_part << bits_in_first)
+                };
+                self.bit_offset += 4usize;
+                Some(Ok(value))
+            }
+        }
+        pub struct BitArray<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> BitArray<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.nibbles_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.nibbles_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn nibbles(&self) -> ::binparse::ParseResult<nibbles_Iterator<'_>> {
+                Ok(nibbles_Iterator {
+                    idx: 0,
+                    count: 4usize,
+                    data: &self.data[0usize..],
+                    bit_offset: 0,
+                })
+            }
+            pub fn nibbles_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_concat() {
+    assert_generated_eq(
+        "struct WithConcat { flags: b<3>, fragment_offset: concat(b<5>, u8) }",
+        r#"
+        pub struct WithConcat<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> WithConcat<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.flags_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.fragment_offset_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.fragment_offset_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn flags(&self) -> u8 {
+                (self.data[0usize] >> 0usize) & 7u8
+            }
+            pub fn flags_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 0usize,
+                    bit: 3usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn fragment_offset_0(&self) -> u8 {
+                (self.data[0usize] >> 3usize) & 31u8
+            }
+            #[allow(clippy::identity_op)]
+            pub fn fragment_offset_1(&self) -> u8 {
+                self.data[1usize]
+            }
+            #[allow(clippy::identity_op)]
+            pub fn fragment_offset(&self) -> (u8, u8) {
+                (self.fragment_offset_0(), self.fragment_offset_1())
+            }
+            pub fn fragment_offset_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_union_single_discriminant() {
+    assert_generated_eq(
+        r#"struct Packet {
+            ty: u8,
+            payload: union(ty) {
+                1 => Echo { id: u16 },
+                _ => Unknown { },
+            },
+        }"#,
+        r#"
+        #[allow(non_camel_case_types)]
+        pub struct Packet_payload_Echo<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Packet_payload_Echo<'a> {
+            #[allow(clippy::identity_op)]
+            pub fn id(&self) -> u16 {
+                u16::from_be_bytes(self.data[0usize..2usize].try_into().unwrap())
+            }
+            pub fn id_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        #[allow(non_camel_case_types)]
+        pub struct Packet_payload_Unknown<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Packet_payload_Unknown<'a> {}
+        #[allow(non_camel_case_types)]
+        pub enum Packet_payload<'a> {
+            Echo(Packet_payload_Echo<'a>),
+            Unknown(Packet_payload_Unknown<'a>),
+        }
+        pub struct Packet<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Packet<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.ty_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.payload_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.payload_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn ty(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn ty_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn payload(&self) -> Packet_payload<'_> {
+                match self.ty() {
+                    1 => {
+                        Packet_payload::Echo(Packet_payload_Echo {
+                            data: &self.data[1usize..],
+                        })
+                    }
+                    _ => {
+                        Packet_payload::Unknown(Packet_payload_Unknown {
+                            data: &self.data[1usize..],
+                        })
+                    }
+                }
+            }
+            pub fn payload_end_offset(&self) -> binparse::Len {
+                ::binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+                    + ({
+                        match self.ty() {
+                            1 => {
+                                ::binparse::Len {
+                                    byte: 2usize,
+                                    bit: 0,
+                                }
+                            }
+                            _ => {
+                                ::binparse::Len {
+                                    byte: 0usize,
+                                    bit: 0,
+                                }
+                            }
+                        }
+                    })
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_union_tuple_discriminant_with_multiple_matchers() {
+    assert_generated_eq(
+        r#"struct Packet {
+            ty: u8,
+            code: u8,
+            payload: union(ty, code) {
+                (0, 0) | (0, 8) => Echo { id: u16 },
+                _ => Unknown { },
+            },
+        }"#,
+        r#"
+        #[allow(non_camel_case_types)]
+        pub struct Packet_payload_Echo<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Packet_payload_Echo<'a> {
+            #[allow(clippy::identity_op)]
+            pub fn id(&self) -> u16 {
+                u16::from_be_bytes(self.data[0usize..2usize].try_into().unwrap())
+            }
+            pub fn id_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        #[allow(non_camel_case_types)]
+        pub struct Packet_payload_Unknown<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Packet_payload_Unknown<'a> {}
+        #[allow(non_camel_case_types)]
+        pub enum Packet_payload<'a> {
+            Echo(Packet_payload_Echo<'a>),
+            Unknown(Packet_payload_Unknown<'a>),
+        }
+        pub struct Packet<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Packet<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.ty_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.code_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.payload_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.payload_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn ty(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn ty_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn code(&self) -> u8 {
+                self.data[1usize]
+            }
+            pub fn code_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn payload(&self) -> Packet_payload<'_> {
+                match (self.ty(), self.code()) {
+                    (0, 0) | (0, 8) => {
+                        Packet_payload::Echo(Packet_payload_Echo {
+                            data: &self.data[2usize..],
+                        })
+                    }
+                    _ => {
+                        Packet_payload::Unknown(Packet_payload_Unknown {
+                            data: &self.data[2usize..],
+                        })
+                    }
+                }
+            }
+            pub fn payload_end_offset(&self) -> binparse::Len {
+                ::binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+                    + ({
+                        match (self.ty(), self.code()) {
+                            (0, 0) | (0, 8) => {
+                                ::binparse::Len {
+                                    byte: 2usize,
+                                    bit: 0,
+                                }
+                            }
+                            _ => {
+                                ::binparse::Len {
+                                    byte: 0usize,
+                                    bit: 0,
+                                }
+                            }
+                        }
+                    })
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_endian_attributes() {
+    assert_generated_eq(
+        r#"@endian(little)
+        struct LittlePacket {
+            header: u32,
+            @endian(big) mixed: u16,
+            data: u8,
+        }"#,
+        r#"
+        pub struct LittlePacket<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> LittlePacket<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.header_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.mixed_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.data_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.data_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn header(&self) -> u32 {
+                u32::from_le_bytes(self.data[0usize..4usize].try_into().unwrap())
+            }
+            pub fn header_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 4usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn mixed(&self) -> u16 {
+                u16::from_be_bytes(self.data[4usize..6usize].try_into().unwrap())
+            }
+            pub fn mixed_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 6usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn data(&self) -> u8 {
+                self.data[6usize]
+            }
+            pub fn data_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 7usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_fixed_hook() {
+    assert_generated_eq(
+        r#"struct WithFixedHook {
+            prefix: u8,
+            @hook(double_it, u32)
+            value: u16,
+            suffix: u8,
+        }"#,
+        r#"
+        pub struct WithFixedHook<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> WithFixedHook<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.prefix_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
                     let len = me.value_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
                         return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
+                            expected,
                             got: data.len(),
                         });
                     }
-                    Ok((me, &data[len.byte..]))
                 }
-                pub fn value(&self) -> u32 {
-                    u32::from_ne_bytes(self.data[0usize..4usize].try_into().unwrap())
-                }
-                pub fn value_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 4usize,
-                        bit: 0usize,
-                    }
-                }
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_codegen_struct_with_bitfields() {
-        let code = generate(
-            r#"
-            struct IpFlags {
-                version: b<4>,
-                ihl: b<4>,
-                dscp: b<6>,
-                ecn: b<2>,
-            }
-            "#,
-        );
-
-        assert_tokens_eq(
-            code.parse().unwrap(),
-            r#"
-            pub struct IpFlags<'a> {
-                data: &'a [u8],
-            }
-            impl<'a> IpFlags<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
-                    let len = me.ecn_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
-                        return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
-                            got: data.len(),
-                        });
-                    }
-                    Ok((me, &data[len.byte..]))
-                }
-                #[allow(clippy::identity_op)]
-                pub fn version(&self) -> u8 {
-                    (self.data[0usize] >> 0usize) & 15u8
-                }
-                pub fn version_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 0usize,
-                        bit: 4usize,
-                    }
-                }
-                #[allow(clippy::identity_op)]
-                pub fn ihl(&self) -> u8 {
-                    (self.data[0usize] >> 4usize) & 15u8
-                }
-                pub fn ihl_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 1usize,
-                        bit: 0usize,
-                    }
-                }
-                #[allow(clippy::identity_op)]
-                pub fn dscp(&self) -> u8 {
-                    (self.data[1usize] >> 0usize) & 63u8
-                }
-                pub fn dscp_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 1usize,
-                        bit: 6usize,
-                    }
-                }
-                #[allow(clippy::identity_op)]
-                pub fn ecn(&self) -> u8 {
-                    (self.data[1usize] >> 6usize) & 3u8
-                }
-                pub fn ecn_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 2usize,
-                        bit: 0usize,
-                    }
-                }
-            }
-            "#,
-        );
-    }
-
-    #[test]
-    fn test_codegen_nested_structs() {
-        let code = generate(
-            r#"
-            struct Inner {
-                a: u8,
-                b: u8,
-            }
-
-            struct Outer {
-                prefix: u16,
-                inner: Inner,
-                suffix: u16,
-            }
-            "#,
-        );
-
-        assert_tokens_eq(
-            code.parse().unwrap(),
-            r#"
-            pub struct Inner<'a> {
-                data: &'a [u8],
-            }
-            impl<'a> Inner<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
-                    let len = me.b_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
-                        return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
-                            got: data.len(),
-                        });
-                    }
-                    Ok((me, &data[len.byte..]))
-                }
-                pub fn a(&self) -> u8 {
-                    u8::from_ne_bytes(self.data[0usize..1usize].try_into().unwrap())
-                }
-                pub fn a_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 1usize,
-                        bit: 0usize,
-                    }
-                }
-                pub fn b(&self) -> u8 {
-                    u8::from_ne_bytes(self.data[1usize..2usize].try_into().unwrap())
-                }
-                pub fn b_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 2usize,
-                        bit: 0usize,
-                    }
-                }
-            }
-            pub struct Outer<'a> {
-                data: &'a [u8],
-            }
-            impl<'a> Outer<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
+                {
                     let len = me.suffix_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
                         return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
+                            expected,
                             got: data.len(),
                         });
                     }
-                    Ok((me, &data[len.byte..]))
                 }
-                pub fn prefix(&self) -> u16 {
-                    u16::from_ne_bytes(self.data[0usize..2usize].try_into().unwrap())
+                let len = me.suffix_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
                 }
-                pub fn prefix_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 2usize,
-                        bit: 0usize,
-                    }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
                 }
-                pub fn inner(&self) -> Inner<'_> {
-                    Inner::parse(&self.data[2usize..]).unwrap().0
-                }
-                pub fn inner_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 4usize,
-                        bit: 0usize,
-                    }
-                }
-                pub fn suffix(&self) -> u16 {
-                    u16::from_ne_bytes(self.data[4usize..6usize].try_into().unwrap())
-                }
-                pub fn suffix_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 6usize,
-                        bit: 0usize,
-                    }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn prefix(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn prefix_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
                 }
             }
-            "#,
-        );
-    }
+            #[allow(clippy::identity_op)]
+            pub fn value(&self) -> u32 {
+                double_it(u16::from_be_bytes(self.data[1usize..3usize].try_into().unwrap()))
+            }
+            pub fn value_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 3usize,
+                    bit: 0usize,
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn suffix(&self) -> u8 {
+                self.data[3usize]
+            }
+            pub fn suffix_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 4usize,
+                    bit: 0usize,
+                }
+            }
+        }
+        "#,
+    );
+}
 
-    #[test]
-    fn test_codegen_array_field() {
-        let code = generate(
-            r#"
-            struct WithArray {
-                count: u8,
-                data: [u32; 4],
-            }
-            "#,
-        );
-
-        assert_tokens_eq(
-            code.parse().unwrap(),
-            r#"
-            pub struct WithArray<'a> {
-                data: &'a [u8],
-            }
-            impl<'a> WithArray<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
-                    let len = me.data_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
+#[test]
+fn golden_vla_hook() {
+    assert_generated_eq(
+        r#"struct WithVlaHook {
+            len: u8,
+            @hook(parse_cstring, String)
+            name: [u8],
+        }"#,
+        r#"
+        pub struct WithVlaHook<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> WithVlaHook<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.len_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
                         return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
+                            expected,
                             got: data.len(),
                         });
                     }
-                    Ok((me, &data[len.byte..]))
                 }
-                pub fn count(&self) -> u8 {
-                    u8::from_ne_bytes(self.data[0usize..1usize].try_into().unwrap())
-                }
-                pub fn count_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 1usize,
-                        bit: 0usize,
+                {
+                    let len = me.name_end_offset();
+                    let expected = len.byte + usize::from(len.bit > 0);
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
                     }
                 }
-                pub fn data(&self) -> impl Iterator<Item = u32> + '_ {
-                    (0..4usize).map(move |i| {
-                        let offset = 1usize + i * 4usize;
-                        u32::from_ne_bytes(self.data[offset..offset + 4usize].try_into().unwrap())
+                let len = me.name_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn len(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn len_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            fn name_raw(&self) -> (String, usize) {
+                parse_cstring(&self.data[self.len_end_offset().byte..])
+            }
+            pub fn name(&self) -> String {
+                self.name_raw().0
+            }
+            pub fn name_end_offset(&self) -> binparse::Len {
+                ::binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+                    + ({
+                        binparse::Len {
+                            byte: self.name_raw().1,
+                            bit: 0,
+                        }
                     })
-                }
-                pub fn data_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 17usize,
-                        bit: 0usize,
-                    }
-                }
             }
-            "#,
-        );
-    }
+        }
+        "#,
+    );
+}
 
-    #[test]
-    fn test_codegen_concat_field() {
-        let code = generate(
-            r#"
-            struct WithConcat {
-                flags: b<3>,
-                fragment_offset: concat(b<5>, u8),
-            }
-            "#,
-        );
+#[test]
+fn duplicate_struct_is_rejected() {
+    let err = generate_err("struct Dup { a: u8 } struct Dup { b: u16 }");
+    assert!(matches!(err, Error::DuplicateStruct { .. }));
+}
 
-        assert_tokens_eq(
-            code.parse().unwrap(),
-            r#"
-            pub struct WithConcat<'a> {
-                data: &'a [u8],
-            }
-            impl<'a> WithConcat<'a> {
-                pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
-                    let me = Self { data };
-                    let len = me.fragment_offset_end_offset();
-                    if len.bit != 0 {
-                        return Err(binparse::ParseError::UnalignedLength(len));
-                    }
-                    if data.len() < len.byte {
-                        return Err(binparse::ParseError::NotEnoughData {
-                            expected: len.byte,
-                            got: data.len(),
-                        });
-                    }
-                    Ok((me, &data[len.byte..]))
-                }
-                #[allow(clippy::identity_op)]
-                pub fn flags(&self) -> u8 {
-                    (self.data[0usize] >> 0usize) & 7u8
-                }
-                pub fn flags_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 0usize,
-                        bit: 3usize,
-                    }
-                }
-                #[allow(clippy::identity_op)]
-                pub fn fragment_offset_0(&self) -> u8 {
-                    (self.data[0usize] >> 3usize) & 31u8
-                }
-                pub fn fragment_offset_1(&self) -> u8 {
-                    u8::from_ne_bytes(self.data[1usize..2usize].try_into().unwrap())
-                }
-                pub fn fragment_offset(&self) -> (u8, u8) {
-                    (self.fragment_offset_0(), self.fragment_offset_1())
-                }
-                pub fn fragment_offset_end_offset(&self) -> binparse::Len {
-                    binparse::Len {
-                        byte: 2usize,
-                        bit: 0usize,
-                    }
-                }
-            }
-            "#,
-        );
-    }
+#[test]
+fn endian_on_u8_is_rejected() {
+    let err = generate_err("struct Foo { @endian(little) a: u8 }");
+    assert!(err.to_string().contains("@endian cannot be applied to u8"));
+}
 
-    #[test]
-    fn test_codegen_duplicate_struct_error() {
-        let result = binparse_dsl_parse::parse_str(
-            r#"
-            struct Dup {
-                a: u8,
-            }
-            struct Dup {
-                b: u16,
-            }
-            "#,
-        )
-        .and_then(|ast| CodeGen::generate(&ast).map_err(|e| e.to_string()));
+#[test]
+fn endian_on_bitfield_is_rejected() {
+    let err = generate_err("struct Foo { @endian(little) a: b<4> }");
+    assert!(
+        err.to_string()
+            .contains("@endian cannot be applied to bitfields")
+    );
+}
 
-        assert!(result.is_err());
-    }
+#[test]
+fn endian_on_struct_ref_is_rejected() {
+    let err = generate_err("struct Inner { x: u8 } struct Foo { @endian(big) inner: Inner }");
+    assert!(
+        err.to_string()
+            .contains("@endian cannot be applied to struct ref")
+    );
+}
 
-    #[test]
-    fn test_codegen_complex_ip_header() {
-        let code = generate(
-            r#"
-            struct IpAddr {
-                a: u8,
-                b: u8,
-                c: u8,
-                d: u8,
-            }
+#[test]
+fn invalid_endian_value_is_rejected() {
+    let err = generate_err("struct Foo { @endian(middle) a: u16 }");
+    assert!(err.to_string().contains("@endian argument must be"));
+}
 
-            struct Header {
-                version: b<4>,
-                ihl: b<4>,
-                dscp: b<6>,
-                ecn: b<2>,
-                total_length: u16,
-                id: u16,
-                flags: b<3>,
-                fragment_offset: concat(b<5>, u8),
-                ttl: u8,
-                protocol: u8,
-                header_checksum: u16,
-                src: IpAddr,
-                dst: IpAddr,
-            }
-            "#,
-        );
+#[test]
+fn endian_wrong_arg_count_is_rejected() {
+    let err = generate_err("struct Foo { @endian(big, little) a: u16 }");
+    assert!(err.to_string().contains("requires exactly 1 argument"));
+}
 
-        assert!(code.contains("pub struct IpAddr<'a>"));
-        assert!(code.contains("pub struct Header<'a>"));
-        assert!(code.contains("pub fn version(&self) -> u8"));
-        assert!(code.contains("pub fn src(&self) -> IpAddr<'_>"));
-        assert!(code.contains("pub fn dst(&self) -> IpAddr<'_>"));
-        assert!(code.contains("pub fn fragment_offset(&self) -> (u8, u8)"));
-    }
+#[test]
+fn array_size_unknown_field_is_rejected() {
+    let err = generate_err("struct Foo { items: [u16; nope] }");
+    assert!(
+        err.to_string()
+            .contains("array size path references unknown field 'nope'")
+    );
+}
 
-    #[test]
-    fn test_codegen_vla_hook() {
-        let code = generate(
-            r#"
-            struct WithVlaHook {
-                prefix: u8,
-                @hook(cstring, String)
-                name: [u8],
-            }
-            "#,
-        );
+#[test]
+fn array_size_non_numeric_field_is_rejected() {
+    let err = generate_err("struct Inner { x: u8 } struct Foo { inner: Inner, items: [u8; inner] }");
+    assert!(
+        err.to_string()
+            .contains("array size path must reference a primitive or bitfield")
+    );
+}
 
-        assert!(code.contains("fn name_raw(&self) -> (String, usize)"));
-        assert!(code.contains("cstring(&self.data[self.prefix_end_offset().byte..])"));
-        assert!(code.contains("pub fn name(&self) -> String"));
-        assert!(code.contains("self.name_raw().0"));
-        assert!(code.contains("self.name_raw().1"));
-    }
-
-    #[test]
-    fn test_codegen_fixed_hook() {
-        let code = generate(
-            r#"
-            struct WithFixedHook {
-                @hook(transform_u32, MyType)
-                value: u32,
-            }
-            "#,
-        );
-
-        assert!(code.contains("pub fn value(&self) -> MyType"));
-        assert!(code.contains("transform_u32("));
-    }
-
-    #[test]
-    fn test_codegen_vla_hook_first_field() {
-        let code = generate(
-            r#"
-            struct VlaFirst {
-                @hook(my_hook, Vec<u8>)
-                data: [u8],
-            }
-            "#,
-        );
-
-        assert!(code.contains("my_hook(&self.data[0..])"));
-    }
-
-    #[test]
-    fn test_codegen_hook_with_path() {
-        let code = generate(
-            r#"
-            struct WithPathHook {
-                @hook(my_mod::my_hook, my_mod::MyType)
-                field: u16,
-            }
-            "#,
-        );
-
-        assert!(code.contains("my_mod::my_hook("));
-        assert!(code.contains("-> my_mod::MyType"));
-    }
+#[test]
+fn union_unknown_argument_is_rejected() {
+    let err = generate_err(
+        r#"struct Foo {
+            payload: union(kind) {
+                1 => A { x: u8 },
+                _ => B { },
+            },
+        }"#,
+    );
+    assert!(err.to_string().contains("argument not found kind"));
 }

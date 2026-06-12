@@ -15,10 +15,8 @@ mod field;
 mod struct_;
 mod type_;
 
-// TODO: uncomment this once you are ready to fix tests
-//
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;
 
 pub struct CodeGen<'a> {
     todo: HashMap<&'a str, Todo<'a>>,
