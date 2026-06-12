@@ -21,7 +21,7 @@ pub(crate) fn generate(
 
     let len = generated_struct.len.clone();
     let struct_ident = format_ident!("{}", struct_name);
-    let return_ty = quote! { #struct_ident<'_> };
+    let return_ty = quote! { ::binparse::ParseResult<#struct_ident<'_>> };
 
     match start_offset {
         GeneratedLen::Fixed(offset) => {
@@ -31,7 +31,7 @@ pub(crate) fn generate(
             let start_byte = offset.byte;
 
             let field_getter_body = quote! {
-                #struct_ident::parse(&self.data[#start_byte..]).unwrap().0
+                #struct_ident::parse(&self.data[#start_byte..]).map(|(value, _)| value)
             };
 
             Ok(GeneratedTypeInfo {

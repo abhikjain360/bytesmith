@@ -104,7 +104,7 @@ pub(crate) fn generate(
                     .get(*struct_name)
                     .ok_or_else(|| type_::Error::UnknownType(struct_name.to_string()))?;
                 let struct_ident = format_ident!("{}", struct_name);
-                let return_ty = quote! { #struct_ident<'_> };
+                let return_ty = quote! { #struct_ident<'a> };
                 let iterator_fields = quote! {
                     idx: usize,
                     count: usize,
@@ -116,11 +116,13 @@ pub(crate) fn generate(
                     data: &self.data[#offset..],
                 };
                 let next_body = quote! {
-                    let ret = #struct_ident::parse(self.data);
-                    if let Ok((rem, _)) = &ret {
-                        self.data = rem;
+                    match #struct_ident::parse(self.data) {
+                        Ok((value, rem)) => {
+                            self.data = rem;
+                            Some(Ok(value))
+                        },
+                        Err(error) => Some(Err(error)),
                     }
-                    Some(ret)
                 };
                 (
                     generated_struct.len.clone(),
@@ -180,7 +182,7 @@ pub(crate) fn generate(
 
     struct_accum.other_entities.extend(quote! {
         #[allow(non_camel_case_types)]
-        struct #iterator_name<'a> {
+        pub struct #iterator_name<'a> {
             #iterator_fields
         }
 
@@ -219,7 +221,7 @@ pub(crate) fn generate(
     Ok(GeneratedTypeInfo {
         len,
         field_getter_body,
-        return_ty: quote! { ::binparse::ParseResult<#iterator_name> },
+        return_ty: quote! { ::binparse::ParseResult<#iterator_name<'_>> },
         field_type: DoneFieldType::Other,
     })
 }

@@ -53,13 +53,13 @@ impl Add for GeneratedLen {
     fn add(self, other: Self) -> Self::Output {
         match (self, other) {
             (GeneratedLen::Dynamic(a), GeneratedLen::Fixed(Len { byte, bit })) => {
-                GeneratedLen::Dynamic(quote! { {#a} + ::binparse::Len { byte: #byte, bit: #bit } })
+                GeneratedLen::Dynamic(quote! { ({ #a }) + ::binparse::Len { byte: #byte, bit: #bit } })
             }
             (GeneratedLen::Fixed(Len { byte, bit }), GeneratedLen::Dynamic(a)) => {
-                GeneratedLen::Dynamic(quote! { ::binparse::Len { byte: #byte, bit: #bit } + {#a} })
+                GeneratedLen::Dynamic(quote! { ::binparse::Len { byte: #byte, bit: #bit } + ({ #a }) })
             }
             (GeneratedLen::Dynamic(a), GeneratedLen::Dynamic(b)) => {
-                GeneratedLen::Dynamic(quote! { {#a} + {#b} })
+                GeneratedLen::Dynamic(quote! { ({ #a }) + ({ #b }) })
             }
             (GeneratedLen::Fixed(a), GeneratedLen::Fixed(b)) => GeneratedLen::Fixed(a + b),
         }
@@ -71,7 +71,7 @@ impl Mul<usize> for GeneratedLen {
 
     fn mul(self, other: usize) -> Self::Output {
         match self {
-            GeneratedLen::Dynamic(a) => GeneratedLen::Dynamic(quote! { #a * #other }),
+            GeneratedLen::Dynamic(a) => GeneratedLen::Dynamic(quote! { ({ #a }) * #other }),
             GeneratedLen::Fixed(a) => GeneratedLen::Fixed(a * other),
         }
     }
@@ -163,7 +163,8 @@ impl<'a> CodeGen<'a> {
 
     fn print(self) -> Result<String, Error> {
         let combined: TokenStream = self.done.into_values().map(|s| s.tokens).collect();
-        let file: syn::File = syn::parse2(combined).expect("failed to parse generated tokens");
+        let file: syn::File = syn::parse2(combined.clone())
+            .unwrap_or_else(|e| panic!("failed to parse generated tokens: {e}\n{combined}"));
         Ok(prettyplease::unparse(&file))
     }
 }

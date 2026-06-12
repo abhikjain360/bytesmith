@@ -17,7 +17,6 @@ pub(crate) enum DoneFieldType {
 pub(crate) struct DoneField {
     pub(crate) name: String,
     pub(crate) field_type: DoneFieldType,
-    pub(crate) len: GeneratedLen,
     pub(crate) offset_getter_fn_name: syn::Ident,
 }
 
@@ -29,6 +28,7 @@ pub(crate) struct StructAccum {
     pub(crate) other_entities: TokenStream,
     pub(crate) field_definitions: TokenStream,
     pub(crate) functions: TokenStream,
+    pub(crate) parse_checks: TokenStream,
     pub(crate) last_offset_getter_fn_name: Option<syn::Ident>,
 }
 
@@ -61,6 +61,7 @@ impl StructAccum {
             other_entities: TokenStream::new(),
             field_definitions: TokenStream::new(),
             functions: TokenStream::new(),
+            parse_checks: TokenStream::new(),
             last_offset_getter_fn_name: None,
         }
     }
@@ -93,6 +94,7 @@ pub(crate) fn generate<'a>(
         other_entities,
         field_definitions,
         functions,
+        parse_checks,
         last_offset_getter_fn_name,
     } = accum;
 
@@ -100,6 +102,7 @@ pub(crate) fn generate<'a>(
         quote! {
             pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
                 let me = Self { data };
+                #parse_checks
                 let len = me.#fn_name();
                 if len.bit != 0 {
                     return Err(binparse::ParseError::UnalignedLength(len));

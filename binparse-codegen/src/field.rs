@@ -151,11 +151,22 @@ pub(crate) fn generate<'a>(
     struct_accum.functions.extend(field_accum.helper_fns);
     struct_accum.functions.extend(field_accum.field_getter);
     struct_accum.functions.extend(field_accum.offset_getter);
+    struct_accum.parse_checks.extend(quote! {
+        {
+            let len = me.#offset_getter_fn_name();
+            let expected = len.byte + usize::from(len.bit > 0);
+            if data.len() < expected {
+                return Err(binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: data.len(),
+                });
+            }
+        }
+    });
     struct_accum.last_offset_getter_fn_name = Some(offset_getter_fn_name.clone());
     struct_accum.done_fields.push(DoneField {
         name: ast.name.to_string(),
         field_type,
-        len,
         offset_getter_fn_name,
     });
 
