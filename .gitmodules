@@ -1,0 +1,4 @@
+[submodule "third_party/wireshark"]
+	path = third_party/wireshark
+	url = https://github.com/wireshark/wireshark.git
+	shallow = true
