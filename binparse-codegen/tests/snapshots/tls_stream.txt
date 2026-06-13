@@ -1,0 +1,17 @@
+TlsStream: TlsStream [0..104) = struct
+  records: [TlsRecord] [0..104) = array
+    0: TlsRecord [0..48) = struct
+      content_type: u8 [0..8) = 20
+      legacy_major: u8 [8..16) = 3
+      legacy_minor: u8 [16..24) = 3
+      length: u16 [24..40) = 1
+      fragment: [u8] [40..48) = array
+        0: u8 [40..48) = 1
+    1: TlsRecord [48..104) = struct
+      content_type: u8 [48..56) = 22
+      legacy_major: u8 [56..64) = 3
+      legacy_minor: u8 [64..72) = 3
+      length: u16 [72..88) = 2
+      fragment: [u8] [88..104) = array
+        0: u8 [88..96) = 170
+        1: u8 [96..104) = 187

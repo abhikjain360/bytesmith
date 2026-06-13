@@ -6,3 +6,9 @@ members = [
     "binparse-codegen",
     "binparse",
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/abhikjain360/binparse2"
+license = "MIT OR Apache-2.0"

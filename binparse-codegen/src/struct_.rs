@@ -52,6 +52,7 @@ pub(crate) struct GeneratedStruct {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("failed to generate field '{name}': {error}")]
     Field {
@@ -226,7 +227,7 @@ pub(crate) fn generate_struct<'a>(
                 if fatal.is_none() {
                     let bound = me.#fn_name().byte;
                     if data.len() < bound {
-                        fatal = Some(binparse::ParseError::NotEnoughData {
+                        fatal = Some(::binparse::ParseError::NotEnoughData {
                             expected: bound,
                             got: data.len(),
                         });
@@ -331,22 +332,22 @@ pub(crate) fn generate_struct<'a>(
 
     let parse_fn = if let Some(fn_name) = last_offset_getter_fn_name {
         quote! {
-            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
                 let me = Self { data };
                 #parse_checks
                 let len = me.#fn_name();
                 if len.bit != 0 {
-                    return Err(binparse::ParseError::UnalignedLength(len));
+                    return Err(::binparse::ParseError::UnalignedLength(len));
                 }
                 if data.len() < len.byte {
-                    return Err(binparse::ParseError::NotEnoughData { expected: len.byte, got: data.len() });
+                    return Err(::binparse::ParseError::NotEnoughData { expected: len.byte, got: data.len() });
                 }
                 Ok((me, &data[len.byte..]))
             }
         }
     } else {
         quote! {
-            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
                 Ok((Self { data }, data))
             }
         }

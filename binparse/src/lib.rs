@@ -80,6 +80,7 @@ pub struct HookContext<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ParseError {
     #[error("not enough data: expected {expected} bytes, got {got}")]
     NotEnoughData { expected: usize, got: usize },

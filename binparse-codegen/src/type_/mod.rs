@@ -130,6 +130,14 @@ pub enum Error {
     LenBoundTooSmall { bound: usize, needed: usize },
     #[error("@greedy element type has zero length")]
     GreedyZeroSizedElem,
+    #[error("@until is not supported on arrays of non-u8 elements")]
+    UntilOnNonU8Array,
+    #[error("@until is not supported on arrays of struct refs")]
+    UntilOnStructRefArray,
+    #[error("@until and @greedy are not supported on bitfield arrays")]
+    UntilOrGreedyOnBitfieldArray,
+    #[error("@max_iter is not supported inside conditionals")]
+    MaxIterInConditional,
     #[error(transparent)]
     Concat(#[from] concat::Error),
     #[error(transparent)]

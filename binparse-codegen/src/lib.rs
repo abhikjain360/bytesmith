@@ -77,6 +77,7 @@ impl Mul<usize> for GeneratedLen {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("duplicate struct definition '{name}'")]
     DuplicateStruct { name: String },
@@ -93,6 +94,12 @@ pub enum Error {
         name: String,
         source: struct_::Error,
     },
+    #[error("reference to unknown struct '{name}'")]
+    UnknownStruct { name: String },
+    #[error("dependency cycle among structs: {}", structs.join(", "))]
+    DependencyCycle { structs: Vec<String> },
+    #[error("generated code failed to parse: {message}")]
+    InvalidGeneratedCode { message: String },
 }
 
 impl<'a> CodeGen<'a> {
@@ -101,6 +108,7 @@ impl<'a> CodeGen<'a> {
         let mut reverse_deps = HashMap::<_, HashSet<_>>::new();
 
         let mut roots = Vec::new();
+        let mut definition_order = Vec::new();
         let mut error_enum: Option<&[ast::ErrorVariant<'_>]> = None;
 
         for def in ast {
@@ -115,6 +123,7 @@ impl<'a> CodeGen<'a> {
                 }
             };
 
+            definition_order.push(s.name);
             let mut new_s = Todo::new(s);
             find_dependencies(&s.items, &mut new_s.dependencies);
 
@@ -133,9 +142,18 @@ impl<'a> CodeGen<'a> {
             }
         }
 
+        let mut unknown = Vec::new();
         for (struct_, actual) in reverse_deps {
-            let dependants = &mut structs.get_mut(struct_).expect("dependant not found when they should have been added when building dependencies").dependants;
-            *dependants = actual;
+            match structs.get_mut(struct_) {
+                Some(todo) => todo.dependants = actual,
+                None => unknown.push(struct_),
+            }
+        }
+        if !unknown.is_empty() {
+            unknown.sort_unstable();
+            return Err(Error::UnknownStruct {
+                name: unknown[0].to_string(),
+            });
         }
 
         if error_enum.is_some() && structs.contains_key("Error") {
@@ -151,7 +169,9 @@ impl<'a> CodeGen<'a> {
         let mut next = Vec::new();
         while !roots.is_empty() {
             for root in roots.drain(..) {
-                let todo = me.todo.remove(root).expect("root not found in todo");
+                let Some(todo) = me.todo.remove(root) else {
+                    continue;
+                };
 
                 struct_::generate(todo.origin, &mut me.done, errors).map_err(|source| {
                     Error::GenerateStruct {
@@ -161,10 +181,11 @@ impl<'a> CodeGen<'a> {
                 })?;
 
                 for dependant in todo.dependants {
-                    let dependant_todo = me.todo.get_mut(dependant).expect("dependant not found");
-                    dependant_todo.dependencies.remove(root);
-                    if dependant_todo.dependencies.is_empty() {
-                        next.push(dependant);
+                    if let Some(dependant_todo) = me.todo.get_mut(dependant) {
+                        dependant_todo.dependencies.remove(root);
+                        if dependant_todo.dependencies.is_empty() {
+                            next.push(dependant);
+                        }
                     }
                 }
             }
@@ -172,13 +193,26 @@ impl<'a> CodeGen<'a> {
             std::mem::swap(&mut next, &mut roots);
         }
 
-        me.print(error_tokens.unwrap_or_default())
+        if !me.todo.is_empty() {
+            let mut structs: Vec<String> = me.todo.keys().map(|name| name.to_string()).collect();
+            structs.sort_unstable();
+            return Err(Error::DependencyCycle { structs });
+        }
+
+        me.print(error_tokens.unwrap_or_default(), &definition_order)
     }
 
-    fn print(self, mut combined: TokenStream) -> Result<String, Error> {
-        combined.extend(self.done.into_values().map(|s| s.tokens));
-        let file: syn::File = syn::parse2(combined.clone())
-            .unwrap_or_else(|e| panic!("failed to parse generated tokens: {e}\n{combined}"));
+    fn print(mut self, mut combined: TokenStream, definition_order: &[&'a str]) -> Result<String, Error> {
+        combined.extend(
+            definition_order
+                .iter()
+                .filter_map(|name| self.done.remove(name))
+                .map(|s| s.tokens),
+        );
+        let file: syn::File =
+            syn::parse2(combined.clone()).map_err(|e| Error::InvalidGeneratedCode {
+                message: format!("{e}\n{combined}"),
+            })?;
         Ok(prettyplease::unparse(&file))
     }
 }

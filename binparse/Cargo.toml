@@ -1,7 +1,10 @@
 [package]
 name = "binparse"
-version = "0.1.0"
-edition = "2024"
+description = "Runtime types for binparse-generated parsers: offsets, parse errors, dissection tree, hooks"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 thiserror = "2.0.17"

@@ -1,7 +1,10 @@
 [package]
 name = "binparse-dsl"
-version = "0.1.0"
-edition = "2024"
+description = "AST definitions for the binparse DSL"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [lib]
 path = "src/lib.rs"

@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{fmt::Write, ops::Range};
 
 use crate::ParseError;
 
@@ -22,6 +22,7 @@ pub struct FieldNode<'a> {
 
 /// Decoded value carried by a [`FieldNode`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Value<'a> {
     UInt(u128),
     Int(i128),
@@ -39,6 +40,7 @@ pub enum Value<'a> {
 /// Parse status of a [`FieldNode`]; malformed fields carry the error while
 /// the rest of the tree remains usable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Status {
     Ok,
     Error(ParseError),
@@ -120,6 +122,47 @@ impl<'a> FieldNode<'a> {
         }
     }
 
+    /// Renders the tree as deterministic indented text, one node per line:
+    /// `name: type [bit_start..bit_end) = value`, appending the error status
+    /// and a `(hidden)` marker when present. Intended for snapshot tests and
+    /// debugging, not UI display.
+    pub fn render(&self) -> String {
+        let mut out = String::new();
+        self.render_into(&mut out, 0);
+        out
+    }
+
+    fn render_into(&self, out: &mut String, depth: usize) {
+        for _ in 0..depth {
+            out.push_str("  ");
+        }
+        let _ = write!(
+            out,
+            "{}: {} [{}..{}) = {}",
+            self.name,
+            self.type_name,
+            self.bit_range.start,
+            self.bit_range.end,
+            self.value.render(),
+        );
+        match &self.status {
+            Status::Ok => {}
+            Status::Error(error) => {
+                let _ = write!(out, " !error: {error}");
+            }
+            Status::Failed(variant) => {
+                let _ = write!(out, " !failed: {variant}");
+            }
+        }
+        if self.hidden {
+            out.push_str(" (hidden)");
+        }
+        out.push('\n');
+        for child in &self.children {
+            child.render_into(out, depth + 1);
+        }
+    }
+
     /// Walks the tree in pre-order and collects every node whose status is not
     /// [`Status::Ok`], pairing each node's `path` with its status. Together with
     /// the tree itself this is the "partial tree plus errors" surface a UI uses
@@ -145,6 +188,29 @@ impl<'a> Value<'a> {
         let start = (bit_range.start / 8).min(data.len());
         let end = bit_range.end.div_ceil(8).clamp(start, data.len());
         Value::Bytes(&data[start..end])
+    }
+
+    fn render(&self) -> String {
+        match self {
+            Value::UInt(value) => value.to_string(),
+            Value::Int(value) => value.to_string(),
+            Value::Bool(value) => value.to_string(),
+            Value::Bytes(bytes) => {
+                let hex = bytes
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("bytes({hex})")
+            }
+            Value::String(value) => format!("{value:?}"),
+            Value::EnumLabel(label) => (*label).to_string(),
+            Value::Struct => "struct".to_string(),
+            Value::Array => "array".to_string(),
+            Value::UnionVariant(variant) => format!("union({variant})"),
+            Value::Absent => "absent".to_string(),
+            Value::Opaque => "opaque".to_string(),
+        }
     }
 }
 

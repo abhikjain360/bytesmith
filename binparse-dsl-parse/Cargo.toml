@@ -1,10 +1,13 @@
 [package]
 name = "binparse-dsl-parse"
-version = "0.1.0"
-edition = "2024"
+description = "Parser from binparse DSL source into the binparse-dsl AST with diagnostics"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
-binparse-dsl = { path = "../binparse-dsl" }
+binparse-dsl = { path = "../binparse-dsl", version = "0.1.0" }
 ariadne = "0.6.0"
 winnow = { version = "0.7.14", features = ["simd"] }
 thiserror = "2.0.17"

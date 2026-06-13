@@ -49,7 +49,7 @@ pub struct Empty<'a> {
     data: &'a [u8],
 }
 impl<'a> Empty<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         Ok((Self { data }, data))
     }
     pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
@@ -104,16 +104,16 @@ pub struct Simple<'a> {
     data: &'a [u8],
 }
 impl<'a> Simple<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.value_fatal_check()?;
         me.value_recoverable_check()?;
         let len = me.value_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -222,12 +222,12 @@ impl<'a> Simple<'a> {
         self.value_start_offset().bits()..self.value_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn value_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.value_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -236,7 +236,7 @@ impl<'a> Simple<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn value_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -263,7 +263,7 @@ pub struct IpFlags<'a> {
     data: &'a [u8],
 }
 impl<'a> IpFlags<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.version_fatal_check()?;
         me.version_recoverable_check()?;
@@ -275,10 +275,10 @@ impl<'a> IpFlags<'a> {
         me.ecn_recoverable_check()?;
         let len = me.ecn_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -513,12 +513,12 @@ impl<'a> IpFlags<'a> {
         self.version_start_offset().bits()..self.version_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn version_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn version_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.version_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -527,7 +527,7 @@ impl<'a> IpFlags<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn version_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn version_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -557,12 +557,12 @@ impl<'a> IpFlags<'a> {
         self.ihl_start_offset().bits()..self.ihl_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn ihl_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn ihl_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.ihl_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -571,7 +571,7 @@ impl<'a> IpFlags<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ihl_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn ihl_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -601,12 +601,12 @@ impl<'a> IpFlags<'a> {
         self.dscp_start_offset().bits()..self.dscp_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn dscp_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn dscp_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.dscp_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -615,7 +615,7 @@ impl<'a> IpFlags<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn dscp_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn dscp_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -645,12 +645,12 @@ impl<'a> IpFlags<'a> {
         self.ecn_start_offset().bits()..self.ecn_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn ecn_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn ecn_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.ecn_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -659,7 +659,7 @@ impl<'a> IpFlags<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ecn_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn ecn_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -686,7 +686,7 @@ pub struct Cross<'a> {
     data: &'a [u8],
 }
 impl<'a> Cross<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.a_fatal_check()?;
         me.a_recoverable_check()?;
@@ -696,10 +696,10 @@ impl<'a> Cross<'a> {
         me.c_recoverable_check()?;
         let len = me.c_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -892,12 +892,12 @@ impl<'a> Cross<'a> {
         self.a_start_offset().bits()..self.a_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn a_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.a_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -906,7 +906,7 @@ impl<'a> Cross<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn a_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -940,12 +940,12 @@ impl<'a> Cross<'a> {
         self.b_start_offset().bits()..self.b_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn b_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.b_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -954,7 +954,7 @@ impl<'a> Cross<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn b_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -984,12 +984,12 @@ impl<'a> Cross<'a> {
         self.c_start_offset().bits()..self.c_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn c_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn c_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.c_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -998,7 +998,7 @@ impl<'a> Cross<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn c_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn c_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -1025,7 +1025,7 @@ pub struct Inner<'a> {
     data: &'a [u8],
 }
 impl<'a> Inner<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.a_fatal_check()?;
         me.a_recoverable_check()?;
@@ -1033,10 +1033,10 @@ impl<'a> Inner<'a> {
         me.b_recoverable_check()?;
         let len = me.b_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -1187,12 +1187,12 @@ impl<'a> Inner<'a> {
         self.a_start_offset().bits()..self.a_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn a_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.a_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -1201,7 +1201,7 @@ impl<'a> Inner<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn a_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -1231,12 +1231,12 @@ impl<'a> Inner<'a> {
         self.b_start_offset().bits()..self.b_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn b_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.b_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -1245,7 +1245,7 @@ impl<'a> Inner<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn b_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -1262,7 +1262,7 @@ pub struct Outer<'a> {
     data: &'a [u8],
 }
 impl<'a> Outer<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.prefix_fatal_check()?;
         me.prefix_recoverable_check()?;
@@ -1272,10 +1272,10 @@ impl<'a> Outer<'a> {
         me.suffix_recoverable_check()?;
         let len = me.suffix_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -1468,12 +1468,12 @@ impl<'a> Outer<'a> {
         self.prefix_start_offset().bits()..self.prefix_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn prefix_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn prefix_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.prefix_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -1482,7 +1482,7 @@ impl<'a> Outer<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn prefix_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn prefix_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -1518,12 +1518,12 @@ impl<'a> Outer<'a> {
         self.inner_start_offset().bits()..self.inner_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn inner_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn inner_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.inner_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -1532,7 +1532,7 @@ impl<'a> Outer<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn inner_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn inner_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -1562,12 +1562,12 @@ impl<'a> Outer<'a> {
         self.suffix_start_offset().bits()..self.suffix_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn suffix_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn suffix_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.suffix_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -1576,7 +1576,7 @@ impl<'a> Outer<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn suffix_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn suffix_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -1621,7 +1621,7 @@ pub struct WithArray<'a> {
     data: &'a [u8],
 }
 impl<'a> WithArray<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.count_fatal_check()?;
         me.count_recoverable_check()?;
@@ -1629,10 +1629,10 @@ impl<'a> WithArray<'a> {
         me.data_recoverable_check()?;
         let len = me.data_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -1783,12 +1783,12 @@ impl<'a> WithArray<'a> {
         self.count_start_offset().bits()..self.count_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn count_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn count_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.count_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -1797,7 +1797,7 @@ impl<'a> WithArray<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn count_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn count_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -1867,12 +1867,12 @@ impl<'a> WithArray<'a> {
         self.data_start_offset().bits()..self.data_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn data_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn data_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.data_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -1881,7 +1881,7 @@ impl<'a> WithArray<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn data_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn data_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -1926,7 +1926,7 @@ pub struct ExprArray<'a> {
     data: &'a [u8],
 }
 impl<'a> ExprArray<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.n_fatal_check()?;
         me.n_recoverable_check()?;
@@ -1934,10 +1934,10 @@ impl<'a> ExprArray<'a> {
         me.items_recoverable_check()?;
         let len = me.items_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -2088,12 +2088,12 @@ impl<'a> ExprArray<'a> {
         self.n_start_offset().bits()..self.n_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn n_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn n_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.n_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -2102,7 +2102,7 @@ impl<'a> ExprArray<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn n_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn n_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -2178,12 +2178,12 @@ impl<'a> ExprArray<'a> {
         self.items_start_offset().bits()..self.items_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn items_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn items_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.items_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -2192,7 +2192,7 @@ impl<'a> ExprArray<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn items_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn items_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -2237,7 +2237,7 @@ pub struct Rest<'a> {
     data: &'a [u8],
 }
 impl<'a> Rest<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.n_fatal_check()?;
         me.n_recoverable_check()?;
@@ -2245,10 +2245,10 @@ impl<'a> Rest<'a> {
         me.tail_recoverable_check()?;
         let len = me.tail_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -2399,12 +2399,12 @@ impl<'a> Rest<'a> {
         self.n_start_offset().bits()..self.n_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn n_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn n_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.n_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -2413,7 +2413,7 @@ impl<'a> Rest<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn n_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn n_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -2492,12 +2492,12 @@ impl<'a> Rest<'a> {
         self.tail_start_offset().bits()..self.tail_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn tail_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn tail_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.tail_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -2506,7 +2506,7 @@ impl<'a> Rest<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tail_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn tail_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -2551,7 +2551,7 @@ pub struct CStr<'a> {
     data: &'a [u8],
 }
 impl<'a> CStr<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.name_fatal_check()?;
         me.name_recoverable_check()?;
@@ -2559,10 +2559,10 @@ impl<'a> CStr<'a> {
         me.after_recoverable_check()?;
         let len = me.after_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -2767,12 +2767,12 @@ impl<'a> CStr<'a> {
         self.name_start_offset().bits()..self.name_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn name_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn name_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.name_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -2781,7 +2781,7 @@ impl<'a> CStr<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn name_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn name_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -2856,12 +2856,12 @@ impl<'a> CStr<'a> {
         self.after_start_offset().bits()..self.after_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn after_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn after_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.after_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -2870,7 +2870,7 @@ impl<'a> CStr<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn after_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn after_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -2919,7 +2919,7 @@ pub struct StructArray<'a> {
     data: &'a [u8],
 }
 impl<'a> StructArray<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.count_fatal_check()?;
         me.count_recoverable_check()?;
@@ -2927,10 +2927,10 @@ impl<'a> StructArray<'a> {
         me.items_recoverable_check()?;
         let len = me.items_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -3081,12 +3081,12 @@ impl<'a> StructArray<'a> {
         self.count_start_offset().bits()..self.count_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn count_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn count_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.count_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -3095,7 +3095,7 @@ impl<'a> StructArray<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn count_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn count_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -3166,12 +3166,12 @@ impl<'a> StructArray<'a> {
         self.items_start_offset().bits()..self.items_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn items_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn items_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.items_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -3180,7 +3180,7 @@ impl<'a> StructArray<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn items_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn items_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -3197,16 +3197,16 @@ pub struct Inner<'a> {
     data: &'a [u8],
 }
 impl<'a> Inner<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.a_fatal_check()?;
         me.a_recoverable_check()?;
         let len = me.a_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -3315,12 +3315,12 @@ impl<'a> Inner<'a> {
         self.a_start_offset().bits()..self.a_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn a_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.a_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -3329,7 +3329,7 @@ impl<'a> Inner<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn a_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -3387,16 +3387,16 @@ pub struct BitArray<'a> {
     data: &'a [u8],
 }
 impl<'a> BitArray<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.nibbles_fatal_check()?;
         me.nibbles_recoverable_check()?;
         let len = me.nibbles_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -3546,12 +3546,12 @@ impl<'a> BitArray<'a> {
         self.nibbles_start_offset().bits()..self.nibbles_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn nibbles_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn nibbles_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.nibbles_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -3560,7 +3560,7 @@ impl<'a> BitArray<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn nibbles_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn nibbles_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -3587,7 +3587,7 @@ pub struct WithConcat<'a> {
     data: &'a [u8],
 }
 impl<'a> WithConcat<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.flags_fatal_check()?;
         me.flags_recoverable_check()?;
@@ -3595,10 +3595,10 @@ impl<'a> WithConcat<'a> {
         me.fragment_offset_recoverable_check()?;
         let len = me.fragment_offset_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -3749,12 +3749,12 @@ impl<'a> WithConcat<'a> {
         self.flags_start_offset().bits()..self.flags_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn flags_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn flags_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.flags_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -3763,7 +3763,7 @@ impl<'a> WithConcat<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn flags_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn flags_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -3831,12 +3831,12 @@ impl<'a> WithConcat<'a> {
             .bits()..self.fragment_offset_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn fragment_offset_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn fragment_offset_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.fragment_offset_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -3845,7 +3845,7 @@ impl<'a> WithConcat<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn fragment_offset_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn fragment_offset_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -3879,16 +3879,16 @@ pub struct Packet_payload_Echo<'a> {
     data: &'a [u8],
 }
 impl<'a> Packet_payload_Echo<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.id_fatal_check()?;
         me.id_recoverable_check()?;
         let len = me.id_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -3997,12 +3997,12 @@ impl<'a> Packet_payload_Echo<'a> {
         self.id_start_offset().bits()..self.id_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn id_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn id_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.id_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -4011,7 +4011,7 @@ impl<'a> Packet_payload_Echo<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn id_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn id_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -4029,7 +4029,7 @@ pub struct Packet_payload_Unknown<'a> {
     data: &'a [u8],
 }
 impl<'a> Packet_payload_Unknown<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         Ok((Self { data }, data))
     }
     pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
@@ -4079,7 +4079,7 @@ pub struct Packet<'a> {
     data: &'a [u8],
 }
 impl<'a> Packet<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.ty_fatal_check()?;
         me.ty_recoverable_check()?;
@@ -4087,10 +4087,10 @@ impl<'a> Packet<'a> {
         me.payload_recoverable_check()?;
         let len = me.payload_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -4241,12 +4241,12 @@ impl<'a> Packet<'a> {
         self.ty_start_offset().bits()..self.ty_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn ty_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn ty_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.ty_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -4255,7 +4255,7 @@ impl<'a> Packet<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ty_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn ty_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -4296,7 +4296,7 @@ impl<'a> Packet<'a> {
             }
         }
     }
-    fn payload_union_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_union_check(&self) -> Result<(), ::binparse::ParseError> {
         match self.ty() as usize {
             1 => {
                 Packet_payload_Echo::parse(&self.data[(1usize).min(self.data.len())..])?;
@@ -4351,13 +4351,13 @@ impl<'a> Packet<'a> {
         self.payload_start_offset().bits()..self.payload_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn payload_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         self.payload_union_check()?;
         {
             let len = self.payload_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -4366,7 +4366,7 @@ impl<'a> Packet<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn payload_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -4401,16 +4401,16 @@ pub struct Packet_payload_Echo<'a> {
     data: &'a [u8],
 }
 impl<'a> Packet_payload_Echo<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.id_fatal_check()?;
         me.id_recoverable_check()?;
         let len = me.id_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -4519,12 +4519,12 @@ impl<'a> Packet_payload_Echo<'a> {
         self.id_start_offset().bits()..self.id_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn id_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn id_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.id_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -4533,7 +4533,7 @@ impl<'a> Packet_payload_Echo<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn id_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn id_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -4551,7 +4551,7 @@ pub struct Packet_payload_Unknown<'a> {
     data: &'a [u8],
 }
 impl<'a> Packet_payload_Unknown<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         Ok((Self { data }, data))
     }
     pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
@@ -4601,7 +4601,7 @@ pub struct Packet<'a> {
     data: &'a [u8],
 }
 impl<'a> Packet<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.ty_fatal_check()?;
         me.ty_recoverable_check()?;
@@ -4611,10 +4611,10 @@ impl<'a> Packet<'a> {
         me.payload_recoverable_check()?;
         let len = me.payload_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -4807,12 +4807,12 @@ impl<'a> Packet<'a> {
         self.ty_start_offset().bits()..self.ty_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn ty_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn ty_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.ty_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -4821,7 +4821,7 @@ impl<'a> Packet<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ty_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn ty_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -4851,12 +4851,12 @@ impl<'a> Packet<'a> {
         self.code_start_offset().bits()..self.code_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn code_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn code_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.code_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -4865,7 +4865,7 @@ impl<'a> Packet<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn code_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn code_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -4906,7 +4906,7 @@ impl<'a> Packet<'a> {
             }
         }
     }
-    fn payload_union_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_union_check(&self) -> Result<(), ::binparse::ParseError> {
         match (self.ty() as usize, self.code() as usize) {
             (0, 0) | (0, 8) => {
                 Packet_payload_Echo::parse(&self.data[(2usize).min(self.data.len())..])?;
@@ -4961,13 +4961,13 @@ impl<'a> Packet<'a> {
         self.payload_start_offset().bits()..self.payload_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn payload_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         self.payload_union_check()?;
         {
             let len = self.payload_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -4976,7 +4976,7 @@ impl<'a> Packet<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn payload_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -5029,16 +5029,16 @@ pub struct Packet_payload_Echo<'a> {
     data: &'a [u8],
 }
 impl<'a> Packet_payload_Echo<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.id_fatal_check()?;
         me.id_recoverable_check()?;
         let len = me.id_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -5147,12 +5147,12 @@ impl<'a> Packet_payload_Echo<'a> {
         self.id_start_offset().bits()..self.id_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn id_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn id_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.id_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -5161,7 +5161,7 @@ impl<'a> Packet_payload_Echo<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn id_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn id_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -5182,7 +5182,7 @@ pub struct Packet<'a> {
     data: &'a [u8],
 }
 impl<'a> Packet<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.ty_fatal_check()?;
         me.ty_recoverable_check()?;
@@ -5190,10 +5190,10 @@ impl<'a> Packet<'a> {
         me.payload_recoverable_check()?;
         let len = me.payload_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -5344,12 +5344,12 @@ impl<'a> Packet<'a> {
         self.ty_start_offset().bits()..self.ty_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn ty_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn ty_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.ty_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -5358,7 +5358,7 @@ impl<'a> Packet<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ty_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn ty_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -5395,7 +5395,7 @@ impl<'a> Packet<'a> {
             }
         }
     }
-    fn payload_union_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_union_check(&self) -> Result<(), ::binparse::ParseError> {
         match self.ty() as usize {
             1 => {
                 Packet_payload_Echo::parse(&self.data[(1usize).min(self.data.len())..])?;
@@ -5443,13 +5443,13 @@ impl<'a> Packet<'a> {
         self.payload_start_offset().bits()..self.payload_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn payload_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         self.payload_union_check()?;
         {
             let len = self.payload_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -5458,7 +5458,7 @@ impl<'a> Packet<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn payload_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -5490,7 +5490,7 @@ pub struct LittlePacket<'a> {
     data: &'a [u8],
 }
 impl<'a> LittlePacket<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.header_fatal_check()?;
         me.header_recoverable_check()?;
@@ -5500,10 +5500,10 @@ impl<'a> LittlePacket<'a> {
         me.data_recoverable_check()?;
         let len = me.data_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -5696,12 +5696,12 @@ impl<'a> LittlePacket<'a> {
         self.header_start_offset().bits()..self.header_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn header_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn header_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.header_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -5710,7 +5710,7 @@ impl<'a> LittlePacket<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn header_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn header_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -5740,12 +5740,12 @@ impl<'a> LittlePacket<'a> {
         self.mixed_start_offset().bits()..self.mixed_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn mixed_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn mixed_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.mixed_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -5754,7 +5754,7 @@ impl<'a> LittlePacket<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn mixed_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn mixed_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -5784,12 +5784,12 @@ impl<'a> LittlePacket<'a> {
         self.data_start_offset().bits()..self.data_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn data_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn data_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.data_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -5798,7 +5798,7 @@ impl<'a> LittlePacket<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn data_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn data_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -5825,7 +5825,7 @@ pub struct SignedPrim<'a> {
     data: &'a [u8],
 }
 impl<'a> SignedPrim<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.a_fatal_check()?;
         me.a_recoverable_check()?;
@@ -5835,10 +5835,10 @@ impl<'a> SignedPrim<'a> {
         me.c_recoverable_check()?;
         let len = me.c_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -6031,12 +6031,12 @@ impl<'a> SignedPrim<'a> {
         self.a_start_offset().bits()..self.a_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn a_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.a_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -6045,7 +6045,7 @@ impl<'a> SignedPrim<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn a_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -6075,12 +6075,12 @@ impl<'a> SignedPrim<'a> {
         self.b_start_offset().bits()..self.b_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn b_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.b_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -6089,7 +6089,7 @@ impl<'a> SignedPrim<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn b_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -6119,12 +6119,12 @@ impl<'a> SignedPrim<'a> {
         self.c_start_offset().bits()..self.c_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn c_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn c_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.c_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -6133,7 +6133,7 @@ impl<'a> SignedPrim<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn c_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn c_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -6160,7 +6160,7 @@ pub struct LsbBits<'a> {
     data: &'a [u8],
 }
 impl<'a> LsbBits<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.low_fatal_check()?;
         me.low_recoverable_check()?;
@@ -6168,10 +6168,10 @@ impl<'a> LsbBits<'a> {
         me.high_recoverable_check()?;
         let len = me.high_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -6322,12 +6322,12 @@ impl<'a> LsbBits<'a> {
         self.low_start_offset().bits()..self.low_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn low_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn low_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.low_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -6336,7 +6336,7 @@ impl<'a> LsbBits<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn low_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn low_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -6366,12 +6366,12 @@ impl<'a> LsbBits<'a> {
         self.high_start_offset().bits()..self.high_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn high_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn high_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.high_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -6380,7 +6380,7 @@ impl<'a> LsbBits<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn high_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn high_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -6412,7 +6412,7 @@ pub struct WithFixedHook<'a> {
     data: &'a [u8],
 }
 impl<'a> WithFixedHook<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.prefix_fatal_check()?;
         me.prefix_recoverable_check()?;
@@ -6422,10 +6422,10 @@ impl<'a> WithFixedHook<'a> {
         me.suffix_recoverable_check()?;
         let len = me.suffix_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -6618,12 +6618,12 @@ impl<'a> WithFixedHook<'a> {
         self.prefix_start_offset().bits()..self.prefix_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn prefix_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn prefix_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.prefix_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -6632,7 +6632,7 @@ impl<'a> WithFixedHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn prefix_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn prefix_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -6683,12 +6683,12 @@ impl<'a> WithFixedHook<'a> {
         self.value_start_offset().bits()..self.value_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn value_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.value_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -6697,7 +6697,7 @@ impl<'a> WithFixedHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn value_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         self.value()?;
         Ok(())
     }
@@ -6728,12 +6728,12 @@ impl<'a> WithFixedHook<'a> {
         self.suffix_start_offset().bits()..self.suffix_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn suffix_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn suffix_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.suffix_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -6742,7 +6742,7 @@ impl<'a> WithFixedHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn suffix_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn suffix_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -6778,7 +6778,7 @@ impl<'a> ::binparse::Dissect<'a> for WithLenHook<'a> {
 }
 
 impl<'a> WithLenHook<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.len_fatal_check()?;
         me.len_recoverable_check()?;
@@ -6788,10 +6788,10 @@ impl<'a> WithLenHook<'a> {
         me.after_recoverable_check()?;
         let len = me.after_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -6984,12 +6984,12 @@ impl<'a> WithLenHook<'a> {
         self.len_start_offset().bits()..self.len_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn len_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.len_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -6998,7 +6998,7 @@ impl<'a> WithLenHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn len_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -7089,13 +7089,13 @@ impl<'a> WithLenHook<'a> {
         self.value_start_offset().bits()..self.value_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn value_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         self.value_raw()?;
         {
             let len = self.value_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -7104,7 +7104,7 @@ impl<'a> WithLenHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn value_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -7159,12 +7159,12 @@ impl<'a> WithLenHook<'a> {
         self.after_start_offset().bits()..self.after_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn after_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn after_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.after_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -7173,7 +7173,7 @@ impl<'a> WithLenHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn after_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn after_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -7207,7 +7207,7 @@ impl<'a> ::binparse::Dissect<'a> for WithCondHook<'a> {
 }
 
 impl<'a> WithCondHook<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.kind_fatal_check()?;
         me.kind_recoverable_check()?;
@@ -7219,10 +7219,10 @@ impl<'a> WithCondHook<'a> {
         me.tail_recoverable_check()?;
         let len = me.tail_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -7423,12 +7423,12 @@ impl<'a> WithCondHook<'a> {
         self.kind_start_offset().bits()..self.kind_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn kind_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn kind_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.kind_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -7437,7 +7437,7 @@ impl<'a> WithCondHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn kind_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn kind_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code, unused_parens)]
@@ -7506,12 +7506,12 @@ impl<'a> WithCondHook<'a> {
         self.value_start_offset().bits()..self.value_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn value_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.value_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -7520,7 +7520,7 @@ impl<'a> WithCondHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn value_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         self.value_raw()?;
         Ok(())
     }
@@ -7563,12 +7563,12 @@ impl<'a> WithCondHook<'a> {
         self.tail_start_offset().bits()..self.tail_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn tail_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn tail_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.tail_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -7577,7 +7577,7 @@ impl<'a> WithCondHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tail_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn tail_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -7604,7 +7604,7 @@ pub struct WithVlaHook<'a> {
     data: &'a [u8],
 }
 impl<'a> WithVlaHook<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.len_fatal_check()?;
         me.len_recoverable_check()?;
@@ -7612,10 +7612,10 @@ impl<'a> WithVlaHook<'a> {
         me.name_recoverable_check()?;
         let len = me.name_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -7766,12 +7766,12 @@ impl<'a> WithVlaHook<'a> {
         self.len_start_offset().bits()..self.len_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn len_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.len_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -7780,7 +7780,7 @@ impl<'a> WithVlaHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn len_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -7852,13 +7852,13 @@ impl<'a> WithVlaHook<'a> {
         self.name_start_offset().bits()..self.name_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn name_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn name_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         self.name_raw()?;
         {
             let len = self.name_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -7867,7 +7867,7 @@ impl<'a> WithVlaHook<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn name_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn name_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -7888,6 +7888,18 @@ impl<'a> ::binparse::Dissect<'a> for WithVlaHook<'a> {
 fn duplicate_struct_is_rejected() {
     let err = generate_err("struct Dup { a: u8 } struct Dup { b: u16 }");
     assert!(matches!(err, Error::DuplicateStruct { .. }));
+}
+
+#[test]
+fn unknown_struct_reference_is_rejected() {
+    let err = generate_err("struct Foo { inner: Bar }");
+    assert!(matches!(err, Error::UnknownStruct { name } if name == "Bar"));
+}
+
+#[test]
+fn dependency_cycle_is_rejected() {
+    let err = generate_err("struct A { b: B } struct B { a: A }");
+    assert!(matches!(err, Error::DependencyCycle { .. }));
 }
 
 #[test]
@@ -8461,7 +8473,7 @@ pub struct Magic<'a> {
     data: &'a [u8],
 }
 impl<'a> Magic<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.magic_fatal_check()?;
         me.magic_recoverable_check()?;
@@ -8469,10 +8481,10 @@ impl<'a> Magic<'a> {
         me.flags_recoverable_check()?;
         let len = me.flags_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -8623,12 +8635,12 @@ impl<'a> Magic<'a> {
         self.magic_start_offset().bits()..self.magic_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn magic_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn magic_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.magic_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -8637,9 +8649,9 @@ impl<'a> Magic<'a> {
         Ok(())
     }
     #[allow(clippy::unnecessary_cast)]
-    fn magic_validate(&self) -> Result<(), binparse::ParseError> {
+    fn magic_validate(&self) -> Result<(), ::binparse::ParseError> {
         if self.magic() != 49374 {
-            return Err(binparse::ParseError::ValidationFailed {
+            return Err(::binparse::ParseError::ValidationFailed {
                 field: "Magic.magic",
                 actual: self.magic() as u128,
             });
@@ -8647,7 +8659,7 @@ impl<'a> Magic<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn magic_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn magic_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         self.magic_validate()?;
         Ok(())
     }
@@ -8678,12 +8690,12 @@ impl<'a> Magic<'a> {
         self.flags_start_offset().bits()..self.flags_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn flags_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn flags_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.flags_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -8692,9 +8704,9 @@ impl<'a> Magic<'a> {
         Ok(())
     }
     #[allow(clippy::unnecessary_cast)]
-    fn flags_validate(&self) -> Result<(), binparse::ParseError> {
+    fn flags_validate(&self) -> Result<(), ::binparse::ParseError> {
         if self.flags() != 5 {
-            return Err(binparse::ParseError::ValidationFailed {
+            return Err(::binparse::ParseError::ValidationFailed {
                 field: "Magic.flags",
                 actual: self.flags() as u128,
             });
@@ -8702,7 +8714,7 @@ impl<'a> Magic<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn flags_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn flags_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         self.flags_validate()?;
         Ok(())
     }
@@ -8730,7 +8742,7 @@ pub struct Checked<'a> {
     data: &'a [u8],
 }
 impl<'a> Checked<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.n_fatal_check()?;
         me.n_recoverable_check()?;
@@ -8738,10 +8750,10 @@ impl<'a> Checked<'a> {
         me.m_recoverable_check()?;
         let len = me.m_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -8892,12 +8904,12 @@ impl<'a> Checked<'a> {
         self.n_start_offset().bits()..self.n_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn n_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn n_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.n_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -8906,7 +8918,7 @@ impl<'a> Checked<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn n_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn n_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -8936,12 +8948,12 @@ impl<'a> Checked<'a> {
         self.m_start_offset().bits()..self.m_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn m_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn m_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.m_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -8950,17 +8962,17 @@ impl<'a> Checked<'a> {
         Ok(())
     }
     #[allow(clippy::unnecessary_cast)]
-    fn m_validate(&self) -> Result<(), binparse::ParseError> {
+    fn m_validate(&self) -> Result<(), ::binparse::ParseError> {
         if !((1usize)..=((self.n() as usize).saturating_add(1usize)))
             .contains(&(self.m() as usize))
         {
-            return Err(binparse::ParseError::ValidationFailed {
+            return Err(::binparse::ParseError::ValidationFailed {
                 field: "Checked.m",
                 actual: self.m() as u128,
             });
         }
         if !((self.m() as usize) >= (self.n() as usize)) {
-            return Err(binparse::ParseError::ValidationFailed {
+            return Err(::binparse::ParseError::ValidationFailed {
                 field: "Checked.m",
                 actual: self.m() as u128,
             });
@@ -8968,7 +8980,7 @@ impl<'a> Checked<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn m_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn m_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         self.m_validate()?;
         Ok(())
     }
@@ -9132,7 +9144,7 @@ pub struct Cond<'a> {
     data: &'a [u8],
 }
 impl<'a> Cond<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.n_fatal_check()?;
         me.n_recoverable_check()?;
@@ -9148,10 +9160,10 @@ impl<'a> Cond<'a> {
         me.tail_recoverable_check()?;
         let len = me.tail_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -9402,12 +9414,12 @@ impl<'a> Cond<'a> {
         self.n_start_offset().bits()..self.n_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn n_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn n_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.n_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -9416,7 +9428,7 @@ impl<'a> Cond<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn n_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn n_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code, unused_parens)]
@@ -9459,12 +9471,12 @@ impl<'a> Cond<'a> {
         self.x_start_offset().bits()..self.x_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn x_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn x_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.x_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -9473,7 +9485,7 @@ impl<'a> Cond<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn x_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn x_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code, unused_parens)]
@@ -9516,12 +9528,12 @@ impl<'a> Cond<'a> {
         self.y_start_offset().bits()..self.y_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn y_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn y_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.y_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -9530,7 +9542,7 @@ impl<'a> Cond<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn y_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn y_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     fn conditional_0_end_offset(&self) -> binparse::Len {
@@ -9572,12 +9584,12 @@ impl<'a> Cond<'a> {
         self.tail_start_offset().bits()..self.tail_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn tail_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn tail_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.tail_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -9586,7 +9598,7 @@ impl<'a> Cond<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tail_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn tail_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -9753,7 +9765,7 @@ pub struct Padded<'a> {
     data: &'a [u8],
 }
 impl<'a> Padded<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.a_fatal_check()?;
         me.a_recoverable_check()?;
@@ -9765,10 +9777,10 @@ impl<'a> Padded<'a> {
         me.d_recoverable_check()?;
         let len = me.d_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -10015,12 +10027,12 @@ impl<'a> Padded<'a> {
         self.a_start_offset().bits()..self.a_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn a_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.a_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -10029,7 +10041,7 @@ impl<'a> Padded<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn a_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -10079,12 +10091,12 @@ impl<'a> Padded<'a> {
         self.b_start_offset().bits()..self.b_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn b_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.b_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -10093,7 +10105,7 @@ impl<'a> Padded<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn b_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -10143,12 +10155,12 @@ impl<'a> Padded<'a> {
         self.c_start_offset().bits()..self.c_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn c_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn c_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.c_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -10157,7 +10169,7 @@ impl<'a> Padded<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn c_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn c_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -10187,12 +10199,12 @@ impl<'a> Padded<'a> {
         self.d_start_offset().bits()..self.d_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn d_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn d_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.d_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -10201,7 +10213,7 @@ impl<'a> Padded<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn d_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn d_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -10228,7 +10240,7 @@ pub struct Skipped<'a> {
     data: &'a [u8],
 }
 impl<'a> Skipped<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.reserved_fatal_check()?;
         me.reserved_recoverable_check()?;
@@ -10238,10 +10250,10 @@ impl<'a> Skipped<'a> {
         me.pair_recoverable_check()?;
         let len = me.pair_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -10439,12 +10451,12 @@ impl<'a> Skipped<'a> {
         self.reserved_start_offset().bits()..self.reserved_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn reserved_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn reserved_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.reserved_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -10453,7 +10465,7 @@ impl<'a> Skipped<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn reserved_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn reserved_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -10483,12 +10495,12 @@ impl<'a> Skipped<'a> {
         self.flags_start_offset().bits()..self.flags_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn flags_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn flags_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.flags_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -10497,7 +10509,7 @@ impl<'a> Skipped<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn flags_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn flags_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -10565,12 +10577,12 @@ impl<'a> Skipped<'a> {
         self.pair_start_offset().bits()..self.pair_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn pair_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn pair_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.pair_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -10579,7 +10591,7 @@ impl<'a> Skipped<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn pair_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn pair_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -10670,7 +10682,7 @@ pub struct Tlv<'a> {
     data: &'a [u8],
 }
 impl<'a> Tlv<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.tag_fatal_check()?;
         me.tag_recoverable_check()?;
@@ -10682,10 +10694,10 @@ impl<'a> Tlv<'a> {
         me.after_recoverable_check()?;
         let len = me.after_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -10920,12 +10932,12 @@ impl<'a> Tlv<'a> {
         self.tag_start_offset().bits()..self.tag_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn tag_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn tag_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.tag_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -10934,7 +10946,7 @@ impl<'a> Tlv<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tag_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn tag_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -10964,12 +10976,12 @@ impl<'a> Tlv<'a> {
         self.len_start_offset().bits()..self.len_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn len_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.len_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -10978,7 +10990,7 @@ impl<'a> Tlv<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn len_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -11043,12 +11055,12 @@ impl<'a> Tlv<'a> {
         self.value_start_offset().bits()..self.value_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn value_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.value_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -11057,7 +11069,7 @@ impl<'a> Tlv<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn value_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -11112,12 +11124,12 @@ impl<'a> Tlv<'a> {
         self.after_start_offset().bits()..self.after_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn after_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn after_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.after_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -11126,7 +11138,7 @@ impl<'a> Tlv<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn after_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn after_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -11143,7 +11155,7 @@ pub struct Inner<'a> {
     data: &'a [u8],
 }
 impl<'a> Inner<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.a_fatal_check()?;
         me.a_recoverable_check()?;
@@ -11151,10 +11163,10 @@ impl<'a> Inner<'a> {
         me.b_recoverable_check()?;
         let len = me.b_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -11305,12 +11317,12 @@ impl<'a> Inner<'a> {
         self.a_start_offset().bits()..self.a_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn a_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.a_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -11319,7 +11331,7 @@ impl<'a> Inner<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn a_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -11349,12 +11361,12 @@ impl<'a> Inner<'a> {
         self.b_start_offset().bits()..self.b_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn b_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.b_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -11363,7 +11375,7 @@ impl<'a> Inner<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn b_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -11537,7 +11549,7 @@ pub struct Bounded<'a> {
     data: &'a [u8],
 }
 impl<'a> Bounded<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.len_fatal_check()?;
         me.len_recoverable_check()?;
@@ -11545,10 +11557,10 @@ impl<'a> Bounded<'a> {
         me.value_recoverable_check()?;
         let len = me.struct_len();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -11678,7 +11690,7 @@ impl<'a> Bounded<'a> {
         if fatal.is_none() {
             let bound = me.struct_len().byte;
             if data.len() < bound {
-                fatal = Some(binparse::ParseError::NotEnoughData {
+                fatal = Some(::binparse::ParseError::NotEnoughData {
                     expected: bound,
                     got: data.len(),
                 });
@@ -11750,12 +11762,12 @@ impl<'a> Bounded<'a> {
         self.len_start_offset().bits()..self.len_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn len_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.len_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -11764,7 +11776,7 @@ impl<'a> Bounded<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn len_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -11794,12 +11806,12 @@ impl<'a> Bounded<'a> {
         self.value_start_offset().bits()..self.value_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn value_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.value_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -11808,7 +11820,7 @@ impl<'a> Bounded<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn value_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -11859,7 +11871,7 @@ pub struct Filled<'a> {
     data: &'a [u8],
 }
 impl<'a> Filled<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.total_len_fatal_check()?;
         me.total_len_recoverable_check()?;
@@ -11867,10 +11879,10 @@ impl<'a> Filled<'a> {
         me.payload_recoverable_check()?;
         let len = me.struct_len();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -12000,7 +12012,7 @@ impl<'a> Filled<'a> {
         if fatal.is_none() {
             let bound = me.struct_len().byte;
             if data.len() < bound {
-                fatal = Some(binparse::ParseError::NotEnoughData {
+                fatal = Some(::binparse::ParseError::NotEnoughData {
                     expected: bound,
                     got: data.len(),
                 });
@@ -12072,12 +12084,12 @@ impl<'a> Filled<'a> {
         self.total_len_start_offset().bits()..self.total_len_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn total_len_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn total_len_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.total_len_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -12086,7 +12098,7 @@ impl<'a> Filled<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn total_len_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn total_len_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -12172,12 +12184,12 @@ impl<'a> Filled<'a> {
         self.payload_start_offset().bits()..self.payload_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn payload_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.payload_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -12186,7 +12198,7 @@ impl<'a> Filled<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn payload_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn payload_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -12223,7 +12235,7 @@ pub struct Inner<'a> {
     data: &'a [u8],
 }
 impl<'a> Inner<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.a_fatal_check()?;
         me.a_recoverable_check()?;
@@ -12231,10 +12243,10 @@ impl<'a> Inner<'a> {
         me.b_recoverable_check()?;
         let len = me.b_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -12385,12 +12397,12 @@ impl<'a> Inner<'a> {
         self.a_start_offset().bits()..self.a_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn a_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.a_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -12399,7 +12411,7 @@ impl<'a> Inner<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn a_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -12429,12 +12441,12 @@ impl<'a> Inner<'a> {
         self.b_start_offset().bits()..self.b_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn b_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.b_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -12443,7 +12455,7 @@ impl<'a> Inner<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn b_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn b_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -12461,16 +12473,16 @@ pub struct Tlv_value_Addr<'a> {
     data: &'a [u8],
 }
 impl<'a> Tlv_value_Addr<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.inner_fatal_check()?;
         me.inner_recoverable_check()?;
         let len = me.inner_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -12585,12 +12597,12 @@ impl<'a> Tlv_value_Addr<'a> {
         self.inner_start_offset().bits()..self.inner_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn inner_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn inner_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.inner_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -12599,7 +12611,7 @@ impl<'a> Tlv_value_Addr<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn inner_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn inner_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -12635,16 +12647,16 @@ pub struct Tlv_value_Raw<'a> {
     data: &'a [u8],
 }
 impl<'a> Tlv_value_Raw<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.bytes_fatal_check()?;
         me.bytes_recoverable_check()?;
         let len = me.bytes_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -12802,12 +12814,12 @@ impl<'a> Tlv_value_Raw<'a> {
         self.bytes_start_offset().bits()..self.bytes_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn bytes_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn bytes_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.bytes_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -12816,7 +12828,7 @@ impl<'a> Tlv_value_Raw<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn bytes_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn bytes_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -12838,7 +12850,7 @@ pub struct Tlv<'a> {
     data: &'a [u8],
 }
 impl<'a> Tlv<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.tag_fatal_check()?;
         me.tag_recoverable_check()?;
@@ -12850,10 +12862,10 @@ impl<'a> Tlv<'a> {
         me.after_recoverable_check()?;
         let len = me.after_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -13088,12 +13100,12 @@ impl<'a> Tlv<'a> {
         self.tag_start_offset().bits()..self.tag_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn tag_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn tag_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.tag_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -13102,7 +13114,7 @@ impl<'a> Tlv<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tag_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn tag_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -13132,12 +13144,12 @@ impl<'a> Tlv<'a> {
         self.len_start_offset().bits()..self.len_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn len_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.len_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -13146,7 +13158,7 @@ impl<'a> Tlv<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn len_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -13210,7 +13222,7 @@ impl<'a> Tlv<'a> {
             node
         }
     }
-    fn value_union_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_union_check(&self) -> Result<(), ::binparse::ParseError> {
         match self.tag() as usize {
             1 => {
                 Tlv_value_Addr::parse(
@@ -13301,13 +13313,13 @@ impl<'a> Tlv<'a> {
         self.value_start_offset().bits()..self.value_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn value_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         self.value_union_check()?;
         {
             let len = self.value_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -13316,7 +13328,7 @@ impl<'a> Tlv<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn value_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn value_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -13371,12 +13383,12 @@ impl<'a> Tlv<'a> {
         self.after_start_offset().bits()..self.after_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn after_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn after_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.after_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -13385,7 +13397,7 @@ impl<'a> Tlv<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn after_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn after_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -13431,7 +13443,7 @@ pub struct Frame<'a> {
     data: &'a [u8],
 }
 impl<'a> Frame<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.tag_fatal_check()?;
         me.tag_recoverable_check()?;
@@ -13443,10 +13455,10 @@ impl<'a> Frame<'a> {
         me.after_recoverable_check()?;
         let len = me.after_end_offset();
         if len.bit != 0 {
-            return Err(binparse::ParseError::UnalignedLength(len));
+            return Err(::binparse::ParseError::UnalignedLength(len));
         }
         if data.len() < len.byte {
-            return Err(binparse::ParseError::NotEnoughData {
+            return Err(::binparse::ParseError::NotEnoughData {
                 expected: len.byte,
                 got: data.len(),
             });
@@ -13681,12 +13693,12 @@ impl<'a> Frame<'a> {
         self.tag_start_offset().bits()..self.tag_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn tag_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn tag_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.tag_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -13695,7 +13707,7 @@ impl<'a> Frame<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tag_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn tag_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -13725,12 +13737,12 @@ impl<'a> Frame<'a> {
         self.len_start_offset().bits()..self.len_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn len_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.len_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -13739,7 +13751,7 @@ impl<'a> Frame<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn len_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn len_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -13871,12 +13883,12 @@ impl<'a> Frame<'a> {
         self.body_start_offset().bits()..self.body_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn body_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn body_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.body_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -13885,7 +13897,7 @@ impl<'a> Frame<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn body_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn body_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
@@ -13940,12 +13952,12 @@ impl<'a> Frame<'a> {
         self.after_start_offset().bits()..self.after_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn after_fatal_check(&self) -> Result<(), binparse::ParseError> {
+    fn after_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.after_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -13954,7 +13966,7 @@ impl<'a> Frame<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn after_recoverable_check(&self) -> Result<(), binparse::ParseError> {
+    fn after_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -13968,4 +13980,22 @@ impl<'a> ::binparse::Dissect<'a> for Frame<'a> {
 }
 "#,
     );
+}
+
+#[test]
+fn generation_is_deterministic() {
+    let dsl = r#"
+struct A { x: u8 }
+struct B { x: u16 }
+struct C { x: u32 }
+struct D { a: A, b: B }
+struct E { c: C, d: D }
+struct F { e: E }
+struct G { a: A, f: F }
+struct H { g: G }
+"#;
+    let first = generate(dsl);
+    for _ in 0..4 {
+        assert_eq!(generate(dsl), first);
+    }
 }

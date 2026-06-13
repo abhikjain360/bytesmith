@@ -43,6 +43,14 @@ pub enum Error {
     InvalidRange { min: usize, max: usize },
     #[error("@align({align}) field starts at misaligned offset {offset:?}")]
     MisalignedField { offset: binparse::Len, align: usize },
+    #[error("concat fields are not supported inside conditionals")]
+    ConcatInConditional,
+    #[error("@len fields are not supported inside conditionals")]
+    LenInConditional,
+    #[error("non-literal constraint fields are not supported")]
+    NonLiteralConstraint,
+    #[error("validations are not supported on conditional fields")]
+    ValidationOnConditional,
 }
 
 impl FieldAccum {
@@ -116,10 +124,10 @@ pub(crate) fn generate<'a>(
             check_handoff_applies(&attrs, ty, struct_accum)?;
 
             if struct_accum.condition.is_some() && matches!(ty, ast::Type::Concat(_)) {
-                todo!("concat fields inside conditionals");
+                return Err(Error::ConcatInConditional);
             }
             if struct_accum.condition.is_some() && attrs.len.is_some() {
-                todo!("@len fields inside conditionals");
+                return Err(Error::LenInConditional);
             }
 
             match (&attrs.hook, is_vla(ty)) {
@@ -163,7 +171,7 @@ pub(crate) fn generate<'a>(
 
         ast::FieldValue::Constraint(expr) => {
             let ast::Expr::Literal(ast::Literal::Int(lit)) = expr else {
-                todo!("non-literal constraint fields")
+                return Err(Error::NonLiteralConstraint);
             };
             let ty = constant_type(lit)?;
             stub_label = type_::type_label(&ty);
@@ -376,7 +384,7 @@ pub(crate) fn generate<'a>(
             {
                 let offset = self.#start_offset_getter_fn_name();
                 if !offset.is_byte_aligned() || !offset.byte.is_multiple_of(#align) {
-                    return Err(binparse::ParseError::Misaligned {
+                    return Err(::binparse::ParseError::Misaligned {
                         field: #field_path,
                         align: #align,
                         offset,
@@ -391,7 +399,7 @@ pub(crate) fn generate<'a>(
             let len = self.#offset_getter_fn_name();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
-                return Err(binparse::ParseError::NotEnoughData {
+                return Err(::binparse::ParseError::NotEnoughData {
                     expected,
                     got: self.data.len(),
                 });
@@ -400,7 +408,7 @@ pub(crate) fn generate<'a>(
     });
     struct_accum.functions.extend(quote! {
         #[allow(dead_code)]
-        fn #fatal_check_fn_name(&self) -> Result<(), binparse::ParseError> {
+        fn #fatal_check_fn_name(&self) -> Result<(), ::binparse::ParseError> {
             #fatal_check
             Ok(())
         }
@@ -424,7 +432,7 @@ pub(crate) fn generate<'a>(
     )?;
     struct_accum.functions.extend(quote! {
         #[allow(dead_code)]
-        fn #recoverable_check_fn_name(&self) -> Result<(), binparse::ParseError> {
+        fn #recoverable_check_fn_name(&self) -> Result<(), ::binparse::ParseError> {
             #recoverable_check
             Ok(())
         }
@@ -515,7 +523,7 @@ fn generate_validations<'a>(
     }
 
     if struct_accum.condition.is_some() {
-        todo!("validations on conditional fields");
+        return Err(Error::ValidationOnConditional);
     }
 
     if !matches!(
@@ -528,7 +536,7 @@ fn generate_validations<'a>(
     let field_name = format_ident!("{}", ast.name);
     let field_path = format!("{}.{}", struct_accum.name, ast.name);
     let validation_error = quote! {
-        binparse::ParseError::ValidationFailed {
+        ::binparse::ParseError::ValidationFailed {
             field: #field_path,
             actual: self.#field_name() as u128,
         }
@@ -578,7 +586,7 @@ fn generate_validations<'a>(
     let validate_fn_name = format_ident!("{}_validate", ast.name);
     struct_accum.functions.extend(quote! {
         #[allow(clippy::unnecessary_cast)]
-        fn #validate_fn_name(&self) -> Result<(), binparse::ParseError> {
+        fn #validate_fn_name(&self) -> Result<(), ::binparse::ParseError> {
             #validations
             Ok(())
         }
@@ -761,7 +769,7 @@ fn check_len_applies(attrs: &ParsedAttrs<'_>, ty: &ast::Type<'_>) -> Result<(), 
             }
             Ok(())
         }
-        ast::Type::Concat(_) => todo!("@len on concat fields"),
+        ast::Type::Concat(_) => Err(attr::Error::LenOnConcat),
         ast::Type::Primitive(_) | ast::Type::BitField(_) => {
             Err(attr::Error::LenOnUnsupportedType)
         }
@@ -788,13 +796,13 @@ fn check_handoff_applies(
         return Err(attr::Error::HandoffInConditional(name));
     }
     if attrs.hook.is_some() {
-        todo!("@{name} with @hook");
+        return Err(attr::Error::HandoffWithHook(name));
     }
     if attrs.discriminator {
         match ty {
             ast::Type::Primitive(_) | ast::Type::BitField(_) => {}
             ast::Type::Concat(_) | ast::Type::Union(_) => {
-                todo!("@discriminator on concat and union fields")
+                return Err(attr::Error::DiscriminatorOnConcatOrUnion);
             }
             ast::Type::Array(_) | ast::Type::StructRef(_) => {
                 return Err(attr::Error::DiscriminatorOnNonNumeric);
@@ -812,7 +820,7 @@ fn check_handoff_applies(
             })
             | ast::Type::StructRef(_) => {}
             ast::Type::Concat(_) | ast::Type::Union(_) => {
-                todo!("@payload on concat and union fields")
+                return Err(attr::Error::PayloadOnConcatOrUnion);
             }
             ast::Type::Primitive(_)
             | ast::Type::BitField(_)

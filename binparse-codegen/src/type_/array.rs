@@ -128,7 +128,7 @@ pub(crate) fn generate<'a>(
                 SizeMode::Counted { count, .. } => count.clone(),
                 SizeMode::Until(sentinel) => {
                     if !matches!(prim, ast::Primitive::U8) {
-                        todo!("@until on non-u8 element arrays");
+                        return Err(type_::Error::UntilOnNonU8Array);
                     }
                     until_count(&data, &offset_bytes, *sentinel)
                 }
@@ -212,7 +212,7 @@ pub(crate) fn generate<'a>(
                     next_fn_body: bounded_next(next_body),
                     check_count: Some(count.clone()),
                 },
-                SizeMode::Until(_) => todo!("@until on struct ref arrays"),
+                SizeMode::Until(_) => return Err(type_::Error::UntilOnStructRefArray),
                 SizeMode::Greedy => match &generated_struct.len {
                     GeneratedLen::Fixed(elem_len) if *elem_len == Len::ZERO => {
                         return Err(type_::Error::GreedyZeroSizedElem);
@@ -295,7 +295,7 @@ pub(crate) fn generate<'a>(
                 static_count,
             } = &mode
             else {
-                todo!("@until and @greedy on bitfield arrays");
+                return Err(type_::Error::UntilOrGreedyOnBitfieldArray);
             };
             let width = *width as usize;
             let len = Len {
@@ -387,7 +387,7 @@ pub(crate) fn generate<'a>(
         && let Some(check_count) = &check_count
     {
         if struct_accum.condition.is_some() {
-            todo!("@max_iter inside conditionals");
+            return Err(type_::Error::MaxIterInConditional);
         }
         let max = expr::lower(max_expr, ExprType::Numeric, &struct_accum.done_fields)?.tokens;
         let validate_fn_name = format_ident!("{}_max_iter_validate", field_name);

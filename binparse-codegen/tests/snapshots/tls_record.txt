@@ -1,0 +1,11 @@
+TlsRecord: TlsRecord [0..80) = struct
+  content_type: u8 [0..8) = 22
+  legacy_major: u8 [8..16) = 3
+  legacy_minor: u8 [16..24) = 1
+  length: u16 [24..40) = 5
+  fragment: [u8] [40..80) = array
+    0: u8 [40..48) = 1
+    1: u8 [48..56) = 0
+    2: u8 [56..64) = 0
+    3: u8 [64..72) = 1
+    4: u8 [72..80) = 0

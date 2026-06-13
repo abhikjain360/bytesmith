@@ -1,0 +1,14 @@
+Ipv4: Ipv4 [0..96) = struct !error: not enough data: expected 16 bytes, got 12
+  version: b<4> [0..4) = 4
+  ihl: b<4> [4..8) = 5
+  dscp: b<6> [8..14) = 0
+  ecn: b<2> [14..16) = 0
+  total_len: u16 [16..32) = 60
+  ident: u16 [32..48) = 7238
+  flags: b<3> [48..51) = 2
+  frag_hi: b<5> [51..56) = 0
+  frag_lo: u8 [56..64) = 0
+  ttl: u8 [64..72) = 64
+  proto: u8 [72..80) = 1
+  checksum: u16 [80..96) = 45542
+  src: [u8] [96..96) = opaque !error: not enough data: expected 16 bytes, got 12

@@ -1,11 +1,14 @@
 [package]
 name = "binparse-codegen"
-version = "0.1.0"
-edition = "2024"
+description = "Rust parser code generator for binparse DSL specs"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
-binparse = { path = "../binparse" }
-binparse-dsl = { path = "../binparse-dsl" }
+binparse = { path = "../binparse", version = "0.1.0" }
+binparse-dsl = { path = "../binparse-dsl", version = "0.1.0" }
 
 prettyplease = "0.2.37"
 proc-macro2 = "1.0.103"

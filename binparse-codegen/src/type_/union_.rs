@@ -34,6 +34,8 @@ pub enum Error {
         #[source]
         error: Box<crate::struct_::Error>,
     },
+    #[error("non-integer literal matcher is not supported")]
+    NonIntegerMatcher,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -277,7 +279,7 @@ pub(crate) fn generate<'a>(
 
     let check_fn_name = format_ident!("{}_union_check", field_name);
     accum.helper_fns.extend(quote! {
-        fn #check_fn_name(&self) -> Result<(), binparse::ParseError> {
+        fn #check_fn_name(&self) -> Result<(), ::binparse::ParseError> {
             match #match_expr {
                 #check_match_arms
             }
@@ -409,7 +411,7 @@ fn generate_matchers(
         .iter()
         .map(|matcher| {
             validate_matcher_arity(matcher, num_args)?;
-            Ok(generate_matcher(matcher))
+            generate_matcher(matcher)
         })
         .collect::<Result<Vec<_>, Error>>()?;
 
@@ -431,19 +433,20 @@ fn validate_matcher_arity(matcher: &ast::UnionMatcher<'_>, num_args: usize) -> R
     Ok(())
 }
 
-fn generate_matcher(matcher: &ast::UnionMatcher<'_>) -> TokenStream {
+fn generate_matcher(matcher: &ast::UnionMatcher<'_>) -> Result<TokenStream, Error> {
     match matcher {
         ast::UnionMatcher::Literal(ast::Literal::Int(int_lit)) => {
             let value = proc_macro2::Literal::usize_unsuffixed(int_lit.value);
-            quote! { #value }
+            Ok(quote! { #value })
         }
-        ast::UnionMatcher::Literal(other) => {
-            todo!("non-integer literal matcher: {:?}", other)
-        }
-        ast::UnionMatcher::Wildcard => quote! { _ },
+        ast::UnionMatcher::Literal(_) => Err(Error::NonIntegerMatcher),
+        ast::UnionMatcher::Wildcard => Ok(quote! { _ }),
         ast::UnionMatcher::Tuple(elements) => {
-            let element_patterns: Vec<_> = elements.iter().map(generate_matcher).collect();
-            quote! { (#(#element_patterns),*) }
+            let element_patterns = elements
+                .iter()
+                .map(generate_matcher)
+                .collect::<Result<Vec<_>, Error>>()?;
+            Ok(quote! { (#(#element_patterns),*) })
         }
     }
 }

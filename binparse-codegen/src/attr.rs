@@ -96,6 +96,14 @@ pub enum Error {
     HandoffOnSkip(&'static str),
     #[error("@{0} cannot be applied inside a conditional")]
     HandoffInConditional(&'static str),
+    #[error("@len is not supported on concat fields")]
+    LenOnConcat,
+    #[error("@{0} combined with @hook is not supported")]
+    HandoffWithHook(&'static str),
+    #[error("@discriminator is not supported on concat and union fields")]
+    DiscriminatorOnConcatOrUnion,
+    #[error("@payload is not supported on concat and union fields")]
+    PayloadOnConcatOrUnion,
 }
 
 /// Padding and alignment semantics: `@pad(N)` consumes N bytes before the

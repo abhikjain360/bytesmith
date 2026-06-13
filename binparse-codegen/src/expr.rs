@@ -47,6 +47,8 @@ pub enum Error {
     DivisionByZero { expr: String },
     #[error("expression '{expr}' divides by a non-constant value")]
     NonConstDivisor { expr: String },
+    #[error("expression '{expr}' uses a macro call which is not supported")]
+    MacroCall { expr: String },
 }
 
 pub(crate) fn lower(
@@ -174,7 +176,7 @@ fn lower_inner(
             got: "tuple".to_string(),
         }),
 
-        ast::Expr::Call(..) => todo!("macro calls in expressions"),
+        ast::Expr::Call(..) => Err(Error::MacroCall { expr: render(root) }),
     }
 }
 

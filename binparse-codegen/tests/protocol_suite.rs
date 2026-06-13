@@ -26,6 +26,9 @@ fn write_runtime_crate(code: &str) -> PathBuf {
     let _ = fs::remove_dir_all(&test_dir);
     fs::create_dir_all(test_dir.join("src")).expect("failed to create runtime test crate");
 
+    let snapshot_dir = root.join("binparse-codegen").join("tests").join("snapshots");
+    fs::create_dir_all(&snapshot_dir).expect("failed to create snapshot dir");
+
     let binparse_path = root.join("binparse");
     fs::write(
         test_dir.join("Cargo.toml"),
@@ -96,6 +99,22 @@ fn parse_dns_name(_data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::Par
 #[cfg(test)]
 mod tests {{
     use super::*;
+
+    const SNAPSHOT_DIR: &str = "{snapshot_dir}";
+
+    fn assert_tree_snapshot(name: &str, tree: binparse::FieldNode<'_>) {{
+        let rendered = tree.render();
+        let path = std::path::Path::new(SNAPSHOT_DIR).join(format!("{{name}}.txt"));
+        if std::env::var_os("BLESS").is_some() {{
+            std::fs::write(&path, &rendered).expect("failed to write snapshot");
+            return;
+        }}
+        let expected = std::fs::read_to_string(&path).unwrap_or_default();
+        assert_eq!(
+            rendered, expected,
+            "tree snapshot mismatch for {{name}}; rerun with BLESS=1 to regenerate"
+        );
+    }}
 
     fn assert_parse_no_panic<F>(name: &str, data: &[u8], parse: F)
     where
@@ -1082,8 +1101,79 @@ mod tests {{
         ));
         assert_dissect_no_panic("TlsRecord", &record, |d| TlsRecord::dissect(d));
     }}
+
+    #[test]
+    fn ethernet_tree_snapshot() {{
+        assert_tree_snapshot("ethernet", EthernetII::dissect(&ethernet_arp_frame()));
+    }}
+
+    #[test]
+    fn vlan_tree_snapshot() {{
+        assert_tree_snapshot("vlan", Vlan::dissect(&vlan_frame()));
+    }}
+
+    #[test]
+    fn arp_tree_snapshot() {{
+        assert_tree_snapshot("arp", Arp::dissect(&arp_request()));
+    }}
+
+    #[test]
+    fn ipv4_tree_snapshot() {{
+        assert_tree_snapshot("ipv4", Ipv4::dissect(&ipv4_ping_packet()));
+    }}
+
+    #[test]
+    fn ipv4_options_tree_snapshot() {{
+        assert_tree_snapshot("ipv4_options", Ipv4::dissect(&ipv4_igmp_packet()));
+    }}
+
+    #[test]
+    fn ipv4_truncated_tree_snapshot() {{
+        assert_tree_snapshot("ipv4_truncated", Ipv4::dissect(&ipv4_ping_packet()[..12]));
+    }}
+
+    #[test]
+    fn ipv6_tree_snapshot() {{
+        assert_tree_snapshot("ipv6", Ipv6::dissect(&ipv6_udp_packet()));
+    }}
+
+    #[test]
+    fn udp_tree_snapshot() {{
+        assert_tree_snapshot("udp", Udp::dissect(&udp_datagram()));
+    }}
+
+    #[test]
+    fn tcp_tree_snapshot() {{
+        assert_tree_snapshot("tcp", Tcp::dissect(&tcp_ack_with_payload()));
+    }}
+
+    #[test]
+    fn tcp_options_tree_snapshot() {{
+        assert_tree_snapshot("tcp_options", Tcp::dissect(&tcp_syn()));
+    }}
+
+    #[test]
+    fn icmpv4_tree_snapshot() {{
+        assert_tree_snapshot("icmpv4", Icmpv4::dissect(&icmp_echo_request()));
+    }}
+
+    #[test]
+    fn dns_tree_snapshot() {{
+        assert_tree_snapshot("dns", Dns::dissect(&dns_response()));
+    }}
+
+    #[test]
+    fn tls_record_tree_snapshot() {{
+        assert_tree_snapshot("tls_record", TlsRecord::dissect(&tls_client_hello_record()));
+    }}
+
+    #[test]
+    fn tls_stream_tree_snapshot() {{
+        assert_tree_snapshot("tls_stream", TlsStream::dissect(&tls_record_stream()));
+    }}
 }}
-"#
+"#,
+            snapshot_dir = snapshot_dir.display(),
         ),
     )
     .expect("failed to write runtime lib.rs");
