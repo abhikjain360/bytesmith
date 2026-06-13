@@ -40,10 +40,19 @@ struct Test {
 
     let code = generate_code(dsl);
 
-    assert!(code.contains("pub fn field(&self) -> ::binparse::ParseResult<MyType>"), "should have fallible getter returning hook's return type");
+    assert!(
+        code.contains("pub fn field(&self) -> ::binparse::ParseResult<MyType>"),
+        "should have fallible getter returning hook's return type"
+    );
     assert!(code.contains("my_hook("), "should call the hook function");
-    assert!(code.contains("::binparse::HookContext"), "should pass hook context");
-    assert!(code.contains("self.field()?;"), "recoverable check should run the hook");
+    assert!(
+        code.contains("::binparse::HookContext"),
+        "should pass hook context"
+    );
+    assert!(
+        code.contains("self.field()?;"),
+        "recoverable check should run the hook"
+    );
 }
 
 #[test]
@@ -58,14 +67,35 @@ struct Test {
 
     let code = generate_code(dsl);
 
-    assert!(code.contains("fn data_raw(&self) -> ::binparse::ParseResult<(MyResult, usize)>"), "should have fallible raw helper");
-    assert!(code.contains("pub fn data(&self) -> ::binparse::ParseResult<MyResult>"), "should have fallible public getter");
-    assert!(code.contains("self.data_raw().map(|(value, _)| value)"), "getter should map out the value");
-    assert!(code.contains("self.data_raw()?;"), "fatal check should propagate hook errors");
-    assert!(code.contains("me.data_fatal_check()?;"), "parse should run the field's fatal check");
+    assert!(
+        code.contains("fn data_raw(&self) -> ::binparse::ParseResult<(MyResult, usize)>"),
+        "should have fallible raw helper"
+    );
+    assert!(
+        code.contains("pub fn data(&self) -> ::binparse::ParseResult<MyResult>"),
+        "should have fallible public getter"
+    );
+    assert!(
+        code.contains("self.data_raw().map(|(value, _)| value)"),
+        "getter should map out the value"
+    );
+    assert!(
+        code.contains("self.data_raw()?;"),
+        "fatal check should propagate hook errors"
+    );
+    assert!(
+        code.contains("me.data_fatal_check()?;"),
+        "parse should run the field's fatal check"
+    );
     assert!(code.contains("my_vla_hook("), "should call hook");
-    assert!(code.contains("::binparse::HookContext"), "should pass hook context");
-    assert!(code.contains("enclosing: self.data"), "context should carry enclosing slice");
+    assert!(
+        code.contains("::binparse::HookContext"),
+        "should pass hook context"
+    );
+    assert!(
+        code.contains("enclosing: self.data"),
+        "context should carry enclosing slice"
+    );
 }
 
 #[test]
@@ -79,7 +109,10 @@ struct Test {
 
     let code = generate_code(dsl);
 
-    assert!(code.contains("let start = 0usize;"), "should start at offset 0 when first field");
+    assert!(
+        code.contains("let start = 0usize;"),
+        "should start at offset 0 when first field"
+    );
 }
 
 #[test]
@@ -95,7 +128,10 @@ struct Test {
     let code = generate_code(dsl);
 
     assert!(code.contains("byte: 4usize"), "a should still be 4 bytes");
-    assert!(code.contains("byte: 6usize"), "b should start at offset 4 + end at 6");
+    assert!(
+        code.contains("byte: 6usize"),
+        "b should start at offset 4 + end at 6"
+    );
 }
 
 #[test]
@@ -110,6 +146,12 @@ struct Test {
 
     let code = generate_code(dsl);
 
-    assert!(code.contains("Ok((_, consumed)) =>"), "should use hook's returned length");
-    assert!(code.contains("byte: consumed"), "offset calculation should include consumed bytes");
+    assert!(
+        code.contains("Ok((_, consumed)) =>"),
+        "should use hook's returned length"
+    );
+    assert!(
+        code.contains("byte: consumed"),
+        "offset calculation should include consumed bytes"
+    );
 }

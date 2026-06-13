@@ -52,10 +52,14 @@ impl Add for GeneratedLen {
     fn add(self, other: Self) -> Self::Output {
         match (self, other) {
             (GeneratedLen::Dynamic(a), GeneratedLen::Fixed(Len { byte, bit })) => {
-                GeneratedLen::Dynamic(quote! { ({ #a }) + ::binparse::Len { byte: #byte, bit: #bit } })
+                GeneratedLen::Dynamic(
+                    quote! { ({ #a }) + ::binparse::Len { byte: #byte, bit: #bit } },
+                )
             }
             (GeneratedLen::Fixed(Len { byte, bit }), GeneratedLen::Dynamic(a)) => {
-                GeneratedLen::Dynamic(quote! { ::binparse::Len { byte: #byte, bit: #bit } + ({ #a }) })
+                GeneratedLen::Dynamic(
+                    quote! { ::binparse::Len { byte: #byte, bit: #bit } + ({ #a }) },
+                )
             }
             (GeneratedLen::Dynamic(a), GeneratedLen::Dynamic(b)) => {
                 GeneratedLen::Dynamic(quote! { ({ #a }) + ({ #b }) })
@@ -202,7 +206,11 @@ impl<'a> CodeGen<'a> {
         me.print(error_tokens.unwrap_or_default(), &definition_order)
     }
 
-    fn print(mut self, mut combined: TokenStream, definition_order: &[&'a str]) -> Result<String, Error> {
+    fn print(
+        mut self,
+        mut combined: TokenStream,
+        definition_order: &[&'a str],
+    ) -> Result<String, Error> {
         combined.extend(
             definition_order
                 .iter()

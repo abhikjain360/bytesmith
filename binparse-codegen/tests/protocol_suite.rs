@@ -26,7 +26,10 @@ fn write_runtime_crate(code: &str) -> PathBuf {
     let _ = fs::remove_dir_all(&test_dir);
     fs::create_dir_all(test_dir.join("src")).expect("failed to create runtime test crate");
 
-    let snapshot_dir = root.join("binparse-codegen").join("tests").join("snapshots");
+    let snapshot_dir = root
+        .join("binparse-codegen")
+        .join("tests")
+        .join("snapshots");
     fs::create_dir_all(&snapshot_dir).expect("failed to create snapshot dir");
 
     let binparse_path = root.join("binparse");

@@ -86,8 +86,8 @@ pub(crate) fn generate<'a>(
 
     let has_padding = attrs.pad.is_some() || attrs.pad_to.is_some();
     if let Some(pad) = attrs.pad {
-        struct_accum.offset = struct_accum.offset.clone()
-            + GeneratedLen::Fixed(binparse::Len { byte: pad, bit: 0 });
+        struct_accum.offset =
+            struct_accum.offset.clone() + GeneratedLen::Fixed(binparse::Len { byte: pad, bit: 0 });
     }
     if let Some(pad_to) = attrs.pad_to {
         struct_accum.offset = match struct_accum.offset.clone() {
@@ -100,7 +100,10 @@ pub(crate) fn generate<'a>(
     let dynamic_align = match (attrs.align, &struct_accum.offset) {
         (Some(align), GeneratedLen::Fixed(len)) => {
             if len.bit != 0 || len.byte % align != 0 {
-                return Err(Error::MisalignedField { offset: *len, align });
+                return Err(Error::MisalignedField {
+                    offset: *len,
+                    align,
+                });
             }
             None
         }
@@ -371,7 +374,9 @@ pub(crate) fn generate<'a>(
     }
 
     struct_accum.offset = end_offset;
-    struct_accum.field_definitions.extend(field_accum.definitions);
+    struct_accum
+        .field_definitions
+        .extend(field_accum.definitions);
     struct_accum.functions.extend(field_accum.helper_fns);
     struct_accum.functions.extend(field_accum.field_getter);
     struct_accum.functions.extend(field_accum.offset_getter);
@@ -770,9 +775,7 @@ fn check_len_applies(attrs: &ParsedAttrs<'_>, ty: &ast::Type<'_>) -> Result<(), 
             Ok(())
         }
         ast::Type::Concat(_) => Err(attr::Error::LenOnConcat),
-        ast::Type::Primitive(_) | ast::Type::BitField(_) => {
-            Err(attr::Error::LenOnUnsupportedType)
-        }
+        ast::Type::Primitive(_) | ast::Type::BitField(_) => Err(attr::Error::LenOnUnsupportedType),
     }
 }
 
@@ -822,9 +825,7 @@ fn check_handoff_applies(
             ast::Type::Concat(_) | ast::Type::Union(_) => {
                 return Err(attr::Error::PayloadOnConcatOrUnion);
             }
-            ast::Type::Primitive(_)
-            | ast::Type::BitField(_)
-            | ast::Type::Array(_) => {
+            ast::Type::Primitive(_) | ast::Type::BitField(_) | ast::Type::Array(_) => {
                 return Err(attr::Error::PayloadOnNonByteArray);
             }
         }

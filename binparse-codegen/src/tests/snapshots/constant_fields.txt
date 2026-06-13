@@ -1,0 +1,262 @@
+impl<'a> ::binparse::Dissect<'a> for Magic<'a> {
+    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        Magic::field_tree(self)
+    }
+    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        Magic::handoff(self)
+    }
+}
+
+impl<'a> Magic<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
+        let me = Self { data };
+        me.magic_fatal_check()?;
+        me.magic_recoverable_check()?;
+        me.flags_fatal_check()?;
+        me.flags_recoverable_check()?;
+        let len = me.flags_end_offset();
+        if len.bit != 0 {
+            return Err(::binparse::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::binparse::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = self;
+            children.push(me.magic_present_node());
+        }
+        {
+            let me = self;
+            children.push(me.flags_present_node());
+        }
+        let mut root = ::binparse::FieldNode::new(
+                "Magic",
+                "Magic",
+                0usize..self.flags_end_offset().bits(),
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
+        let me = Self { data };
+        let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::binparse::ParseError> = None;
+        if fatal.is_none() {
+            match me.magic_fatal_check() {
+                Err(error) => {
+                    let start = me.magic_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "magic",
+                                    "u16",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.magic_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.magic_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "magic",
+                                            "u16",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.magic_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.flags_fatal_check() {
+                Err(error) => {
+                    let start = me.flags_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "flags",
+                                    "b<3>",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.flags_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.flags_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "flags",
+                                            "b<3>",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.flags_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::binparse::FieldNode::new(
+                "Magic",
+                "Magic",
+                0usize..root_end,
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::binparse::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn magic_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.magic_bit_range();
+        ::binparse::FieldNode::new(
+            "magic",
+            "u16",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.magic())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn magic(&self) -> u16 {
+        u16::from_be_bytes(self.data[0usize..2usize].try_into().unwrap())
+    }
+    pub fn magic_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+    }
+    pub fn magic_start_offset(&self) -> binparse::Len {
+        binparse::Len::ZERO
+    }
+    pub fn magic_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.magic_start_offset().bits()..self.magic_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn magic_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.magic_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(clippy::unnecessary_cast)]
+    fn magic_validate(&self) -> Result<(), ::binparse::ParseError> {
+        if self.magic() != 49374 {
+            return Err(::binparse::ParseError::ValidationFailed {
+                field: "Magic.magic",
+                actual: self.magic() as u128,
+            });
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn magic_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        self.magic_validate()?;
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn flags_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.flags_bit_range();
+        ::binparse::FieldNode::new(
+            "flags",
+            "b<3>",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.flags())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn flags(&self) -> u8 {
+        (self.data[2usize] >> 5usize) & 7u8
+    }
+    pub fn flags_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 2usize,
+            bit: 3usize,
+        }
+    }
+    pub fn flags_start_offset(&self) -> binparse::Len {
+        self.magic_end_offset()
+    }
+    pub fn flags_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.flags_start_offset().bits()..self.flags_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn flags_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.flags_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(clippy::unnecessary_cast)]
+    fn flags_validate(&self) -> Result<(), ::binparse::ParseError> {
+        if self.flags() != 5 {
+            return Err(::binparse::ParseError::ValidationFailed {
+                field: "Magic.flags",
+                actual: self.flags() as u128,
+            });
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn flags_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        self.flags_validate()?;
+        Ok(())
+    }
+}
+
+pub struct Magic<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+

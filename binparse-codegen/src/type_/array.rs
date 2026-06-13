@@ -519,12 +519,24 @@ fn tree_node(
             } else {
                 quote! { ::binparse::Value::UInt(u128::from(value)) }
             };
-            elem_value_loop(getter, quote! { #elem_bits }, &elem_label, value_ctor, &error_node)
+            elem_value_loop(
+                getter,
+                quote! { #elem_bits },
+                &elem_label,
+                value_ctor,
+                &error_node,
+            )
         }
         ast::ArrayElemType::BitField(width) => {
             let elem_bits = *width as usize;
             let value_ctor = quote! { ::binparse::Value::UInt(u128::from(value)) };
-            elem_value_loop(getter, quote! { #elem_bits }, &elem_label, value_ctor, &error_node)
+            elem_value_loop(
+                getter,
+                quote! { #elem_bits },
+                &elem_label,
+                value_ctor,
+                &error_node,
+            )
         }
         ast::ArrayElemType::StructRef(struct_name) => {
             let generated_struct = done
@@ -632,7 +644,11 @@ fn until_len(data: &TokenStream, offset_bytes: &TokenStream, sentinel: u8) -> Ge
     }})
 }
 
-fn greedy_count(data: &TokenStream, offset_bytes: &TokenStream, elem_byte_len: usize) -> TokenStream {
+fn greedy_count(
+    data: &TokenStream,
+    offset_bytes: &TokenStream,
+    elem_byte_len: usize,
+) -> TokenStream {
     if elem_byte_len == 1 {
         quote! { #data.len().saturating_sub(#offset_bytes) }
     } else {
@@ -640,7 +656,11 @@ fn greedy_count(data: &TokenStream, offset_bytes: &TokenStream, elem_byte_len: u
     }
 }
 
-fn greedy_len(data: &TokenStream, offset_bytes: &TokenStream, elem_byte_len: usize) -> GeneratedLen {
+fn greedy_len(
+    data: &TokenStream,
+    offset_bytes: &TokenStream,
+    elem_byte_len: usize,
+) -> GeneratedLen {
     if elem_byte_len == 1 {
         GeneratedLen::Dynamic(quote! {{
             let start = #offset_bytes;

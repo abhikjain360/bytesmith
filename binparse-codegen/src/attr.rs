@@ -48,7 +48,9 @@ pub enum Error {
     EndianOnSingleByte,
     #[error("@endian cannot be applied to bitfields")]
     EndianOnBitfield,
-    #[error("@endian cannot be applied to struct ref (struct uses its own definition's endianness)")]
+    #[error(
+        "@endian cannot be applied to struct ref (struct uses its own definition's endianness)"
+    )]
     EndianOnStructRef,
     #[error("@bit_order argument must be 'msb' or 'lsb', got '{0}'")]
     InvalidBitOrderValue(String),
@@ -230,10 +232,7 @@ impl<'a> ParsedAttrs<'a> {
         }
     }
 
-    fn parse_check(
-        attr: &ast::Attribute<'a>,
-        name: &'static str,
-    ) -> Result<ast::Expr<'a>, Error> {
+    fn parse_check(attr: &ast::Attribute<'a>, name: &'static str) -> Result<ast::Expr<'a>, Error> {
         let [expr] = attr.args.as_slice() else {
             return Err(Error::WrongArgCount {
                 attr: name,

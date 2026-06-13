@@ -1,0 +1,389 @@
+impl<'a> ::binparse::Dissect<'a> for WithCondHook<'a> {
+    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        WithCondHook::field_tree(self)
+    }
+    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        WithCondHook::handoff(self)
+    }
+}
+
+impl<'a> WithCondHook<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
+        let me = Self { data };
+        me.kind_fatal_check()?;
+        me.kind_recoverable_check()?;
+        if me.conditional_0_present() {
+            me.value_fatal_check()?;
+            me.value_recoverable_check()?;
+        }
+        me.tail_fatal_check()?;
+        me.tail_recoverable_check()?;
+        let len = me.tail_end_offset();
+        if len.bit != 0 {
+            return Err(::binparse::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::binparse::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = self;
+            children.push(me.kind_present_node());
+        }
+        {
+            let me = self;
+            if me.conditional_0_present() {
+                children.push(me.value_present_node());
+            } else {
+                children.push(me.value_absent_node());
+            }
+        }
+        {
+            let me = self;
+            children.push(me.tail_present_node());
+        }
+        let mut root = ::binparse::FieldNode::new(
+                "WithCondHook",
+                "WithCondHook",
+                0usize..self.tail_end_offset().bits(),
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
+        let me = Self { data };
+        let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::binparse::ParseError> = None;
+        if fatal.is_none() {
+            match me.kind_fatal_check() {
+                Err(error) => {
+                    let start = me.kind_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "kind",
+                                    "u8",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.kind_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.kind_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "kind",
+                                            "u8",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.kind_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            if me.conditional_0_present() {
+                match me.value_fatal_check() {
+                    Err(error) => {
+                        let start = me.value_start_offset().bits();
+                        children
+                            .push(
+                                ::binparse::FieldNode::new(
+                                        "value",
+                                        "u16",
+                                        start..start,
+                                        ::binparse::Value::Opaque,
+                                    )
+                                    .with_status(::binparse::Status::Error(error)),
+                            );
+                        fatal = Some(error);
+                    }
+                    Ok(()) => {
+                        match me.value_recoverable_check() {
+                            Err(error) => {
+                                let bit_range = me.value_bit_range();
+                                children
+                                    .push(
+                                        ::binparse::FieldNode::new(
+                                                "value",
+                                                "u16",
+                                                bit_range,
+                                                ::binparse::Value::Opaque,
+                                            )
+                                            .with_status(::binparse::Status::Error(error)),
+                                    );
+                            }
+                            Ok(()) => {
+                                children.push(me.value_present_node());
+                            }
+                        }
+                    }
+                }
+            } else {
+                children.push(me.value_absent_node());
+            }
+        }
+        if fatal.is_none() {
+            match me.tail_fatal_check() {
+                Err(error) => {
+                    let start = me.tail_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "tail",
+                                    "u8",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.tail_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.tail_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "tail",
+                                            "u8",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.tail_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::binparse::FieldNode::new(
+                "WithCondHook",
+                "WithCondHook",
+                0usize..root_end,
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::binparse::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn kind_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.kind_bit_range();
+        ::binparse::FieldNode::new(
+            "kind",
+            "u8",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.kind())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn kind(&self) -> u8 {
+        self.data[0usize]
+    }
+    pub fn kind_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+    }
+    pub fn kind_start_offset(&self) -> binparse::Len {
+        binparse::Len::ZERO
+    }
+    pub fn kind_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.kind_start_offset().bits()..self.kind_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn kind_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.kind_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn kind_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code, unused_parens)]
+    fn conditional_0_present(&self) -> bool {
+        ((self.kind() as usize) == (1usize))
+    }
+    #[allow(dead_code)]
+    fn value_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.value_bit_range();
+        match self.value_raw() {
+            Ok(value) => {
+                ::binparse::FieldNode::new(
+                    "value",
+                    "u32",
+                    bit_range.clone(),
+                    ::binparse::Value::UInt(u128::from(value)),
+                )
+            }
+            Err(error) => {
+                ::binparse::FieldNode::new(
+                        "value",
+                        "u32",
+                        bit_range.clone(),
+                        ::binparse::Value::Opaque,
+                    )
+                    .with_status(::binparse::Status::Error(error))
+            }
+        }
+    }
+    #[allow(dead_code)]
+    fn value_absent_node(&self) -> ::binparse::FieldNode<'a> {
+        let start = self.value_start_offset().bits();
+        ::binparse::FieldNode::new(
+                "value",
+                "u16",
+                start..start,
+                ::binparse::Value::Absent,
+            )
+            .hide()
+    }
+    #[allow(clippy::identity_op)]
+    fn value_raw(&self) -> ::binparse::ParseResult<u32> {
+        let start = 1usize;
+        double_it(
+            u16::from_be_bytes(self.data[1usize..3usize].try_into().unwrap()),
+            ::binparse::HookContext {
+                field: "WithCondHook.value",
+                offset: start,
+                enclosing: self.data,
+            },
+        )
+    }
+    pub fn value(&self) -> Option<::binparse::ParseResult<u32>> {
+        if self.conditional_0_present() { Some(self.value_raw()) } else { None }
+    }
+    pub fn value_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 3usize,
+            bit: 0usize,
+        }
+    }
+    pub fn value_start_offset(&self) -> binparse::Len {
+        self.kind_end_offset()
+    }
+    pub fn value_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.value_start_offset().bits()..self.value_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn value_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.value_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn value_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        self.value_raw()?;
+        Ok(())
+    }
+    fn conditional_0_end_offset(&self) -> binparse::Len {
+        if self.conditional_0_present() {
+            self.value_end_offset()
+        } else {
+            self.kind_end_offset()
+        }
+    }
+    #[allow(dead_code)]
+    fn tail_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.tail_bit_range();
+        ::binparse::FieldNode::new(
+            "tail",
+            "u8",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.tail())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn tail(&self) -> u8 {
+        {
+            let offset = self.conditional_0_end_offset();
+            debug_assert!(offset.bit == 0, "primitive requires byte alignment");
+            self.data[offset.byte]
+        }
+    }
+    pub fn tail_end_offset(&self) -> binparse::Len {
+        ::binparse::Len {
+            byte: 1usize,
+            bit: 0usize,
+        } + ({ self.conditional_0_end_offset() })
+    }
+    pub fn tail_start_offset(&self) -> binparse::Len {
+        self.conditional_0_end_offset()
+    }
+    pub fn tail_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.tail_start_offset().bits()..self.tail_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn tail_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.tail_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn tail_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+}
+
+pub struct WithCondHook<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+

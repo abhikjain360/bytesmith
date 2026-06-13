@@ -5,7 +5,11 @@ use binparse_dsl as ast;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::{GeneratedLen, attr::{Inherited, ParsedAttrs}, expr, field};
+use crate::{
+    GeneratedLen,
+    attr::{Inherited, ParsedAttrs},
+    expr, field,
+};
 
 #[derive(Clone, Copy)]
 pub(crate) enum DoneFieldType {
@@ -293,7 +297,9 @@ pub(crate) fn generate_struct<'a>(
         Some(payload) => {
             let start_fn = &payload.start_offset_fn;
             let end_fn = &payload.end_offset_fn;
-            let keys = discriminators.iter().map(|field| quote! { self.#field() as u128 });
+            let keys = discriminators
+                .iter()
+                .map(|field| quote! { self.#field() as u128 });
             quote! {
                 pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
                     let start = self.#start_fn();
