@@ -74,8 +74,19 @@ pub enum Error {
     UntilWithGreedy,
     #[error("@greedy with dynamic-length elements requires @max_iter")]
     GreedyRequiresMaxIter,
+    #[error("@{0} argument must be a positive integer literal")]
+    InvalidPaddingArg(&'static str),
+    #[error("@pad and @pad_to cannot be combined")]
+    PadWithPadTo,
 }
 
+/// Padding and alignment semantics: `@pad(N)` consumes N bytes before the
+/// field. `@pad_to(N)` consumes bytes until the field starts at a multiple of
+/// N bytes, rounding any partial bit offset up to the next byte. `@align(N)`
+/// consumes nothing; it requires the field to start at a multiple of N bytes,
+/// failing codegen for fixed offsets and parsing for dynamic offsets. `@skip`
+/// parses and validates the field as usual but omits it from the public
+/// accessor surface.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ParsedAttrs<'a> {
     pub endian: Option<Endian>,
@@ -86,6 +97,10 @@ pub(crate) struct ParsedAttrs<'a> {
     pub until: Option<u8>,
     pub greedy: bool,
     pub max_iter: Option<ast::Expr<'a>>,
+    pub skip: bool,
+    pub pad: Option<usize>,
+    pub pad_to: Option<usize>,
+    pub align: Option<usize>,
 }
 
 impl<'a> ParsedAttrs<'a> {
@@ -105,10 +120,40 @@ impl<'a> ParsedAttrs<'a> {
                     result.greedy = true;
                 }
                 "max_iter" => result.max_iter = Some(Self::parse_check(attr, "max_iter")?),
+                "skip" => {
+                    if !attr.args.is_empty() {
+                        return Err(Error::WrongArgCount {
+                            attr: "skip",
+                            expected: 0,
+                            got: attr.args.len(),
+                        });
+                    }
+                    result.skip = true;
+                }
+                "pad" => result.pad = Some(Self::parse_padding(attr, "pad")?),
+                "pad_to" => result.pad_to = Some(Self::parse_padding(attr, "pad_to")?),
+                "align" => result.align = Some(Self::parse_padding(attr, "align")?),
                 _ => {}
             }
         }
+        if result.pad.is_some() && result.pad_to.is_some() {
+            return Err(Error::PadWithPadTo);
+        }
         Ok(result)
+    }
+
+    fn parse_padding(attr: &ast::Attribute<'_>, name: &'static str) -> Result<usize, Error> {
+        let [arg] = attr.args.as_slice() else {
+            return Err(Error::WrongArgCount {
+                attr: name,
+                expected: 1,
+                got: attr.args.len(),
+            });
+        };
+        match arg {
+            ast::Expr::Literal(ast::Literal::Int(lit)) if lit.value > 0 => Ok(lit.value),
+            _ => Err(Error::InvalidPaddingArg(name)),
+        }
     }
 
     fn parse_check(

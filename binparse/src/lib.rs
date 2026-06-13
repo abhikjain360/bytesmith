@@ -22,6 +22,19 @@ impl Len {
     pub fn is_byte_aligned(self) -> bool {
         self.bit == 0
     }
+
+    /// Rounds up to the next multiple of `align` bytes, first rounding any
+    /// partial bit offset up to the next byte. `align` of 0 only byte-aligns.
+    pub fn pad_to(self, align: usize) -> Self {
+        let mut byte = self.byte_ceil();
+        if align > 0 {
+            let rem = byte % align;
+            if rem != 0 {
+                byte = byte.saturating_add(align - rem);
+            }
+        }
+        Self { byte, bit: 0 }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -34,6 +47,12 @@ pub enum ParseError {
     ValidationFailed { field: &'static str, actual: u128 },
     #[error("field '{field}' has more than {max} elements")]
     MaxIterationsExceeded { field: &'static str, max: usize },
+    #[error("field '{field}' must start at a multiple of {align} bytes, got offset {offset:?}")]
+    Misaligned {
+        field: &'static str,
+        align: usize,
+        offset: Len,
+    },
 }
 
 pub type ParseResult<T> = std::result::Result<T, ParseError>;
@@ -80,6 +99,27 @@ mod tests {
         assert_eq!(Len { byte: 2, bit: 0 }.byte_ceil(), 2);
         assert!(Len::ZERO.is_byte_aligned());
         assert_eq!(Len::ZERO.bits(), 0);
+    }
+
+    #[test]
+    fn len_pad_to_rounds_up_to_alignment() {
+        assert_eq!(Len { byte: 5, bit: 0 }.pad_to(4), Len { byte: 8, bit: 0 });
+        assert_eq!(Len { byte: 8, bit: 0 }.pad_to(4), Len { byte: 8, bit: 0 });
+        assert_eq!(Len { byte: 4, bit: 3 }.pad_to(4), Len { byte: 8, bit: 0 });
+        assert_eq!(Len { byte: 4, bit: 3 }.pad_to(1), Len { byte: 5, bit: 0 });
+        assert_eq!(Len { byte: 4, bit: 3 }.pad_to(0), Len { byte: 5, bit: 0 });
+        assert_eq!(Len::ZERO.pad_to(4), Len::ZERO);
+        assert_eq!(
+            Len {
+                byte: usize::MAX,
+                bit: 1
+            }
+            .pad_to(8),
+            Len {
+                byte: usize::MAX,
+                bit: 0
+            }
+        );
     }
 
     #[test]

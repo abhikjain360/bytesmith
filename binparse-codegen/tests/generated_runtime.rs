@@ -719,6 +719,99 @@ mod tests {{
     }}
 
     #[test]
+    fn padded_fields_decode_and_report_offsets() {{
+        let data = [1, 0, 0, 2, 0x12, 0x34, 0x56, 0x78];
+        let (packet, rem) = Padded::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.a(), 1);
+        assert_eq!(packet.b(), 2);
+        assert_eq!(packet.c(), 0x1234);
+        assert_eq!(packet.d(), 0x5678);
+        assert_eq!(packet.a_bit_range(), 0..8);
+        assert_eq!(packet.b_start_offset(), binparse::Len {{ byte: 3, bit: 0 }});
+        assert_eq!(packet.b_bit_range(), 24..32);
+        assert_eq!(packet.c_bit_range(), 32..48);
+        assert_eq!(packet.d_bit_range(), 48..64);
+
+        assert_eq!(
+            Padded::parse(&data[..3]).map(|_| ()).unwrap_err(),
+            binparse::ParseError::NotEnoughData {{
+                expected: 4,
+                got: 3,
+            }}
+        );
+        assert_parse_no_panic("Padded", &data, |data| {{
+            let _ = Padded::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn dynamic_pad_to_skips_to_boundary() {{
+        let data = [1, 9, 0, 0, 7];
+        let (packet, rem) = DynPadded::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.tail(), 7);
+        assert_eq!(packet.tail_bit_range(), 32..40);
+
+        let aligned = [3, 9, 9, 9, 7];
+        let (packet, rem) = DynPadded::parse(&aligned).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.tail(), 7);
+        assert_eq!(packet.tail_bit_range(), 32..40);
+
+        assert_parse_no_panic("DynPadded", &data, |data| {{
+            let _ = DynPadded::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn dynamic_align_errors_on_misaligned_offset() {{
+        let data = [1, 9, 0xab, 0xcd];
+        let (packet, rem) = DynAligned::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.word(), 0xabcd);
+        assert_eq!(packet.word_bit_range(), 16..32);
+
+        let misaligned = [2, 9, 9, 0xab, 0xcd];
+        assert_eq!(
+            DynAligned::parse(&misaligned).map(|_| ()).unwrap_err(),
+            binparse::ParseError::Misaligned {{
+                field: "DynAligned.word",
+                align: 2,
+                offset: binparse::Len {{ byte: 3, bit: 0 }},
+            }}
+        );
+
+        assert_parse_no_panic("DynAligned", &data, |data| {{
+            let _ = DynAligned::parse(data);
+        }});
+        assert_parse_no_panic("DynAligned misaligned", &misaligned, |data| {{
+            let _ = DynAligned::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn skipped_fields_consume_bytes_and_stay_usable_in_expressions() {{
+        let data = [0xad, 2, 0xaa, 0xbb, 0x5f];
+        let (packet, rem) = SkipReserved::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.flags(), 13);
+        assert_eq!(packet.flags_bit_range(), 3..8);
+        let payload = packet
+            .payload()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(payload, vec![0xaa, 0xbb]);
+        assert_eq!(packet.payload_bit_range(), 16..32);
+        assert_eq!(packet.pair(), (5,));
+        assert_eq!(packet.pair_bit_range(), 32..40);
+        assert_parse_no_panic("SkipReserved", &data, |data| {{
+            let _ = SkipReserved::parse(data);
+        }});
+    }}
+
+    #[test]
     fn lsb_bit_order_decodes_with_field_override() {{
         let data = [0b1010_1101, 0b0100_0011];
         let (packet, rem) = LsbFlags::parse(&data).unwrap();
@@ -901,6 +994,33 @@ struct Opt {
 
 struct Opts {
     @greedy(unsafe_eof) @max_iter(8) opts: [Opt],
+}
+
+struct Padded {
+    a: u8,
+    @pad(2) b: u8,
+    @pad_to(4) c: u16,
+    @align(2) d: u16,
+}
+
+struct DynPadded {
+    n: u8,
+    data: [u8; n],
+    @pad_to(4) tail: u8,
+}
+
+struct DynAligned {
+    n: u8,
+    data: [u8; n],
+    @align(2) word: u16,
+}
+
+struct SkipReserved {
+    @skip reserved: b<3>,
+    flags: b<5>,
+    @skip skipped_len: u8,
+    payload: [u8; skipped_len],
+    pair: concat(b<4>, @skip b<4>),
 }
 "#;
 

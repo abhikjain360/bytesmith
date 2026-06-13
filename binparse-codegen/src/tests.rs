@@ -3112,3 +3112,325 @@ fn greedy_zero_sized_elem_is_rejected() {
     let err = generate_err("struct Empty { } struct Foo { @greedy(unsafe_eof) xs: [Empty] }");
     assert!(err.to_string().contains("@greedy element type has zero length"));
 }
+
+#[test]
+fn golden_padding_and_alignment() {
+    assert_generated_eq(
+        "struct Padded { a: u8, @pad(2) b: u8, @pad_to(4) c: u16, @align(2) d: u16 }",
+        r#"
+        pub struct Padded<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Padded<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.a_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.b_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.c_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.d_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.d_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn a(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn a_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn a_start_offset(&self) -> binparse::Len {
+                binparse::Len::ZERO
+            }
+            pub fn a_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.a_start_offset().bits()..self.a_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn b(&self) -> u8 {
+                self.data[3usize]
+            }
+            pub fn b_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 4usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn b_start_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 3usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn b_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.b_start_offset().bits()..self.b_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn c(&self) -> u16 {
+                u16::from_be_bytes(self.data[4usize..6usize].try_into().unwrap())
+            }
+            pub fn c_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 6usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn c_start_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 4usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn c_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.c_start_offset().bits()..self.c_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn d(&self) -> u16 {
+                u16::from_be_bytes(self.data[6usize..8usize].try_into().unwrap())
+            }
+            pub fn d_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 8usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn d_start_offset(&self) -> binparse::Len {
+                self.c_end_offset()
+            }
+            pub fn d_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.d_start_offset().bits()..self.d_end_offset().bits()
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_skip_fields() {
+    assert_generated_eq(
+        "struct Skipped { @skip reserved: b<3>, flags: b<5>, pair: concat(b<4>, @skip b<4>) }",
+        r#"
+        pub struct Skipped<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Skipped<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.reserved_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.flags_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.pair_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.pair_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(dead_code)]
+            #[allow(clippy::identity_op)]
+            fn reserved(&self) -> u8 {
+                (self.data[0usize] >> 5usize) & 7u8
+            }
+            #[allow(dead_code)]
+            fn reserved_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 0usize,
+                    bit: 3usize,
+                }
+            }
+            #[allow(dead_code)]
+            fn reserved_start_offset(&self) -> binparse::Len {
+                binparse::Len::ZERO
+            }
+            #[allow(dead_code)]
+            fn reserved_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.reserved_start_offset().bits()..self.reserved_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn flags(&self) -> u8 {
+                (self.data[0usize] >> 0usize) & 31u8
+            }
+            pub fn flags_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn flags_start_offset(&self) -> binparse::Len {
+                self.reserved_end_offset()
+            }
+            pub fn flags_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.flags_start_offset().bits()..self.flags_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn pair_0(&self) -> u8 {
+                (self.data[1usize] >> 4usize) & 15u8
+            }
+            #[allow(dead_code)]
+            #[allow(clippy::identity_op)]
+            fn pair_1(&self) -> u8 {
+                (self.data[1usize] >> 0usize) & 15u8
+            }
+            #[allow(clippy::identity_op)]
+            pub fn pair(&self) -> (u8,) {
+                (self.pair_0(),)
+            }
+            pub fn pair_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn pair_start_offset(&self) -> binparse::Len {
+                self.flags_end_offset()
+            }
+            pub fn pair_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.pair_start_offset().bits()..self.pair_end_offset().bits()
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn align_on_misaligned_fixed_offset_is_rejected() {
+    let err = generate_err("struct Foo { a: u8, @align(2) b: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@align(2) field starts at misaligned offset")
+    );
+}
+
+#[test]
+fn align_on_unaligned_bit_offset_is_rejected() {
+    let err = generate_err("struct Foo { a: b<3>, @align(1) b: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@align(1) field starts at misaligned offset")
+    );
+}
+
+#[test]
+fn pad_with_pad_to_is_rejected() {
+    let err = generate_err("struct Foo { @pad(1) @pad_to(4) a: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@pad and @pad_to cannot be combined")
+    );
+}
+
+#[test]
+fn zero_padding_arg_is_rejected() {
+    let err = generate_err("struct Foo { @align(0) a: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@align argument must be a positive integer literal")
+    );
+}
+
+#[test]
+fn non_literal_padding_arg_is_rejected() {
+    let err = generate_err("struct Foo { n: u8, @pad(n) a: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@pad argument must be a positive integer literal")
+    );
+}
+
+#[test]
+fn skip_with_args_is_rejected() {
+    let err = generate_err("struct Foo { @skip(1) a: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@skip requires exactly 0 argument(s), got 1")
+    );
+}
+
+#[test]
+fn pad_wrong_arg_count_is_rejected() {
+    let err = generate_err("struct Foo { @pad_to(1, 2) a: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@pad_to requires exactly 1 argument(s), got 2")
+    );
+}

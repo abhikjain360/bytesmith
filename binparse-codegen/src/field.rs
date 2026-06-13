@@ -38,6 +38,8 @@ pub enum Error {
     ConstantTooWide { width: u8 },
     #[error("@range minimum {min} is greater than maximum {max}")]
     InvalidRange { min: usize, max: usize },
+    #[error("@align({align}) field starts at misaligned offset {offset:?}")]
+    MisalignedField { offset: binparse::Len, align: usize },
 }
 
 impl FieldAccum {
@@ -67,6 +69,30 @@ pub(crate) fn generate<'a>(
     let field_inherited = attrs.merge_inherited(struct_accum.inherited);
     let mut field_accum = FieldAccum::new(ast.name);
 
+    let has_padding = attrs.pad.is_some() || attrs.pad_to.is_some();
+    if let Some(pad) = attrs.pad {
+        struct_accum.offset = struct_accum.offset.clone()
+            + GeneratedLen::Fixed(binparse::Len { byte: pad, bit: 0 });
+    }
+    if let Some(pad_to) = attrs.pad_to {
+        struct_accum.offset = match struct_accum.offset.clone() {
+            GeneratedLen::Fixed(len) => GeneratedLen::Fixed(len.pad_to(pad_to)),
+            GeneratedLen::Dynamic(tokens) => {
+                GeneratedLen::Dynamic(quote! { ({ #tokens }).pad_to(#pad_to) })
+            }
+        };
+    }
+    let dynamic_align = match (attrs.align, &struct_accum.offset) {
+        (Some(align), GeneratedLen::Fixed(len)) => {
+            if len.bit != 0 || len.byte % align != 0 {
+                return Err(Error::MisalignedField { offset: *len, align });
+            }
+            None
+        }
+        (Some(align), GeneratedLen::Dynamic(_)) => Some(align),
+        (None, _) => None,
+    };
+
     let mut constant = None;
     match &ast.value {
         ast::FieldValue::Type(ty) => {
@@ -87,7 +113,7 @@ pub(crate) fn generate<'a>(
                     todo!("hooks inside conditionals");
                 }
                 (Some(hook), true) => {
-                    generate_vla_hook(hook, struct_accum, &mut field_accum)?;
+                    generate_vla_hook(hook, struct_accum, &mut field_accum, &attrs)?;
                 }
                 (Some(hook), false) => {
                     generate_fixed_hook(
@@ -145,39 +171,55 @@ pub(crate) fn generate<'a>(
         &mut struct_accum.offset,
         GeneratedLen::Fixed(binparse::Len { byte: 0, bit: 0 }),
     );
-    let end_offset = start_offset + len.clone();
+    let end_offset = start_offset.clone() + len.clone();
 
     let start_offset_getter_fn_name = format_ident!("{}_start_offset", ast.name);
     let bit_range_fn_name = format_ident!("{}_bit_range", ast.name);
-    let start_offset_body = match &struct_accum.last_offset_getter_fn_name {
-        Some(prev) => quote! { self.#prev() },
-        None => quote! { binparse::Len::ZERO },
+    let start_offset_body = if has_padding {
+        match &start_offset {
+            GeneratedLen::Fixed(len) => {
+                let byte = len.byte;
+                let bit = len.bit;
+                quote! { binparse::Len { byte: #byte, bit: #bit } }
+            }
+            GeneratedLen::Dynamic(tokens) => quote! { #tokens },
+        }
+    } else {
+        match &struct_accum.last_offset_getter_fn_name {
+            Some(prev) => quote! { self.#prev() },
+            None => quote! { binparse::Len::ZERO },
+        }
     };
 
+    let (vis, dead_code) = getter_visibility(&attrs);
     field_accum.offset_getter = match &end_offset {
         GeneratedLen::Fixed(total_len) => {
             let total_byte = total_len.byte;
             let total_bit = total_len.bit;
             quote! {
-                pub fn #offset_getter_fn_name(&self) -> binparse::Len {
+                #dead_code
+                #vis fn #offset_getter_fn_name(&self) -> binparse::Len {
                     binparse::Len { byte: #total_byte, bit: #total_bit }
                 }
             }
         }
         GeneratedLen::Dynamic(total_len) => {
             quote! {
-                pub fn #offset_getter_fn_name(&self) -> binparse::Len {
+                #dead_code
+                #vis fn #offset_getter_fn_name(&self) -> binparse::Len {
                     #total_len
                 }
             }
         }
     };
     field_accum.offset_getter.extend(quote! {
-        pub fn #start_offset_getter_fn_name(&self) -> binparse::Len {
+        #dead_code
+        #vis fn #start_offset_getter_fn_name(&self) -> binparse::Len {
             #start_offset_body
         }
 
-        pub fn #bit_range_fn_name(&self) -> ::core::ops::Range<usize> {
+        #dead_code
+        #vis fn #bit_range_fn_name(&self) -> ::core::ops::Range<usize> {
             self.#start_offset_getter_fn_name().bits()..self.#offset_getter_fn_name().bits()
         }
     });
@@ -187,7 +229,23 @@ pub(crate) fn generate<'a>(
     struct_accum.functions.extend(field_accum.helper_fns);
     struct_accum.functions.extend(field_accum.field_getter);
     struct_accum.functions.extend(field_accum.offset_getter);
-    let length_check = quote! {
+    let mut length_check = TokenStream::new();
+    if let Some(align) = dynamic_align {
+        let field_path = format!("{}.{}", struct_accum.name, ast.name);
+        length_check.extend(quote! {
+            {
+                let offset = me.#start_offset_getter_fn_name();
+                if !offset.is_byte_aligned() || !offset.byte.is_multiple_of(#align) {
+                    return Err(binparse::ParseError::Misaligned {
+                        field: #field_path,
+                        align: #align,
+                        offset,
+                    });
+                }
+            }
+        });
+    }
+    length_check.extend(quote! {
         {
             let len = me.#offset_getter_fn_name();
             let expected = len.byte_ceil();
@@ -198,7 +256,7 @@ pub(crate) fn generate<'a>(
                 });
             }
         }
-    };
+    });
     match &struct_accum.condition {
         Some(gate) => struct_accum.parse_checks.extend(quote! {
             if me.#gate() {
@@ -334,6 +392,7 @@ fn generate_plain<'a>(
     let field_name = field_accum.field_name.clone();
     let return_ty = info.return_ty;
     let field_getter_body = info.field_getter_body;
+    let (vis, dead_code) = getter_visibility(attrs);
     match &struct_accum.condition {
         Some(gate) => {
             let raw_fn_name = format_ident!("{}_raw", field_name);
@@ -344,7 +403,8 @@ fn generate_plain<'a>(
                 }
             });
             field_accum.field_getter = quote! {
-                pub fn #field_name(&self) -> Option<#return_ty> {
+                #dead_code
+                #vis fn #field_name(&self) -> Option<#return_ty> {
                     if self.#gate() {
                         Some(self.#raw_fn_name())
                     } else {
@@ -355,8 +415,9 @@ fn generate_plain<'a>(
         }
         None => {
             field_accum.field_getter = quote! {
+                #dead_code
                 #[allow(clippy::identity_op)]
-                pub fn #field_name(&self) -> #return_ty {
+                #vis fn #field_name(&self) -> #return_ty {
                     #field_getter_body
                 }
             };
@@ -364,6 +425,14 @@ fn generate_plain<'a>(
     }
 
     Ok(())
+}
+
+fn getter_visibility(attrs: &ParsedAttrs<'_>) -> (TokenStream, TokenStream) {
+    if attrs.skip {
+        (TokenStream::new(), quote! { #[allow(dead_code)] })
+    } else {
+        (quote! { pub }, TokenStream::new())
+    }
 }
 
 fn constant_type(lit: &ast::IntLiteral) -> Result<ast::Type<'static>, Error> {
@@ -458,6 +527,7 @@ fn generate_vla_hook(
     hook: &Hook,
     struct_accum: &mut StructAccum,
     field_accum: &mut FieldAccum,
+    attrs: &ParsedAttrs<'_>,
 ) -> Result<(), Error> {
     let field_name = &field_accum.field_name;
     let hook_fn = &hook.fn_path;
@@ -465,9 +535,19 @@ fn generate_vla_hook(
 
     let raw_fn_name = format_ident!("{}_raw", field_name);
 
-    let start_offset = match &struct_accum.last_offset_getter_fn_name {
-        Some(prev) => quote! { self.#prev().byte },
-        None => quote! { 0 },
+    let start_offset = if attrs.pad.is_some() || attrs.pad_to.is_some() {
+        match &struct_accum.offset {
+            GeneratedLen::Fixed(len) => {
+                let byte = len.byte;
+                quote! { #byte }
+            }
+            GeneratedLen::Dynamic(tokens) => quote! { ({ #tokens }).byte },
+        }
+    } else {
+        match &struct_accum.last_offset_getter_fn_name {
+            Some(prev) => quote! { self.#prev().byte },
+            None => quote! { 0 },
+        }
     };
 
     field_accum.helper_fns = quote! {
@@ -476,8 +556,10 @@ fn generate_vla_hook(
         }
     };
 
+    let (vis, dead_code) = getter_visibility(attrs);
     field_accum.field_getter = quote! {
-        pub fn #field_name(&self) -> #return_ty {
+        #dead_code
+        #vis fn #field_name(&self) -> #return_ty {
             self.#raw_fn_name().0
         }
     };
@@ -519,9 +601,11 @@ fn generate_fixed_hook<'a>(
     let return_ty = &hook.return_ty;
     let field_getter_body = info.field_getter_body;
 
+    let (vis, dead_code) = getter_visibility(attrs);
     field_accum.field_getter = quote! {
+        #dead_code
         #[allow(clippy::identity_op)]
-        pub fn #field_name(&self) -> #return_ty {
+        #vis fn #field_name(&self) -> #return_ty {
             #hook_fn(#field_getter_body)
         }
     };

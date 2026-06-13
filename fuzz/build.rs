@@ -96,6 +96,14 @@ struct Opt {
 struct Opts {
     @greedy(unsafe_eof) @max_iter(8) opts: [Opt],
 }
+
+struct Padded {
+    @skip reserved: b<3>,
+    flags: b<5>,
+    n: u8,
+    @pad(1) data: [u8; n],
+    @pad_to(4) @align(2) tail: u16,
+}
 "#;
 
 fn main() {

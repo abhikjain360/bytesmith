@@ -132,4 +132,15 @@ fuzz_target!(|data: &[u8]| {
             }
         }
     }
+
+    if let Ok((packet, _)) = Padded::parse(data) {
+        let _ = packet.flags();
+        let _ = packet.n();
+        let _ = packet.tail();
+        let _ = packet.data_bit_range();
+        let _ = packet.tail_bit_range();
+        if let Ok(items) = packet.data() {
+            let _ = items.collect::<binparse::ParseResult<Vec<_>>>();
+        }
+    }
 });

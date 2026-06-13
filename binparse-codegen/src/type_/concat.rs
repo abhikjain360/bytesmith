@@ -56,15 +56,25 @@ pub(crate) fn generate<'a>(
 
         let return_ty = info.return_ty;
         let field_getter_body = info.field_getter_body;
-        field_accum.helper_fns.extend(quote! {
-            #[allow(clippy::identity_op)]
-            pub fn #item_name(&self) -> #return_ty {
-                #field_getter_body
-            }
-        });
+        if item_attrs.skip {
+            field_accum.helper_fns.extend(quote! {
+                #[allow(dead_code)]
+                #[allow(clippy::identity_op)]
+                fn #item_name(&self) -> #return_ty {
+                    #field_getter_body
+                }
+            });
+        } else {
+            field_accum.helper_fns.extend(quote! {
+                #[allow(clippy::identity_op)]
+                pub fn #item_name(&self) -> #return_ty {
+                    #field_getter_body
+                }
+            });
 
-        field_types.push(return_ty);
-        field_exprs.extend(quote! { self.#item_name(), });
+            field_types.push(return_ty);
+            field_exprs.extend(quote! { self.#item_name(), });
+        }
 
         let item_len = info.len;
         total_len = total_len + item_len.clone();
@@ -75,7 +85,7 @@ pub(crate) fn generate<'a>(
         ( #field_exprs )
     };
 
-    let return_ty = quote! { ( #(#field_types),* ) };
+    let return_ty = quote! { ( #(#field_types,)* ) };
 
     Ok(GeneratedTypeInfo {
         len: total_len,
