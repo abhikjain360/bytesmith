@@ -11,7 +11,7 @@ use crate::{
     expr::{self, ExprType},
     field::FieldAccum,
     struct_::{DoneFieldType, GeneratedStruct, StructAccum},
-    type_::{self, GeneratedTypeInfo},
+    type_::{self, GeneratedTree, GeneratedTypeInfo, LenBound},
 };
 
 enum SizeMode {
@@ -32,11 +32,11 @@ struct ElemGen {
     check_count: Option<TokenStream>,
 }
 
-pub(crate) fn generate(
-    array_type: &ast::ArrayType<'_>,
-    attrs: &ParsedAttrs<'_>,
-    done: &HashMap<&str, GeneratedStruct>,
-    struct_accum: &mut StructAccum,
+pub(crate) fn generate<'a>(
+    array_type: &ast::ArrayType<'a>,
+    attrs: &ParsedAttrs<'a>,
+    done: &HashMap<&'a str, GeneratedStruct>,
+    struct_accum: &mut StructAccum<'a>,
     accum: &mut FieldAccum,
     start_offset: GeneratedLen,
     inherited: Inherited,
@@ -44,6 +44,7 @@ pub(crate) fn generate(
     let Inherited { endian, bit_order } = inherited;
     let field_name = accum.field_name.clone();
 
+    let mut fill_to_bound = false;
     let mode = match (&array_type.size, attrs.until, attrs.greedy) {
         (Some(size), None, false) => {
             let lowered = expr::lower(size, ExprType::Numeric, &struct_accum.done_fields)?;
@@ -57,6 +58,10 @@ pub(crate) fn generate(
         (None, Some(_), true) => return Err(attr::Error::UntilWithGreedy.into()),
         (None, Some(sentinel), false) => SizeMode::Until(sentinel),
         (None, None, true) => SizeMode::Greedy,
+        (None, None, false) if struct_accum.struct_len.is_some() => {
+            fill_to_bound = true;
+            SizeMode::Greedy
+        }
         (None, None, false) => return Err(type_::Error::UnsizedArray),
     };
     let offset = match &start_offset {
@@ -83,6 +88,28 @@ pub(crate) fn generate(
         GeneratedLen::Dynamic(tokens) => quote! { ({ #tokens }).byte_ceil() },
     };
 
+    let bound = type_::len_bound(&offset_bytes, attrs, struct_accum)?;
+    if bound.is_some() && !matches!(mode, SizeMode::Until(_) | SizeMode::Greedy) {
+        return Err(attr::Error::LenOnSizedArray.into());
+    }
+    let struct_bound_end = match (&bound, &struct_accum.struct_len) {
+        (Some(_), _) => None,
+        (None, Some(len_expr)) if matches!(mode, SizeMode::Until(_) | SizeMode::Greedy) => {
+            let lowered = expr::lower(len_expr, ExprType::Numeric, &struct_accum.done_fields)?;
+            let len_tokens = lowered.tokens;
+            Some(quote! { (#len_tokens).min(self.data.len()) })
+        }
+        (None, _) => None,
+    };
+    let data = match (&bound, &struct_bound_end) {
+        (Some(LenBound { end, .. }), _) => quote! { self.data[..(#end)] },
+        (None, Some(end)) => quote! { self.data[..(#end)] },
+        (None, None) => quote! { self.data },
+    };
+    if fill_to_bound {
+        struct_accum.fill_to_bound_field = Some(field_name.to_string());
+    }
+
     let iterator_name = format_ident!("{}_{}_Iterator", struct_accum.name, field_name);
 
     let bounded_next = |next_body: TokenStream| {
@@ -103,17 +130,17 @@ pub(crate) fn generate(
                     if !matches!(prim, ast::Primitive::U8) {
                         todo!("@until on non-u8 element arrays");
                     }
-                    until_count(&offset_bytes, *sentinel)
+                    until_count(&data, &offset_bytes, *sentinel)
                 }
-                SizeMode::Greedy => greedy_count(&offset_bytes, byte_len),
+                SizeMode::Greedy => greedy_count(&data, &offset_bytes, byte_len),
             };
             let len = match &mode {
                 SizeMode::Counted {
                     count,
                     static_count,
                 } => counted_len(GeneratedLen::Fixed(prim_len), count, *static_count),
-                SizeMode::Until(sentinel) => until_len(&offset_bytes, *sentinel),
-                SizeMode::Greedy => greedy_len(&offset_bytes, byte_len),
+                SizeMode::Until(sentinel) => until_len(&data, &offset_bytes, *sentinel),
+                SizeMode::Greedy => greedy_len(&data, &offset_bytes, byte_len),
             };
             let next_body = if let Some(read) = crate::single_byte_read(prim) {
                 quote! {
@@ -143,7 +170,7 @@ pub(crate) fn generate(
                 iterator_init: quote! {
                     idx: 0,
                     count: #count,
-                    data: &self.data[#offset..],
+                    data: &#data[#offset..],
                 },
                 next_fn_body: bounded_next(next_body),
                 check_count: Some(count),
@@ -180,7 +207,7 @@ pub(crate) fn generate(
                     iterator_init: quote! {
                         idx: 0,
                         count: #count,
-                        data: &self.data[#offset..],
+                        data: &#data[#offset..],
                     },
                     next_fn_body: bounded_next(next_body),
                     check_count: Some(count.clone()),
@@ -191,9 +218,9 @@ pub(crate) fn generate(
                         return Err(type_::Error::GreedyZeroSizedElem);
                     }
                     GeneratedLen::Fixed(elem_len) if elem_len.bit == 0 => {
-                        let count = greedy_count(&offset_bytes, elem_len.byte);
+                        let count = greedy_count(&data, &offset_bytes, elem_len.byte);
                         ElemGen {
-                            len: greedy_len(&offset_bytes, elem_len.byte),
+                            len: greedy_len(&data, &offset_bytes, elem_len.byte),
                             return_ty,
                             iterator_fields: quote! {
                                 idx: usize,
@@ -203,7 +230,7 @@ pub(crate) fn generate(
                             iterator_init: quote! {
                                 idx: 0,
                                 count: #count,
-                                data: &self.data[#offset..],
+                                data: &#data[#offset..],
                             },
                             next_fn_body: bounded_next(next_body),
                             check_count: Some(count),
@@ -221,7 +248,7 @@ pub(crate) fn generate(
                         ElemGen {
                             len: GeneratedLen::Dynamic(quote! {{
                                 let start = #offset_bytes;
-                                ::binparse::Len { byte: self.data.len().saturating_sub(start), bit: 0 }
+                                ::binparse::Len { byte: #data.len().saturating_sub(start), bit: 0 }
                             }}),
                             return_ty,
                             iterator_fields: quote! {
@@ -232,7 +259,7 @@ pub(crate) fn generate(
                             iterator_init: quote! {
                                 idx: 0,
                                 max: #max,
-                                data: &self.data[#offset..],
+                                data: &#data[#offset..],
                             },
                             next_fn_body: quote! {
                                 if self.data.is_empty() { return None; }
@@ -323,7 +350,7 @@ pub(crate) fn generate(
                 iterator_init: quote! {
                     idx: 0,
                     count: #count,
-                    data: &self.data[#offset..],
+                    data: &#data[#offset..],
                     bit_offset: 0,
                 },
                 next_fn_body: bounded_next(next_body),
@@ -379,7 +406,7 @@ pub(crate) fn generate(
             }
         });
         accum.parse_checks.extend(quote! {
-            me.#validate_fn_name()?;
+            self.#validate_fn_name()?;
         });
     }
 
@@ -389,12 +416,181 @@ pub(crate) fn generate(
         })
     };
 
+    let field_len = match &bound {
+        Some(LenBound { end, field_len }) => {
+            let consumed = match &len {
+                GeneratedLen::Fixed(len) => {
+                    let byte = len.byte;
+                    quote! { #byte }
+                }
+                GeneratedLen::Dynamic(tokens) => quote! { ({ #tokens }).byte_ceil() },
+            };
+            let rest_fn_name = format_ident!("{}_rest", field_name);
+            let (vis, dead_code) = crate::field::getter_visibility(attrs);
+            accum.helper_fns.extend(quote! {
+                #dead_code
+                #vis fn #rest_fn_name(&self) -> ::binparse::ParseResult<&'a [u8]> {
+                    let end = #end;
+                    let consumed = (#offset_bytes).saturating_add(#consumed);
+                    if consumed > end {
+                        return Err(::binparse::ParseError::NotEnoughData {
+                            expected: consumed,
+                            got: end,
+                        });
+                    }
+                    Ok(&self.data[consumed..end])
+                }
+            });
+            if matches!(mode, SizeMode::Until(_)) {
+                accum.pre_length_checks.extend(quote! {
+                    self.#rest_fn_name()?;
+                });
+            }
+            field_len.clone()
+        }
+        None => len,
+    };
+
+    let tree = GeneratedTree::Node(if bound.is_some() {
+        let rest_fn_name = format_ident!("{}_rest", field_name);
+        let inner = tree_node(array_type, done, &field_name, &accum.tree_getter)?;
+        quote! {
+            {
+                let mut node = #inner;
+                if let Ok(rest) = self.#rest_fn_name()
+                    && !rest.is_empty()
+                {
+                    let consumed = node
+                        .children
+                        .last()
+                        .map(|child| child.bit_range.end)
+                        .unwrap_or(bit_range.start)
+                        .min(bit_range.end);
+                    node.children.push(::binparse::FieldNode::new(
+                        "rest",
+                        "[u8]",
+                        consumed..bit_range.end,
+                        ::binparse::Value::Bytes(rest),
+                    ));
+                }
+                node
+            }
+        }
+    } else {
+        tree_node(array_type, done, &field_name, &accum.tree_getter)?
+    });
+
     Ok(GeneratedTypeInfo {
-        len,
+        len: field_len,
         field_getter_body,
-        return_ty: quote! { ::binparse::ParseResult<#iterator_name<'_>> },
+        return_ty: quote! { ::binparse::ParseResult<#iterator_name<'a>> },
         field_type: DoneFieldType::Other,
+        tree,
     })
+}
+
+fn tree_node(
+    array_type: &ast::ArrayType<'_>,
+    done: &HashMap<&str, GeneratedStruct>,
+    field_name: &syn::Ident,
+    getter: &syn::Ident,
+) -> Result<TokenStream, type_::Error> {
+    let name_str = field_name.to_string();
+    let elem_label = type_::elem_label(&array_type.elem_ty);
+    let type_label = format!("[{elem_label}]");
+
+    let error_node = quote! {
+        elem_nodes.push(
+            ::binparse::FieldNode::new(
+                    i.to_string(),
+                    #elem_label,
+                    start..start,
+                    ::binparse::Value::Opaque,
+                )
+                .with_status(::binparse::Status::Error(error)),
+        );
+    };
+
+    let elem_loop = match &array_type.elem_ty {
+        ast::ArrayElemType::Primitive(prim) => {
+            let elem_bits = crate::match_primitive(prim).0.bits();
+            let value_ctor = if crate::is_signed(prim) {
+                quote! { ::binparse::Value::Int(i128::from(value)) }
+            } else {
+                quote! { ::binparse::Value::UInt(u128::from(value)) }
+            };
+            elem_value_loop(getter, quote! { #elem_bits }, &elem_label, value_ctor, &error_node)
+        }
+        ast::ArrayElemType::BitField(width) => {
+            let elem_bits = *width as usize;
+            let value_ctor = quote! { ::binparse::Value::UInt(u128::from(value)) };
+            elem_value_loop(getter, quote! { #elem_bits }, &elem_label, value_ctor, &error_node)
+        }
+        ast::ArrayElemType::StructRef(struct_name) => {
+            let generated_struct = done
+                .get(*struct_name)
+                .ok_or_else(|| type_::Error::UnknownType(struct_name.to_string()))?;
+            let elem_len = match &generated_struct.last_offset_getter {
+                Some(getter) => quote! { value.#getter().bits() },
+                None => quote! { 0usize },
+            };
+            quote! {
+                if let Ok(iter) = self.#getter() {
+                    let mut start = bit_range.start;
+                    for (i, elem) in iter.enumerate() {
+                        match elem {
+                            Ok(value) => {
+                                let end = start.saturating_add(#elem_len);
+                                elem_nodes.push(value.field_tree().renamed(i.to_string()).shifted(start));
+                                start = end;
+                            }
+                            Err(error) => {
+                                #error_node
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(quote! {
+        {
+            let mut elem_nodes = ::std::vec::Vec::new();
+            #elem_loop
+            ::binparse::FieldNode::new(#name_str, #type_label, bit_range.clone(), ::binparse::Value::Array)
+                .with_children(elem_nodes)
+        }
+    })
+}
+
+fn elem_value_loop(
+    getter: &syn::Ident,
+    elem_bits: TokenStream,
+    elem_label: &str,
+    value_ctor: TokenStream,
+    error_node: &TokenStream,
+) -> TokenStream {
+    quote! {
+        if let Ok(iter) = self.#getter() {
+            let mut start = bit_range.start;
+            for (i, elem) in iter.enumerate() {
+                let end = start.saturating_add(#elem_bits);
+                match elem {
+                    Ok(value) => elem_nodes.push(::binparse::FieldNode::new(
+                        i.to_string(),
+                        #elem_label,
+                        start..end,
+                        #value_ctor,
+                    )),
+                    Err(error) => {
+                        #error_node
+                    }
+                }
+                start = end;
+            }
+        }
+    }
 }
 
 fn counted_len(
@@ -413,48 +609,47 @@ fn counted_len(
     }
 }
 
-fn until_count(offset_bytes: &TokenStream, sentinel: u8) -> TokenStream {
+fn until_count(data: &TokenStream, offset_bytes: &TokenStream, sentinel: u8) -> TokenStream {
     quote! {
-        self.data[#offset_bytes..]
+        #data[#offset_bytes..]
             .iter()
             .position(|&b| b == #sentinel)
             .unwrap_or(0)
     }
 }
 
-fn until_len(offset_bytes: &TokenStream, sentinel: u8) -> GeneratedLen {
+fn until_len(data: &TokenStream, offset_bytes: &TokenStream, sentinel: u8) -> GeneratedLen {
     GeneratedLen::Dynamic(quote! {{
         let start = #offset_bytes;
-        let byte = match self
-            .data
+        let byte = match #data
             .get(start..)
             .and_then(|rest| rest.iter().position(|&b| b == #sentinel))
         {
             Some(pos) => pos.saturating_add(1),
-            None => self.data.len().saturating_add(1).saturating_sub(start),
+            None => #data.len().saturating_add(1).saturating_sub(start),
         };
         ::binparse::Len { byte, bit: 0 }
     }})
 }
 
-fn greedy_count(offset_bytes: &TokenStream, elem_byte_len: usize) -> TokenStream {
+fn greedy_count(data: &TokenStream, offset_bytes: &TokenStream, elem_byte_len: usize) -> TokenStream {
     if elem_byte_len == 1 {
-        quote! { self.data.len().saturating_sub(#offset_bytes) }
+        quote! { #data.len().saturating_sub(#offset_bytes) }
     } else {
-        quote! { (self.data.len().saturating_sub(#offset_bytes)) / #elem_byte_len }
+        quote! { (#data.len().saturating_sub(#offset_bytes)) / #elem_byte_len }
     }
 }
 
-fn greedy_len(offset_bytes: &TokenStream, elem_byte_len: usize) -> GeneratedLen {
+fn greedy_len(data: &TokenStream, offset_bytes: &TokenStream, elem_byte_len: usize) -> GeneratedLen {
     if elem_byte_len == 1 {
         GeneratedLen::Dynamic(quote! {{
             let start = #offset_bytes;
-            ::binparse::Len { byte: self.data.len().saturating_sub(start), bit: 0 }
+            ::binparse::Len { byte: #data.len().saturating_sub(start), bit: 0 }
         }})
     } else {
         GeneratedLen::Dynamic(quote! {{
             let start = #offset_bytes;
-            let rem = self.data.len().saturating_sub(start);
+            let rem = #data.len().saturating_sub(start);
             let extra = rem % #elem_byte_len;
             let byte = if extra > 0 {
                 (rem - extra).saturating_add(#elem_byte_len)

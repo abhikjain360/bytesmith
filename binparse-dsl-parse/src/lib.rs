@@ -991,6 +991,39 @@ mod tests {
     }
 
     #[test]
+    fn test_union_hex_matcher() {
+        let src = r#"
+            struct Frame {
+                ethertype: u32,
+                body: union(ethertype) {
+                    xa1b2c3d4 => Tagged { data: u8 },
+                    _ => Raw { },
+                }
+            }
+        "#;
+        let defs = parse_helper(src);
+        match &defs[0] {
+            ast::Definition::Struct(s) => match &s.items[1] {
+                ast::StructItem::Field(f) => match &f.value {
+                    ast::FieldValue::Type(ast::Type::Union(u)) => {
+                        assert_eq!(u.variants.len(), 2);
+                        match &u.variants[0].matchers[0] {
+                            ast::UnionMatcher::Literal(ast::Literal::Int(lit)) => {
+                                assert_eq!(lit.value, 0xa1b2c3d4);
+                                assert_eq!(lit.ty, ast::IntType::Hex);
+                            }
+                            _ => panic!("Expected hex literal matcher"),
+                        }
+                    }
+                    _ => panic!("Expected union"),
+                },
+                _ => panic!("Expected field"),
+            },
+            _ => panic!("Expected struct"),
+        }
+    }
+
+    #[test]
     fn test_struct_level_attribute() {
         let src = r#"
             @len(total_len)

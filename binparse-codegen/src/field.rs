@@ -8,12 +8,13 @@ use crate::{
     GeneratedLen,
     attr::{self, Hook, ParsedAttrs},
     expr,
-    struct_::{DoneField, DoneFieldType, GeneratedStruct, StructAccum},
+    struct_::{DoneField, DoneFieldType, GeneratedStruct, Payload, StructAccum},
     type_,
 };
 
 pub(crate) struct FieldAccum {
     pub(crate) field_name: syn::Ident,
+    pub(crate) tree_getter: syn::Ident,
     pub(crate) len: GeneratedLen,
     pub(crate) field_type: DoneFieldType,
     pub(crate) offset_getter_fn_name: syn::Ident,
@@ -23,6 +24,7 @@ pub(crate) struct FieldAccum {
     pub(crate) offset_getter: TokenStream,
     pub(crate) parse_checks: TokenStream,
     pub(crate) pre_length_checks: TokenStream,
+    pub(crate) tree_body: TokenStream,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -48,7 +50,8 @@ impl FieldAccum {
         let field_name_ident = format_ident!("{}", field_name);
         let offset_getter_fn_name = format_ident!("{}_end_offset", field_name);
         Self {
-            field_name: field_name_ident,
+            field_name: field_name_ident.clone(),
+            tree_getter: field_name_ident,
             len: GeneratedLen::Fixed(binparse::Len { byte: 0, bit: 0 }),
             field_type: DoneFieldType::Other,
             offset_getter_fn_name,
@@ -58,6 +61,7 @@ impl FieldAccum {
             offset_getter: TokenStream::new(),
             parse_checks: TokenStream::new(),
             pre_length_checks: TokenStream::new(),
+            tree_body: TokenStream::new(),
         }
     }
 }
@@ -65,7 +69,7 @@ impl FieldAccum {
 pub(crate) fn generate<'a>(
     ast: &ast::Field<'a>,
     done: &HashMap<&'a str, GeneratedStruct>,
-    struct_accum: &mut StructAccum,
+    struct_accum: &mut StructAccum<'a>,
     errors: &[ast::ErrorVariant<'_>],
 ) -> Result<(), Error> {
     let attrs = ParsedAttrs::parse(&ast.attributes)?;
@@ -97,8 +101,10 @@ pub(crate) fn generate<'a>(
     };
 
     let mut constant = None;
+    let stub_label;
     match &ast.value {
         ast::FieldValue::Type(ty) => {
+            stub_label = type_::type_label(ty);
             if attrs.endian.is_some() {
                 check_endian_applies(ty)?;
             }
@@ -107,6 +113,7 @@ pub(crate) fn generate<'a>(
             }
             check_array_attrs_apply(&attrs, ty)?;
             check_len_applies(&attrs, ty)?;
+            check_handoff_applies(&attrs, ty, struct_accum)?;
 
             if struct_accum.condition.is_some() && matches!(ty, ast::Type::Concat(_)) {
                 todo!("concat fields inside conditionals");
@@ -116,9 +123,6 @@ pub(crate) fn generate<'a>(
             }
 
             match (&attrs.hook, is_vla(ty)) {
-                (Some(_), _) if struct_accum.condition.is_some() => {
-                    todo!("hooks inside conditionals");
-                }
                 (Some(hook), true) => {
                     if !matches!(
                         ty,
@@ -162,6 +166,7 @@ pub(crate) fn generate<'a>(
                 todo!("non-literal constraint fields")
             };
             let ty = constant_type(lit)?;
+            stub_label = type_::type_label(&ty);
             if attrs.endian.is_some() {
                 check_endian_applies(&ty)?;
             }
@@ -170,6 +175,7 @@ pub(crate) fn generate<'a>(
             }
             check_array_attrs_apply(&attrs, &ty)?;
             check_len_applies(&attrs, &ty)?;
+            check_handoff_applies(&attrs, &ty, struct_accum)?;
             generate_plain(
                 &ty,
                 done,
@@ -244,17 +250,131 @@ pub(crate) fn generate<'a>(
         }
     });
 
+    if attrs.discriminator {
+        struct_accum
+            .discriminators
+            .push(field_accum.field_name.clone());
+    }
+    if attrs.payload {
+        struct_accum.payload = Some(Payload {
+            start_offset_fn: start_offset_getter_fn_name.clone(),
+            end_offset_fn: offset_getter_fn_name.clone(),
+        });
+    }
+
+    let tree_body = if field_accum.tree_body.is_empty() {
+        type_::opaque_node(ast.name, &stub_label)
+    } else {
+        std::mem::take(&mut field_accum.tree_body)
+    };
+    let hide = attrs.skip.then(|| quote! { .hide() });
+
+    let pad_node_fn_name = format_ident!("{}_pad_node", ast.name);
+    let pad_push = if has_padding {
+        let pad_name = format!("{}_pad", ast.name);
+        let prev_end = match &struct_accum.last_offset_getter_fn_name {
+            Some(prev) => quote! { self.#prev() },
+            None => quote! { binparse::Len::ZERO },
+        };
+        struct_accum.functions.extend(quote! {
+            #[allow(dead_code)]
+            fn #pad_node_fn_name(&self) -> Option<::binparse::FieldNode<'a>> {
+                let bit_range = #prev_end.bits()..self.#start_offset_getter_fn_name().bits();
+                if bit_range.start < bit_range.end {
+                    Some(
+                        ::binparse::FieldNode::new(
+                                #pad_name,
+                                "pad",
+                                bit_range.clone(),
+                                ::binparse::Value::bytes(self.data, &bit_range),
+                            )
+                            .hide(),
+                    )
+                } else {
+                    None
+                }
+            }
+        });
+        quote! {
+            if let Some(node) = me.#pad_node_fn_name() {
+                children.push(node);
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
+
+    let present_node_fn_name = format_ident!("{}_present_node", ast.name);
+    struct_accum.functions.extend(quote! {
+        #[allow(dead_code)]
+        fn #present_node_fn_name(&self) -> ::binparse::FieldNode<'a> {
+            let bit_range = self.#bit_range_fn_name();
+            #tree_body #hide
+        }
+    });
+    let present_push = quote! {
+        children.push(me.#present_node_fn_name());
+    };
+
+    let absent_node_fn_name = format_ident!("{}_absent_node", ast.name);
+    let absent_push = if struct_accum.condition.is_some() {
+        let absent_name = ast.name;
+        struct_accum.functions.extend(quote! {
+            #[allow(dead_code)]
+            fn #absent_node_fn_name(&self) -> ::binparse::FieldNode<'a> {
+                let start = self.#start_offset_getter_fn_name().bits();
+                ::binparse::FieldNode::new(
+                        #absent_name,
+                        #stub_label,
+                        start..start,
+                        ::binparse::Value::Absent,
+                    )
+                    .hide()
+            }
+        });
+        quote! {
+            children.push(me.#absent_node_fn_name());
+        }
+    } else {
+        TokenStream::new()
+    };
+
+    match &struct_accum.condition {
+        Some(gate) => {
+            struct_accum.tree_stmts.extend(quote! {
+                {
+                    let me = self;
+                    #pad_push
+                    if me.#gate() {
+                        #present_push
+                    } else {
+                        #absent_push
+                    }
+                }
+            });
+        }
+        None => struct_accum.tree_stmts.extend(quote! {
+            {
+                let me = self;
+                #pad_push
+                #present_push
+            }
+        }),
+    }
+
     struct_accum.offset = end_offset;
     struct_accum.field_definitions.extend(field_accum.definitions);
     struct_accum.functions.extend(field_accum.helper_fns);
     struct_accum.functions.extend(field_accum.field_getter);
     struct_accum.functions.extend(field_accum.offset_getter);
-    let mut length_check = TokenStream::new();
+
+    let fatal_check_fn_name = format_ident!("{}_fatal_check", ast.name);
+    let mut fatal_check = TokenStream::new();
     if let Some(align) = dynamic_align {
         let field_path = format!("{}.{}", struct_accum.name, ast.name);
-        length_check.extend(quote! {
+        fatal_check.extend(quote! {
             {
-                let offset = me.#start_offset_getter_fn_name();
+                let offset = self.#start_offset_getter_fn_name();
                 if !offset.is_byte_aligned() || !offset.byte.is_multiple_of(#align) {
                     return Err(binparse::ParseError::Misaligned {
                         field: #field_path,
@@ -265,38 +385,119 @@ pub(crate) fn generate<'a>(
             }
         });
     }
-    length_check.extend(std::mem::take(&mut field_accum.pre_length_checks));
-    length_check.extend(quote! {
+    fatal_check.extend(std::mem::take(&mut field_accum.pre_length_checks));
+    fatal_check.extend(quote! {
         {
-            let len = me.#offset_getter_fn_name();
+            let len = self.#offset_getter_fn_name();
             let expected = len.byte_ceil();
-            if data.len() < expected {
+            if self.data.len() < expected {
                 return Err(binparse::ParseError::NotEnoughData {
                     expected,
-                    got: data.len(),
+                    got: self.data.len(),
                 });
             }
         }
     });
-    match &struct_accum.condition {
-        Some(gate) => struct_accum.parse_checks.extend(quote! {
-            if me.#gate() {
-                #length_check
-            }
-        }),
-        None => struct_accum.parse_checks.extend(length_check),
-    }
-    struct_accum
-        .parse_checks
-        .extend(std::mem::take(&mut field_accum.parse_checks));
-    struct_accum.last_offset_getter_fn_name = Some(offset_getter_fn_name);
+    struct_accum.functions.extend(quote! {
+        #[allow(dead_code)]
+        fn #fatal_check_fn_name(&self) -> Result<(), binparse::ParseError> {
+            #fatal_check
+            Ok(())
+        }
+    });
+
     struct_accum.done_fields.push(DoneField {
         name: ast.name.to_string(),
         field_type,
         conditional: struct_accum.condition.is_some(),
     });
 
-    generate_validations(ast, &attrs, constant, field_type, struct_accum)?;
+    let recoverable_check_fn_name = format_ident!("{}_recoverable_check", ast.name);
+    let mut recoverable_check = std::mem::take(&mut field_accum.parse_checks);
+    generate_validations(
+        ast,
+        &attrs,
+        constant,
+        field_type,
+        struct_accum,
+        &mut recoverable_check,
+    )?;
+    struct_accum.functions.extend(quote! {
+        #[allow(dead_code)]
+        fn #recoverable_check_fn_name(&self) -> Result<(), binparse::ParseError> {
+            #recoverable_check
+            Ok(())
+        }
+    });
+
+    let field_checks = quote! {
+        me.#fatal_check_fn_name()?;
+        me.#recoverable_check_fn_name()?;
+    };
+    match &struct_accum.condition {
+        Some(gate) => struct_accum.parse_checks.extend(quote! {
+            if me.#gate() {
+                #field_checks
+            }
+        }),
+        None => struct_accum.parse_checks.extend(field_checks),
+    }
+
+    let field_name_str = ast.name;
+    let dissect_field = quote! {
+        match me.#fatal_check_fn_name() {
+            Err(error) => {
+                let start = me.#start_offset_getter_fn_name().bits();
+                children.push(
+                    ::binparse::FieldNode::new(
+                            #field_name_str,
+                            #stub_label,
+                            start..start,
+                            ::binparse::Value::Opaque,
+                        )
+                        .with_status(::binparse::Status::Error(error)),
+                );
+                fatal = Some(error);
+            }
+            Ok(()) => match me.#recoverable_check_fn_name() {
+                Err(error) => {
+                    let bit_range = me.#bit_range_fn_name();
+                    children.push(
+                        ::binparse::FieldNode::new(
+                                #field_name_str,
+                                #stub_label,
+                                bit_range,
+                                ::binparse::Value::Opaque,
+                            )
+                            .with_status(::binparse::Status::Error(error)),
+                    );
+                }
+                Ok(()) => {
+                    #present_push
+                }
+            },
+        }
+    };
+    match &struct_accum.condition {
+        Some(gate) => struct_accum.dissect_stmts.extend(quote! {
+            if fatal.is_none() {
+                #pad_push
+                if me.#gate() {
+                    #dissect_field
+                } else {
+                    #absent_push
+                }
+            }
+        }),
+        None => struct_accum.dissect_stmts.extend(quote! {
+            if fatal.is_none() {
+                #pad_push
+                #dissect_field
+            }
+        }),
+    }
+
+    struct_accum.last_offset_getter_fn_name = Some(offset_getter_fn_name);
 
     Ok(())
 }
@@ -306,7 +507,8 @@ fn generate_validations<'a>(
     attrs: &ParsedAttrs<'a>,
     constant: Option<usize>,
     field_type: DoneFieldType,
-    struct_accum: &mut StructAccum,
+    struct_accum: &mut StructAccum<'a>,
+    recoverable: &mut TokenStream,
 ) -> Result<(), Error> {
     if constant.is_none() && attrs.check.is_none() && attrs.range.is_none() {
         return Ok(());
@@ -381,8 +583,8 @@ fn generate_validations<'a>(
             Ok(())
         }
     });
-    struct_accum.parse_checks.extend(quote! {
-        me.#validate_fn_name()?;
+    recoverable.extend(quote! {
+        self.#validate_fn_name()?;
     });
 
     Ok(())
@@ -391,12 +593,16 @@ fn generate_validations<'a>(
 fn generate_plain<'a>(
     ty: &ast::Type<'a>,
     done: &HashMap<&'a str, GeneratedStruct>,
-    struct_accum: &mut StructAccum,
+    struct_accum: &mut StructAccum<'a>,
     field_accum: &mut FieldAccum,
     inherited: attr::Inherited,
     attrs: &ParsedAttrs<'a>,
     errors: &[ast::ErrorVariant<'_>],
 ) -> Result<(), Error> {
+    let field_name = field_accum.field_name.clone();
+    if struct_accum.condition.is_some() {
+        field_accum.tree_getter = format_ident!("{}_raw", field_name);
+    }
     let start_offset = struct_accum.offset.clone();
     let info = type_::generate(
         ty,
@@ -409,16 +615,17 @@ fn generate_plain<'a>(
         errors,
     )?;
 
+    let tree_getter = field_accum.tree_getter.clone();
+    field_accum.tree_body = info.tree_node(&field_accum.field_name, &tree_getter);
     field_accum.len = info.len;
     field_accum.field_type = info.field_type;
 
-    let field_name = field_accum.field_name.clone();
     let return_ty = info.return_ty;
     let field_getter_body = info.field_getter_body;
     let (vis, dead_code) = getter_visibility(attrs);
     match &struct_accum.condition {
         Some(gate) => {
-            let raw_fn_name = format_ident!("{}_raw", field_name);
+            let raw_fn_name = tree_getter.clone();
             field_accum.helper_fns.extend(quote! {
                 #[allow(clippy::identity_op)]
                 fn #raw_fn_name(&self) -> #return_ty {
@@ -538,15 +745,83 @@ fn check_len_applies(attrs: &ParsedAttrs<'_>, ty: &ast::Type<'_>) -> Result<(), 
         return Ok(());
     }
     if attrs.hook.is_some() {
-        todo!("@len with @hook");
+        if is_vla(ty) {
+            return Ok(());
+        }
+        return Err(attr::Error::LenWithFixedHook);
     }
     match ty {
-        ast::Type::StructRef(_) => Ok(()),
-        ast::Type::Array(_) | ast::Type::Concat(_) | ast::Type::Union(_) => {
-            todo!("@len on array, concat, and union fields")
+        ast::Type::StructRef(_) | ast::Type::Union(_) => Ok(()),
+        ast::Type::Array(array) => {
+            if matches!(array.elem_ty, ast::ArrayElemType::BitField(_)) {
+                return Err(attr::Error::LenOnBitfieldArray);
+            }
+            if array.size.is_some() {
+                return Err(attr::Error::LenOnSizedArray);
+            }
+            Ok(())
         }
-        ast::Type::Primitive(_) | ast::Type::BitField(_) => Err(attr::Error::LenOnNonStructRef),
+        ast::Type::Concat(_) => todo!("@len on concat fields"),
+        ast::Type::Primitive(_) | ast::Type::BitField(_) => {
+            Err(attr::Error::LenOnUnsupportedType)
+        }
     }
+}
+
+fn check_handoff_applies(
+    attrs: &ParsedAttrs<'_>,
+    ty: &ast::Type<'_>,
+    struct_accum: &StructAccum<'_>,
+) -> Result<(), attr::Error> {
+    if !attrs.discriminator && !attrs.payload {
+        return Ok(());
+    }
+    let name = if attrs.discriminator {
+        "discriminator"
+    } else {
+        "payload"
+    };
+    if attrs.skip {
+        return Err(attr::Error::HandoffOnSkip(name));
+    }
+    if struct_accum.condition.is_some() {
+        return Err(attr::Error::HandoffInConditional(name));
+    }
+    if attrs.hook.is_some() {
+        todo!("@{name} with @hook");
+    }
+    if attrs.discriminator {
+        match ty {
+            ast::Type::Primitive(_) | ast::Type::BitField(_) => {}
+            ast::Type::Concat(_) | ast::Type::Union(_) => {
+                todo!("@discriminator on concat and union fields")
+            }
+            ast::Type::Array(_) | ast::Type::StructRef(_) => {
+                return Err(attr::Error::DiscriminatorOnNonNumeric);
+            }
+        }
+    }
+    if attrs.payload {
+        if struct_accum.payload.is_some() {
+            return Err(attr::Error::MultiplePayloads);
+        }
+        match ty {
+            ast::Type::Array(ast::ArrayType {
+                elem_ty: ast::ArrayElemType::Primitive(ast::Primitive::U8),
+                ..
+            })
+            | ast::Type::StructRef(_) => {}
+            ast::Type::Concat(_) | ast::Type::Union(_) => {
+                todo!("@payload on concat and union fields")
+            }
+            ast::Type::Primitive(_)
+            | ast::Type::BitField(_)
+            | ast::Type::Array(_) => {
+                return Err(attr::Error::PayloadOnNonByteArray);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn check_bit_order_applies(ty: &ast::Type<'_>) -> Result<(), attr::Error> {
@@ -562,11 +837,11 @@ fn check_bit_order_applies(ty: &ast::Type<'_>) -> Result<(), attr::Error> {
     }
 }
 
-fn generate_vla_hook(
+fn generate_vla_hook<'a>(
     hook: &Hook,
-    struct_accum: &mut StructAccum,
+    struct_accum: &mut StructAccum<'a>,
     field_accum: &mut FieldAccum,
-    attrs: &ParsedAttrs<'_>,
+    attrs: &ParsedAttrs<'a>,
 ) -> Result<(), Error> {
     let field_name = &field_accum.field_name;
     let hook_fn = &hook.fn_path;
@@ -588,6 +863,105 @@ fn generate_vla_hook(
             len.byte
         }},
     };
+
+    let (vis, dead_code) = getter_visibility(attrs);
+
+    if let Some(len_expr) = &attrs.len {
+        let lowered = expr::lower(len_expr, expr::ExprType::Numeric, &struct_accum.done_fields)?;
+        let len_tokens = lowered.tokens;
+        let rest_fn_name = format_ident!("{}_rest", field_name);
+
+        field_accum.helper_fns = quote! {
+            fn #raw_fn_name(&self) -> ::binparse::ParseResult<(#return_ty, usize)> {
+                let start = #start;
+                let window = start.saturating_add(#len_tokens).min(self.data.len());
+                let (value, consumed) = #hook_fn(
+                    &self.data[start.min(window)..window],
+                    ::binparse::HookContext {
+                        field: #field_path,
+                        offset: start,
+                        enclosing: self.data,
+                    },
+                )?;
+                let end = start.saturating_add(consumed);
+                if end > window {
+                    return Err(::binparse::ParseError::NotEnoughData {
+                        expected: end,
+                        got: window,
+                    });
+                }
+                Ok((value, consumed))
+            }
+
+            #dead_code
+            #vis fn #rest_fn_name(&self) -> ::binparse::ParseResult<&'a [u8]> {
+                let start = #start;
+                let window = start.saturating_add(#len_tokens).min(self.data.len());
+                let (_, consumed) = self.#raw_fn_name()?;
+                let rest_start = start.saturating_add(consumed).min(window);
+                Ok(&self.data[rest_start..window])
+            }
+        };
+
+        field_accum.field_getter = quote! {
+            #dead_code
+            #vis fn #field_name(&self) -> ::binparse::ParseResult<#return_ty> {
+                self.#raw_fn_name().map(|(value, _)| value)
+            }
+        };
+
+        field_accum.len = match lowered.const_value {
+            Some(byte) => GeneratedLen::Fixed(binparse::Len { byte, bit: 0 }),
+            None => GeneratedLen::Dynamic(quote! {
+                ::binparse::Len { byte: #len_tokens, bit: 0 }
+            }),
+        };
+        field_accum.field_type = DoneFieldType::Other;
+        field_accum.pre_length_checks = quote! {
+            self.#raw_fn_name()?;
+        };
+
+        let name_str = field_accum.field_name.to_string();
+        let type_name = hook.return_ty.to_string();
+        let bind = hook_value_binding(&type_name);
+        let value = hook_value(&type_name, quote! { value });
+        field_accum.tree_body = quote! {
+            match self.#raw_fn_name() {
+                Ok((#bind, consumed)) => {
+                    let consumed_end = bit_range
+                        .start
+                        .saturating_add(consumed.saturating_mul(8))
+                        .min(bit_range.end);
+                    let mut node = ::binparse::FieldNode::new(
+                        #name_str,
+                        #type_name,
+                        bit_range.clone(),
+                        #value,
+                    );
+                    if let Ok(rest) = self.#rest_fn_name()
+                        && !rest.is_empty()
+                    {
+                        node.children.push(::binparse::FieldNode::new(
+                            "rest",
+                            "[u8]",
+                            consumed_end..bit_range.end,
+                            ::binparse::Value::Bytes(rest),
+                        ));
+                    }
+                    node
+                }
+                Err(error) => ::binparse::FieldNode::new(
+                        #name_str,
+                        #type_name,
+                        bit_range.clone(),
+                        ::binparse::Value::Opaque,
+                    )
+                    .with_status(::binparse::Status::Error(error)),
+            }
+        };
+
+        return Ok(());
+    }
 
     field_accum.helper_fns = quote! {
         fn #raw_fn_name(&self) -> ::binparse::ParseResult<(#return_ty, usize)> {
@@ -611,12 +985,23 @@ fn generate_vla_hook(
         }
     };
 
-    let (vis, dead_code) = getter_visibility(attrs);
-    field_accum.field_getter = quote! {
-        #dead_code
-        #vis fn #field_name(&self) -> ::binparse::ParseResult<#return_ty> {
-            self.#raw_fn_name().map(|(value, _)| value)
-        }
+    field_accum.field_getter = match &struct_accum.condition {
+        Some(gate) => quote! {
+            #dead_code
+            #vis fn #field_name(&self) -> Option<::binparse::ParseResult<#return_ty>> {
+                if self.#gate() {
+                    Some(self.#raw_fn_name().map(|(value, _)| value))
+                } else {
+                    None
+                }
+            }
+        },
+        None => quote! {
+            #dead_code
+            #vis fn #field_name(&self) -> ::binparse::ParseResult<#return_ty> {
+                self.#raw_fn_name().map(|(value, _)| value)
+            }
+        },
     };
 
     field_accum.len = GeneratedLen::Dynamic(quote! {
@@ -627,10 +1012,52 @@ fn generate_vla_hook(
     });
     field_accum.field_type = DoneFieldType::Other;
     field_accum.pre_length_checks = quote! {
-        me.#raw_fn_name()?;
+        self.#raw_fn_name()?;
+    };
+    let name_str = field_accum.field_name.to_string();
+    let type_name = hook.return_ty.to_string();
+    let bind = hook_value_binding(&type_name);
+    let value = hook_value(&type_name, quote! { value });
+    field_accum.tree_body = quote! {
+        match self.#raw_fn_name() {
+            Ok((#bind, _)) => ::binparse::FieldNode::new(
+                #name_str,
+                #type_name,
+                bit_range.clone(),
+                #value,
+            ),
+            Err(error) => ::binparse::FieldNode::new(
+                    #name_str,
+                    #type_name,
+                    bit_range.clone(),
+                    ::binparse::Value::Opaque,
+                )
+                .with_status(::binparse::Status::Error(error)),
+        }
     };
 
     Ok(())
+}
+
+fn hook_value(type_name: &str, value: TokenStream) -> TokenStream {
+    match type_name {
+        "u8" | "u16" | "u32" | "u64" | "u128" => {
+            quote! { ::binparse::Value::UInt(u128::from(#value)) }
+        }
+        "i8" | "i16" | "i32" | "i64" | "i128" => {
+            quote! { ::binparse::Value::Int(i128::from(#value)) }
+        }
+        _ => quote! { ::binparse::Value::Opaque },
+    }
+}
+
+fn hook_value_binding(type_name: &str) -> TokenStream {
+    match type_name {
+        "u8" | "u16" | "u32" | "u64" | "u128" | "i8" | "i16" | "i32" | "i64" | "i128" => {
+            quote! { value }
+        }
+        _ => quote! { _ },
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -638,13 +1065,32 @@ fn generate_fixed_hook<'a>(
     hook: &Hook,
     ty: &ast::Type<'a>,
     done: &HashMap<&'a str, GeneratedStruct>,
-    struct_accum: &mut StructAccum,
+    struct_accum: &mut StructAccum<'a>,
     field_accum: &mut FieldAccum,
     inherited: attr::Inherited,
     attrs: &ParsedAttrs<'a>,
     errors: &[ast::ErrorVariant<'_>],
 ) -> Result<(), Error> {
+    if attrs.len.is_some() {
+        return Err(attr::Error::LenWithFixedHook.into());
+    }
+
     let start_offset = struct_accum.offset.clone();
+    let start = match &start_offset {
+        GeneratedLen::Fixed(len) => {
+            if len.bit != 0 {
+                return Err(type_::Error::InvalidAlignment(*len).into());
+            }
+            let byte = len.byte;
+            quote! { #byte }
+        }
+        GeneratedLen::Dynamic(tokens) => quote! {{
+            let len = #tokens;
+            if len.bit > 0 { return Err(::binparse::ParseError::UnalignedLength(len)) };
+            len.byte
+        }},
+    };
+
     let info = type_::generate(
         ty,
         done,
@@ -659,17 +1105,81 @@ fn generate_fixed_hook<'a>(
     field_accum.len = info.len;
     field_accum.field_type = DoneFieldType::Other;
 
-    let field_name = &field_accum.field_name;
+    let field_name = field_accum.field_name.clone();
     let hook_fn = &hook.fn_path;
     let return_ty = &hook.return_ty;
+    let field_path = format!("{}.{}", struct_accum.name, field_name);
     let field_getter_body = info.field_getter_body;
 
     let (vis, dead_code) = getter_visibility(attrs);
-    field_accum.field_getter = quote! {
-        #dead_code
-        #[allow(clippy::identity_op)]
-        #vis fn #field_name(&self) -> #return_ty {
-            #hook_fn(#field_getter_body)
+    let hook_body = quote! {
+        let start = #start;
+        #hook_fn(
+            #field_getter_body,
+            ::binparse::HookContext {
+                field: #field_path,
+                offset: start,
+                enclosing: self.data,
+            },
+        )
+    };
+
+    let raw_fn_name;
+    field_accum.field_getter = match &struct_accum.condition {
+        Some(gate) => {
+            let inner_fn_name = format_ident!("{}_raw", field_name);
+            raw_fn_name = inner_fn_name.clone();
+            quote! {
+                #[allow(clippy::identity_op)]
+                fn #inner_fn_name(&self) -> ::binparse::ParseResult<#return_ty> {
+                    #hook_body
+                }
+
+                #dead_code
+                #vis fn #field_name(&self) -> Option<::binparse::ParseResult<#return_ty>> {
+                    if self.#gate() {
+                        Some(self.#inner_fn_name())
+                    } else {
+                        None
+                    }
+                }
+            }
+        }
+        None => {
+            raw_fn_name = field_name.clone();
+            quote! {
+                #dead_code
+                #[allow(clippy::identity_op)]
+                #vis fn #field_name(&self) -> ::binparse::ParseResult<#return_ty> {
+                    #hook_body
+                }
+            }
+        }
+    };
+
+    field_accum.parse_checks = quote! {
+        self.#raw_fn_name()?;
+    };
+
+    let name_str = field_accum.field_name.to_string();
+    let type_name = hook.return_ty.to_string();
+    let bind = hook_value_binding(&type_name);
+    let value = hook_value(&type_name, quote! { value });
+    field_accum.tree_body = quote! {
+        match self.#raw_fn_name() {
+            Ok(#bind) => ::binparse::FieldNode::new(
+                #name_str,
+                #type_name,
+                bit_range.clone(),
+                #value,
+            ),
+            Err(error) => ::binparse::FieldNode::new(
+                    #name_str,
+                    #type_name,
+                    bit_range.clone(),
+                    ::binparse::Value::Opaque,
+                )
+                .with_status(::binparse::Status::Error(error)),
         }
     };
 

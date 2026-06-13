@@ -40,8 +40,10 @@ struct Test {
 
     let code = generate_code(dsl);
 
-    assert!(code.contains("pub fn field(&self) -> MyType"), "should have getter returning hook's return type");
+    assert!(code.contains("pub fn field(&self) -> ::binparse::ParseResult<MyType>"), "should have fallible getter returning hook's return type");
     assert!(code.contains("my_hook("), "should call the hook function");
+    assert!(code.contains("::binparse::HookContext"), "should pass hook context");
+    assert!(code.contains("self.field()?;"), "recoverable check should run the hook");
 }
 
 #[test]
@@ -59,7 +61,8 @@ struct Test {
     assert!(code.contains("fn data_raw(&self) -> ::binparse::ParseResult<(MyResult, usize)>"), "should have fallible raw helper");
     assert!(code.contains("pub fn data(&self) -> ::binparse::ParseResult<MyResult>"), "should have fallible public getter");
     assert!(code.contains("self.data_raw().map(|(value, _)| value)"), "getter should map out the value");
-    assert!(code.contains("me.data_raw()?;"), "parse should propagate hook errors");
+    assert!(code.contains("self.data_raw()?;"), "fatal check should propagate hook errors");
+    assert!(code.contains("me.data_fatal_check()?;"), "parse should run the field's fatal check");
     assert!(code.contains("my_vla_hook("), "should call hook");
     assert!(code.contains("::binparse::HookContext"), "should pass hook context");
     assert!(code.contains("enclosing: self.data"), "context should carry enclosing slice");

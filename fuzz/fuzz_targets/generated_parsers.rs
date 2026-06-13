@@ -4,8 +4,8 @@ use libfuzzer_sys::fuzz_target;
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-fn double_it(value: u16) -> u32 {
-    u32::from(value) * 2
+fn double_it(value: u16, _ctx: binparse::HookContext<'_>) -> binparse::ParseResult<u32> {
+    Ok(u32::from(value) * 2)
 }
 
 fn parse_cstring(data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseResult<(String, usize)> {
@@ -59,7 +59,30 @@ fn parse_dns_name(_data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::Par
 }
 
 fuzz_target!(|data: &[u8]| {
+    let _ = Baseline::dissect(data);
+    let _ = Hooked::dissect(data);
+    let _ = StructArray::dissect(data);
+    let _ = SizeExpr::dissect(data);
+    let _ = Mixed::dissect(data);
+    let _ = Conditional::dissect(data);
+    let _ = Validated::dissect(data).errors();
+    let _ = Rest::dissect(data);
+    let _ = CStr::dissect(data);
+    let _ = Capped::dissect(data);
+    let _ = Opts::dissect(data);
+    let _ = Padded::dissect(data);
+    let _ = Dispatch::dissect(data).errors();
+    let _ = ConcatUnion::dissect(data);
+    let _ = Bounded::dissect(data);
+    let _ = BoundedUnion::dissect(data);
+    let _ = Varint::dissect(data);
+    let _ = LenVarint::dissect(data);
+    let _ = DnsMsg::dissect(data);
+    let _ = StructBounded::dissect(data);
+    let _ = StructBoundedNested::dissect(data);
+
     if let Ok((packet, _)) = Baseline::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.n();
         let _ = packet.word();
         let _ = packet.be();
@@ -88,6 +111,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = Hooked::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.prefix();
         let _ = packet.value();
         let _ = packet.name();
@@ -105,6 +129,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = SizeExpr::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.xs_bit_range();
         if let Ok(xs) = packet.xs() {
             let _ = xs.collect::<binparse::ParseResult<Vec<_>>>();
@@ -112,6 +137,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = Mixed::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.a();
         let _ = packet.b();
         let _ = packet.c();
@@ -126,6 +152,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = Conditional::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.version();
         let _ = packet.ihl();
         if let Some(Ok(options)) = packet.options() {
@@ -138,6 +165,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = Validated::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.magic();
         let _ = packet.version();
         let _ = packet.ihl();
@@ -147,6 +175,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = Rest::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.n();
         let _ = packet.words_bit_range();
         if let Ok(words) = packet.words() {
@@ -155,6 +184,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = CStr::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.after();
         let _ = packet.name_bit_range();
         if let Ok(name) = packet.name() {
@@ -163,6 +193,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = Capped::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.count();
         let _ = packet.vals_bit_range();
         if let Ok(vals) = packet.vals() {
@@ -171,6 +202,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = Opts::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.opts_bit_range();
         if let Ok(opts) = packet.opts() {
             for opt in opts.flatten() {
@@ -181,6 +213,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = Padded::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.flags();
         let _ = packet.n();
         let _ = packet.tail();
@@ -192,6 +225,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = Dispatch::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.kind();
         let _ = packet.body_bit_range();
         match packet.body() {
@@ -212,6 +246,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = ConcatUnion::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.tail();
         let _ = packet.pair_bit_range();
         let (first, second, third) = packet.pair();
@@ -228,6 +263,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     if let Ok((packet, _)) = Bounded::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.tag();
         let _ = packet.length();
         let _ = packet.value_bit_range();
@@ -239,14 +275,46 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.after();
     }
 
+    if let Ok((packet, _)) = BoundedUnion::parse(data) {
+        let _ = packet.field_tree();
+        let _ = packet.tag();
+        let _ = packet.length();
+        let _ = packet.value_bit_range();
+        let _ = packet.value_rest();
+        let _ = packet.after();
+        match packet.value() {
+            Ok(BoundedUnion_value::Pair(p)) => {
+                let _ = p.inner();
+            }
+            Ok(BoundedUnion_value::Blob(b)) => {
+                if let Ok(bytes) = b.bytes() {
+                    let _ = bytes.collect::<binparse::ParseResult<Vec<_>>>();
+                }
+            }
+            Ok(BoundedUnion_value::Unknown(_)) => {}
+            Err(_) => {}
+        }
+    }
+
     if let Ok((packet, _)) = Varint::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.tag();
         let _ = packet.value();
         let _ = packet.value_bit_range();
         let _ = packet.after();
     }
 
+    if let Ok((packet, _)) = LenVarint::parse(data) {
+        let _ = packet.field_tree();
+        let _ = packet.n();
+        let _ = packet.value();
+        let _ = packet.value_rest();
+        let _ = packet.value_bit_range();
+        let _ = packet.after();
+    }
+
     if let Ok((packet, _)) = DnsMsg::parse(data) {
+        let _ = packet.field_tree();
         let _ = packet.id();
         let _ = packet.qname();
         let _ = packet.qtype();
@@ -254,5 +322,25 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.atype();
         let _ = packet.qname_bit_range();
         let _ = packet.aname_bit_range();
+    }
+
+    if let Ok((packet, _)) = StructBounded::parse(data) {
+        let _ = packet.field_tree();
+        let _ = packet.total_len();
+        let _ = packet.payload_bit_range();
+        if let Ok(payload) = packet.payload() {
+            let _ = payload.collect::<binparse::ParseResult<Vec<_>>>();
+        }
+    }
+
+    if let Ok((packet, _)) = StructBoundedNested::parse(data) {
+        let _ = packet.field_tree();
+        let _ = packet.after();
+        if let Ok(inner) = packet.inner() {
+            let _ = inner.n();
+            if let Ok(body) = inner.body() {
+                let _ = body.collect::<binparse::ParseResult<Vec<_>>>();
+            }
+        }
     }
 });

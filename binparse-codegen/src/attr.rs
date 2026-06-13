@@ -78,8 +78,24 @@ pub enum Error {
     InvalidPaddingArg(&'static str),
     #[error("@pad and @pad_to cannot be combined")]
     PadWithPadTo,
-    #[error("@len can only be applied to struct ref fields")]
-    LenOnNonStructRef,
+    #[error("@len can only be applied to struct ref, union, or unsized array fields")]
+    LenOnUnsupportedType,
+    #[error("@len on a fixed-size @hook field must equal the field's length")]
+    LenWithFixedHook,
+    #[error("@len cannot be applied to a counted or expression-sized array")]
+    LenOnSizedArray,
+    #[error("@len cannot be applied to a bitfield-element array")]
+    LenOnBitfieldArray,
+    #[error("@discriminator can only be applied to primitive and bitfield fields")]
+    DiscriminatorOnNonNumeric,
+    #[error("@payload can only be applied to byte-array or struct ref fields")]
+    PayloadOnNonByteArray,
+    #[error("a struct can declare at most one @payload field")]
+    MultiplePayloads,
+    #[error("@{0} cannot be applied to a @skip field")]
+    HandoffOnSkip(&'static str),
+    #[error("@{0} cannot be applied inside a conditional")]
+    HandoffInConditional(&'static str),
 }
 
 /// Padding and alignment semantics: `@pad(N)` consumes N bytes before the
@@ -90,14 +106,29 @@ pub enum Error {
 /// parses and validates the field as usual but omits it from the public
 /// accessor surface.
 ///
-/// Length bounding semantics: `@len(expr)` declares that a struct ref field
-/// occupies exactly `expr` bytes. The nested parser receives only that slice,
-/// so it cannot read outside its bound, and the enclosing struct advances by
-/// exactly `expr` bytes regardless of how many the nested struct consumed.
-/// Bytes left unconsumed inside the bound are not an error; they are exposed
-/// via the generated `{field}_rest()` getter for higher-level dispatch. A
-/// nested struct needing more than `expr` bytes surfaces as `NotEnoughData`
-/// relative to the bounded slice from the field getter.
+/// Length bounding semantics: `@len(expr)` declares that a struct ref, union,
+/// or unsized (`@greedy`/`@until`) array field occupies exactly `expr` bytes.
+/// The inner content receives only that slice, so it cannot read outside its
+/// bound, and the enclosing struct advances by exactly `expr` bytes regardless
+/// of how many the inner content consumed. Bytes left unconsumed inside the
+/// bound are not an error; they are exposed via the generated `{field}_rest()`
+/// getter for higher-level dispatch. Inner content needing more than `expr`
+/// bytes surfaces as `NotEnoughData` relative to the bounded slice from the
+/// field getter. For `@greedy` arrays the bound is the window the array
+/// consumes, so there is no rest; for `@until` arrays the sentinel must fall
+/// within the window and the bytes after it are the rest. Counted or
+/// expression-sized arrays and bitfield-element arrays are rejected, as they
+/// already carry an intrinsic length.
+///
+/// Handoff semantics: `@discriminator` marks a numeric (primitive or bitfield)
+/// field as a protocol dispatch key (e.g. EtherType, IP protocol number, UDP
+/// port); multiple are allowed per struct and surface in declaration order.
+/// `@payload` marks a byte-array (`[u8; expr]`, `@greedy`/`@until`) or struct
+/// ref field as the payload; at most one per struct. A struct with a `@payload`
+/// field generates `handoff()` returning `Some(Handoff { keys, payload,
+/// payload_byte_range })`, letting a dependent crate chain parsers without
+/// naming the concrete generated types. Both are rejected on `@skip` fields,
+/// inside conditionals, and on union/concat/hook fields.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ParsedAttrs<'a> {
     pub endian: Option<Endian>,
@@ -113,6 +144,8 @@ pub(crate) struct ParsedAttrs<'a> {
     pub pad_to: Option<usize>,
     pub align: Option<usize>,
     pub len: Option<ast::Expr<'a>>,
+    pub discriminator: bool,
+    pub payload: bool,
 }
 
 impl<'a> ParsedAttrs<'a> {
@@ -146,6 +179,14 @@ impl<'a> ParsedAttrs<'a> {
                 "len" => result.len = Some(Self::parse_check(attr, "len")?),
                 "pad_to" => result.pad_to = Some(Self::parse_padding(attr, "pad_to")?),
                 "align" => result.align = Some(Self::parse_padding(attr, "align")?),
+                "discriminator" => {
+                    Self::parse_flag(attr, "discriminator")?;
+                    result.discriminator = true;
+                }
+                "payload" => {
+                    Self::parse_flag(attr, "payload")?;
+                    result.payload = true;
+                }
                 _ => {}
             }
         }
@@ -153,6 +194,18 @@ impl<'a> ParsedAttrs<'a> {
             return Err(Error::PadWithPadTo);
         }
         Ok(result)
+    }
+
+    fn parse_flag(attr: &ast::Attribute<'_>, name: &'static str) -> Result<(), Error> {
+        if attr.args.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::WrongArgCount {
+                attr: name,
+                expected: 0,
+                got: attr.args.len(),
+            })
+        }
     }
 
     fn parse_padding(attr: &ast::Attribute<'_>, name: &'static str) -> Result<usize, Error> {

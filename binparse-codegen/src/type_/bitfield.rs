@@ -5,7 +5,7 @@ use crate::{
     GeneratedLen,
     attr::BitOrder,
     struct_::DoneFieldType,
-    type_::{Error, GeneratedTypeInfo},
+    type_::{Error, GeneratedTree, GeneratedTypeInfo},
 };
 
 pub(crate) fn generate(
@@ -112,5 +112,6 @@ pub(crate) fn generate(
         field_getter_body,
         return_ty,
         field_type: DoneFieldType::BitField,
+        tree: GeneratedTree::UInt(format!("b<{width}>")),
     })
 }

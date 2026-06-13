@@ -5,11 +5,11 @@ use quote::{format_ident, quote};
 
 use crate::{
     GeneratedLen,
-    attr::Inherited,
+    attr::{Inherited, ParsedAttrs},
     expr,
-    field::FieldAccum,
+    field::{FieldAccum, getter_visibility},
     struct_::{self, DoneFieldType, GeneratedStruct, StructAccum},
-    type_::{self, GeneratedTypeInfo},
+    type_::{self, GeneratedTree, GeneratedTypeInfo, LenBound},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -36,13 +36,15 @@ pub enum Error {
     },
 }
 
-pub(crate) fn generate(
-    union: &ast::Union<'_>,
-    done: &HashMap<&str, GeneratedStruct>,
-    struct_accum: &mut StructAccum,
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn generate<'a>(
+    union: &ast::Union<'a>,
+    done: &HashMap<&'a str, GeneratedStruct>,
+    struct_accum: &mut StructAccum<'a>,
     accum: &mut FieldAccum,
     start_offset: GeneratedLen,
     inherited: Inherited,
+    attrs: &ParsedAttrs<'a>,
     errors: &[ast::ErrorVariant<'_>],
 ) -> Result<GeneratedTypeInfo, type_::Error> {
     let num_args = union.args.len();
@@ -78,8 +80,22 @@ pub(crate) fn generate(
 
     let clamped_start = quote! { (#start_byte).min(self.data.len()) };
 
+    let bound = type_::len_bound(&start_byte, attrs, struct_accum)?;
+    let (parse_slice, check_slice) = match &bound {
+        Some(LenBound { end, .. }) => (
+            quote! { &self.data[#start_byte..(#end)] },
+            quote! { &self.data[#clamped_start..(#end)] },
+        ),
+        None => (
+            quote! { &self.data[#start_byte..] },
+            quote! { &self.data[#clamped_start..] },
+        ),
+    };
+
     let parent_struct_name = &struct_accum.name;
     let field_name = &accum.field_name;
+    let field_name_str = field_name.to_string();
+    let getter = accum.tree_getter.clone();
     let enum_name = format_ident!("{}_{}", parent_struct_name, field_name);
 
     let has_error_arms = union
@@ -92,6 +108,8 @@ pub(crate) fn generate(
     let mut match_arms = TokenStream::new();
     let mut len_match_arms = TokenStream::new();
     let mut check_match_arms = TokenStream::new();
+    let mut rest_match_arms = TokenStream::new();
+    let mut tree_arms = TokenStream::new();
 
     for variant in &union.variants {
         let matchers = generate_matchers(&variant.matchers, num_args)?;
@@ -113,6 +131,7 @@ pub(crate) fn generate(
                     &struct_name.to_string(),
                     &inline_struct.items,
                     variant_inherited,
+                    variant_attrs.len.clone(),
                     done,
                     errors,
                     quote! { #[allow(non_camel_case_types)] },
@@ -130,9 +149,12 @@ pub(crate) fn generate(
                 });
 
                 let parse_variant = quote! {
-                    #struct_name::parse(&self.data[#start_byte..])
+                    #struct_name::parse(#parse_slice)
                         .map(|(value, _)| #enum_name::#variant_ident(value))
                 };
+                rest_match_arms.extend(quote! {
+                    #matchers => #struct_name::parse(#parse_slice).map(|(_, rest)| rest),
+                });
                 if has_error_arms {
                     match_arms.extend(quote! {
                         #matchers => #parse_variant.map_err(Error::Parse),
@@ -164,7 +186,21 @@ pub(crate) fn generate(
 
                 check_match_arms.extend(quote! {
                     #matchers => {
-                        #struct_name::parse(&self.data[#clamped_start..])?;
+                        #struct_name::parse(#check_slice)?;
+                    }
+                });
+
+                let variant_name = inline_struct.name.to_string();
+                tree_arms.extend(quote! {
+                    Ok(#enum_name::#variant_ident(value)) => {
+                        let inner = value.field_tree().renamed(#variant_name).shifted(bit_range.start);
+                        ::binparse::FieldNode::new(
+                                #field_name_str,
+                                "union",
+                                bit_range.clone(),
+                                ::binparse::Value::UnionVariant(#variant_name),
+                            )
+                            .with_children(::std::vec![inner])
                     }
                 });
             }
@@ -223,6 +259,9 @@ pub(crate) fn generate(
                 check_match_arms.extend(quote! {
                     #matchers => {}
                 });
+                rest_match_arms.extend(quote! {
+                    #matchers => Ok(&self.data[#clamped_start..#clamped_start]),
+                });
             }
         }
     }
@@ -246,7 +285,7 @@ pub(crate) fn generate(
         }
     });
     accum.pre_length_checks.extend(quote! {
-        me.#check_fn_name()?;
+        self.#check_fn_name()?;
     });
 
     let field_getter_body = quote! {
@@ -256,15 +295,93 @@ pub(crate) fn generate(
     };
 
     let return_ty = if has_error_arms {
-        quote! { Result<#enum_name<'_>, Error> }
+        quote! { Result<#enum_name<'a>, Error> }
     } else {
-        quote! { ::binparse::ParseResult<#enum_name<'_>> }
+        quote! { ::binparse::ParseResult<#enum_name<'a>> }
     };
 
-    let len = GeneratedLen::Dynamic(quote! {
-        match #match_expr {
-            #len_match_arms
+    let rest_fn_name = format_ident!("{}_rest", field_name);
+    let len = match &bound {
+        Some(LenBound { field_len, .. }) => {
+            let (vis, dead_code) = getter_visibility(attrs);
+            accum.helper_fns.extend(quote! {
+                #dead_code
+                #vis fn #rest_fn_name(&self) -> ::binparse::ParseResult<&'a [u8]> {
+                    match #match_expr {
+                        #rest_match_arms
+                    }
+                }
+            });
+            field_len.clone()
         }
+        None => GeneratedLen::Dynamic(quote! {
+            match #match_expr {
+                #len_match_arms
+            }
+        }),
+    };
+
+    let err_arm = if has_error_arms {
+        quote! {
+            Err(Error::Parse(error)) => ::binparse::FieldNode::new(
+                    #field_name_str,
+                    "union",
+                    bit_range.clone(),
+                    ::binparse::Value::Opaque,
+                )
+                .with_status(::binparse::Status::Error(error)),
+            Err(error) => ::binparse::FieldNode::new(
+                    #field_name_str,
+                    "union",
+                    bit_range.clone(),
+                    ::binparse::Value::Opaque,
+                )
+                .with_status(::binparse::Status::Failed(error.variant_name())),
+        }
+    } else {
+        quote! {
+            Err(error) => ::binparse::FieldNode::new(
+                    #field_name_str,
+                    "union",
+                    bit_range.clone(),
+                    ::binparse::Value::Opaque,
+                )
+                .with_status(::binparse::Status::Error(error)),
+        }
+    };
+
+    let tree = GeneratedTree::Node(match &bound {
+        Some(_) => quote! {
+            {
+                let mut node = match self.#getter() {
+                    #tree_arms
+                    #err_arm
+                };
+                if let Ok(rest) = self.#rest_fn_name()
+                    && !rest.is_empty()
+                {
+                    let consumed = node
+                        .children
+                        .last()
+                        .map(|child| child.bit_range.end)
+                        .unwrap_or(bit_range.start)
+                        .min(bit_range.end);
+                    node.children.push(::binparse::FieldNode::new(
+                        "rest",
+                        "[u8]",
+                        consumed..bit_range.end,
+                        ::binparse::Value::Bytes(rest),
+                    ));
+                }
+                node
+            }
+        },
+        None => quote! {
+            match self.#getter() {
+                #tree_arms
+                #err_arm
+            }
+        },
     });
 
     Ok(GeneratedTypeInfo {
@@ -272,6 +389,7 @@ pub(crate) fn generate(
         field_getter_body,
         return_ty,
         field_type: DoneFieldType::Other,
+        tree,
     })
 }
 

@@ -136,9 +136,26 @@ struct Bounded {
     after: u8,
 }
 
+struct BoundedUnion {
+    tag: u8,
+    length: u8,
+    @len(length) value: union(tag) {
+        1 => Pair { inner: Inner },
+        2 => Blob { @greedy(unsafe_eof) bytes: [u8] },
+        _ => Unknown { },
+    },
+    after: u8,
+}
+
 struct Varint {
     tag: u8,
     @hook(read_leb128, u64) value: [u8],
+    after: u8,
+}
+
+struct LenVarint {
+    n: u8,
+    @len(n) @hook(read_leb128, u64) value: [u8],
     after: u8,
 }
 
@@ -148,6 +165,23 @@ struct DnsMsg {
     qtype: u16,
     @hook(parse_dns_name, String) aname: [u8],
     atype: u16,
+}
+
+@len(total_len)
+struct StructBounded {
+    total_len: u16,
+    payload: [u8],
+}
+
+@len(n)
+struct StructBoundedInner {
+    n: u8,
+    @greedy(unsafe_eof) body: [u8],
+}
+
+struct StructBoundedNested {
+    inner: StructBoundedInner,
+    after: u8,
 }
 "#;
 

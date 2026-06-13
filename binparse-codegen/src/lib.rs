@@ -186,6 +186,7 @@ impl<'a> CodeGen<'a> {
 fn generate_error_enum(variants: &[ast::ErrorVariant<'_>]) -> Result<TokenStream, Error> {
     let mut seen = HashSet::new();
     let mut enum_variants = TokenStream::new();
+    let mut name_arms = TokenStream::new();
 
     for variant in variants {
         if variant.name == "Parse" {
@@ -197,8 +198,10 @@ fn generate_error_enum(variants: &[ast::ErrorVariant<'_>]) -> Result<TokenStream
             });
         }
         let name = format_ident!("{}", variant.name);
+        let name_str = variant.name;
         if variant.fields.is_empty() {
             enum_variants.extend(quote! { #name, });
+            name_arms.extend(quote! { Error::#name => #name_str, });
         } else {
             let fields = variant.fields.iter().map(|(field_name, primitive)| {
                 let field_ident = format_ident!("{}", field_name);
@@ -206,6 +209,7 @@ fn generate_error_enum(variants: &[ast::ErrorVariant<'_>]) -> Result<TokenStream
                 quote! { #field_ident: #ty }
             });
             enum_variants.extend(quote! { #name { #(#fields),* }, });
+            name_arms.extend(quote! { Error::#name { .. } => #name_str, });
         }
     }
 
@@ -215,6 +219,16 @@ fn generate_error_enum(variants: &[ast::ErrorVariant<'_>]) -> Result<TokenStream
         pub enum Error {
             Parse(::binparse::ParseError),
             #enum_variants
+        }
+
+        impl Error {
+            #[allow(dead_code)]
+            fn variant_name(&self) -> &'static str {
+                match self {
+                    Error::Parse(_) => "Parse",
+                    #name_arms
+                }
+            }
         }
     })
 }
@@ -287,6 +301,17 @@ fn match_primitive(primitive: &ast::Primitive) -> (Len, TokenStream) {
         ast::Primitive::I64 => (Len { byte: 8, bit: 0 }, quote! { i64 }),
         ast::Primitive::I128 => (Len { byte: 16, bit: 0 }, quote! { i128 }),
     }
+}
+
+fn is_signed(primitive: &ast::Primitive) -> bool {
+    matches!(
+        primitive,
+        ast::Primitive::I8
+            | ast::Primitive::I16
+            | ast::Primitive::I32
+            | ast::Primitive::I64
+            | ast::Primitive::I128
+    )
 }
 
 fn single_byte_read(primitive: &ast::Primitive) -> Option<TokenStream> {

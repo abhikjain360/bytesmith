@@ -5,7 +5,7 @@ use crate::{
     GeneratedLen,
     attr::Endian,
     struct_::DoneFieldType,
-    type_::{Error, GeneratedTypeInfo},
+    type_::{Error, GeneratedTree, GeneratedTypeInfo},
 };
 
 pub(crate) fn generate(
@@ -65,10 +65,18 @@ pub(crate) fn generate(
         }
     };
 
+    let type_name = return_ty.to_string();
+    let tree = if crate::is_signed(&primitive) {
+        GeneratedTree::Int(type_name)
+    } else {
+        GeneratedTree::UInt(type_name)
+    };
+
     Ok(GeneratedTypeInfo {
         len: GeneratedLen::Fixed(len),
         field_getter_body,
         return_ty,
         field_type: DoneFieldType::Primitive,
+        tree,
     })
 }

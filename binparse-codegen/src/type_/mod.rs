@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use binparse::Len;
 use binparse_dsl as ast;
 use proc_macro2::TokenStream;
+use quote::quote;
 
 use crate::{
     GeneratedLen,
@@ -23,6 +24,94 @@ pub(crate) struct GeneratedTypeInfo {
     pub(crate) field_getter_body: TokenStream,
     pub(crate) return_ty: TokenStream,
     pub(crate) field_type: DoneFieldType,
+    pub(crate) tree: GeneratedTree,
+}
+
+pub(crate) enum GeneratedTree {
+    UInt(String),
+    Int(String),
+    Node(TokenStream),
+}
+
+impl GeneratedTypeInfo {
+    pub(crate) fn tree_node(&self, field_name: &syn::Ident, getter: &syn::Ident) -> TokenStream {
+        let name = field_name.to_string();
+        match &self.tree {
+            GeneratedTree::UInt(type_name) => quote! {
+                ::binparse::FieldNode::new(
+                    #name,
+                    #type_name,
+                    bit_range.clone(),
+                    ::binparse::Value::UInt(u128::from(self.#getter())),
+                )
+            },
+            GeneratedTree::Int(type_name) => quote! {
+                ::binparse::FieldNode::new(
+                    #name,
+                    #type_name,
+                    bit_range.clone(),
+                    ::binparse::Value::Int(i128::from(self.#getter())),
+                )
+            },
+            GeneratedTree::Node(tokens) => tokens.clone(),
+        }
+    }
+}
+
+pub(crate) fn opaque_node(name: &str, type_name: &str) -> TokenStream {
+    quote! {
+        ::binparse::FieldNode::new(#name, #type_name, bit_range.clone(), ::binparse::Value::Opaque)
+    }
+}
+
+pub(crate) struct LenBound {
+    pub(crate) end: TokenStream,
+    pub(crate) field_len: GeneratedLen,
+}
+
+pub(crate) fn len_bound(
+    start: &TokenStream,
+    attrs: &ParsedAttrs<'_>,
+    struct_accum: &StructAccum<'_>,
+) -> Result<Option<LenBound>, Error> {
+    let Some(len_expr) = &attrs.len else {
+        return Ok(None);
+    };
+    let lowered = crate::expr::lower(
+        len_expr,
+        crate::expr::ExprType::Numeric,
+        &struct_accum.done_fields,
+    )?;
+    let len_tokens = lowered.tokens;
+    let end = quote! {
+        ({ #start }).saturating_add(#len_tokens).min(self.data.len())
+    };
+    let field_len = match lowered.const_value {
+        Some(byte) => GeneratedLen::Fixed(Len { byte, bit: 0 }),
+        None => GeneratedLen::Dynamic(quote! {
+            ::binparse::Len { byte: #len_tokens, bit: 0 }
+        }),
+    };
+    Ok(Some(LenBound { end, field_len }))
+}
+
+pub(crate) fn type_label(ty: &ast::Type<'_>) -> String {
+    match ty {
+        ast::Type::Primitive(p) => crate::match_primitive(p).1.to_string(),
+        ast::Type::BitField(width) => format!("b<{width}>"),
+        ast::Type::Array(array) => format!("[{}]", elem_label(&array.elem_ty)),
+        ast::Type::StructRef(name) => name.to_string(),
+        ast::Type::Concat(_) => "concat".to_string(),
+        ast::Type::Union(_) => "union".to_string(),
+    }
+}
+
+pub(crate) fn elem_label(elem: &ast::ArrayElemType<'_>) -> String {
+    match elem {
+        ast::ArrayElemType::Primitive(p) => crate::match_primitive(p).1.to_string(),
+        ast::ArrayElemType::BitField(width) => format!("b<{width}>"),
+        ast::ArrayElemType::StructRef(name) => name.to_string(),
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -57,7 +146,7 @@ pub enum Error {
 pub(crate) fn generate<'a>(
     ast: &ast::Type<'a>,
     done: &HashMap<&'a str, GeneratedStruct>,
-    struct_accum: &mut StructAccum,
+    struct_accum: &mut StructAccum<'a>,
     field_accum: &mut FieldAccum,
     start_offset: GeneratedLen,
     inherited: Inherited,
@@ -76,6 +165,6 @@ pub(crate) fn generate<'a>(
         ast::Type::Array(array_type) => {
             array::generate(array_type, attrs, done, struct_accum, field_accum, start_offset, inherited)
         }
-        ast::Type::Union(u) => union_::generate(u, done, struct_accum, field_accum, start_offset, inherited, errors),
+        ast::Type::Union(u) => union_::generate(u, done, struct_accum, field_accum, start_offset, inherited, attrs, errors),
     }
 }
