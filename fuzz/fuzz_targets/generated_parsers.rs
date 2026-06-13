@@ -98,4 +98,38 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.reserved();
         let _ = packet.flags();
     }
+
+    if let Ok((packet, _)) = Rest::parse(data) {
+        let _ = packet.n();
+        let _ = packet.words_bit_range();
+        if let Ok(words) = packet.words() {
+            let _ = words.collect::<binparse::ParseResult<Vec<_>>>();
+        }
+    }
+
+    if let Ok((packet, _)) = CStr::parse(data) {
+        let _ = packet.after();
+        let _ = packet.name_bit_range();
+        if let Ok(name) = packet.name() {
+            let _ = name.collect::<binparse::ParseResult<Vec<_>>>();
+        }
+    }
+
+    if let Ok((packet, _)) = Capped::parse(data) {
+        let _ = packet.count();
+        let _ = packet.vals_bit_range();
+        if let Ok(vals) = packet.vals() {
+            let _ = vals.collect::<binparse::ParseResult<Vec<_>>>();
+        }
+    }
+
+    if let Ok((packet, _)) = Opts::parse(data) {
+        let _ = packet.opts_bit_range();
+        if let Ok(opts) = packet.opts() {
+            for opt in opts.flatten() {
+                let _ = opt.kind();
+                let _ = opt.body();
+            }
+        }
+    }
 });

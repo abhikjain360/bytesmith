@@ -60,6 +60,20 @@ pub enum Error {
     HookVlaNotU8,
     #[error("@check and @range can only be applied to primitive and bitfield fields")]
     ValidationOnNonNumeric,
+    #[error("@greedy argument must be 'unsafe_eof', got '{0}'")]
+    InvalidGreedyValue(String),
+    #[error("@until sentinel must be an integer literal fitting in one byte")]
+    InvalidUntilSentinel,
+    #[error("@{0} can only be applied to array fields")]
+    ArrayAttrOnNonArray(&'static str),
+    #[error("@{0} cannot be combined with @hook")]
+    ArrayAttrWithHook(&'static str),
+    #[error("@{0} requires an array without an explicit size")]
+    ArrayAttrOnSizedArray(&'static str),
+    #[error("@until and @greedy cannot be combined")]
+    UntilWithGreedy,
+    #[error("@greedy with dynamic-length elements requires @max_iter")]
+    GreedyRequiresMaxIter,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -69,6 +83,9 @@ pub(crate) struct ParsedAttrs<'a> {
     pub hook: Option<Hook>,
     pub check: Option<ast::Expr<'a>>,
     pub range: Option<(ast::Expr<'a>, ast::Expr<'a>)>,
+    pub until: Option<u8>,
+    pub greedy: bool,
+    pub max_iter: Option<ast::Expr<'a>>,
 }
 
 impl<'a> ParsedAttrs<'a> {
@@ -82,6 +99,12 @@ impl<'a> ParsedAttrs<'a> {
                 "check" => result.check = Some(Self::parse_check(attr, "check")?),
                 "validate" => result.check = Some(Self::parse_check(attr, "validate")?),
                 "range" => result.range = Some(Self::parse_range(attr)?),
+                "until" => result.until = Some(Self::parse_until(attr)?),
+                "greedy" => {
+                    Self::parse_greedy(attr)?;
+                    result.greedy = true;
+                }
+                "max_iter" => result.max_iter = Some(Self::parse_check(attr, "max_iter")?),
                 _ => {}
             }
         }
@@ -111,6 +134,39 @@ impl<'a> ParsedAttrs<'a> {
             });
         };
         Ok((min.clone(), max.clone()))
+    }
+
+    fn parse_until(attr: &ast::Attribute<'_>) -> Result<u8, Error> {
+        let [arg] = attr.args.as_slice() else {
+            return Err(Error::WrongArgCount {
+                attr: "until",
+                expected: 1,
+                got: attr.args.len(),
+            });
+        };
+        match arg {
+            ast::Expr::Literal(ast::Literal::Int(lit)) if lit.value <= usize::from(u8::MAX) => {
+                Ok(lit.value as u8)
+            }
+            _ => Err(Error::InvalidUntilSentinel),
+        }
+    }
+
+    fn parse_greedy(attr: &ast::Attribute<'_>) -> Result<(), Error> {
+        if attr.args.len() != 1 {
+            return Err(Error::WrongArgCount {
+                attr: "greedy",
+                expected: 1,
+                got: attr.args.len(),
+            });
+        }
+        match &attr.args[0] {
+            ast::Expr::Path(path) if path.as_slice() == ["unsafe_eof"] => Ok(()),
+            ast::Expr::Path(path) if path.len() == 1 => {
+                Err(Error::InvalidGreedyValue(path[0].to_string()))
+            }
+            _ => Err(Error::InvalidGreedyValue("<non-identifier>".to_string())),
+        }
     }
 
     fn parse_endian(attr: &ast::Attribute<'_>) -> Result<Endian, Error> {

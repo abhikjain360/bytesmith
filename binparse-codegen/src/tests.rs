@@ -748,6 +748,280 @@ fn golden_expression_sized_array() {
 }
 
 #[test]
+fn golden_greedy_rest_array() {
+    assert_generated_eq(
+        "struct Rest { n: u8, @greedy(unsafe_eof) tail: [u8] }",
+        r#"
+        #[allow(non_camel_case_types)]
+        pub struct Rest_tail_Iterator<'a> {
+            idx: usize,
+            count: usize,
+            data: &'a [u8],
+        }
+        impl<'a> ::std::iter::Iterator for Rest_tail_Iterator<'a> {
+            type Item = ::binparse::ParseResult<u8>;
+            fn next(&mut self) -> std::option::Option<Self::Item> {
+                if self.idx == self.count {
+                    return None;
+                }
+                self.idx += 1;
+                let value = self.data[0];
+                self.data = &self.data[1..];
+                Some(Ok(value))
+            }
+        }
+        pub struct Rest<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Rest<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.n_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.tail_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.tail_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn n(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn n_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn n_start_offset(&self) -> binparse::Len {
+                binparse::Len::ZERO
+            }
+            pub fn n_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.n_start_offset().bits()..self.n_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn tail(&self) -> ::binparse::ParseResult<Rest_tail_Iterator<'_>> {
+                Ok(Rest_tail_Iterator {
+                    idx: 0,
+                    count: self.data.len().saturating_sub(1usize),
+                    data: &self.data[1usize..],
+                })
+            }
+            pub fn tail_end_offset(&self) -> binparse::Len {
+                ::binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+                    + ({
+                        {
+                            let start = 1usize;
+                            ::binparse::Len {
+                                byte: self.data.len().saturating_sub(start),
+                                bit: 0,
+                            }
+                        }
+                    })
+            }
+            pub fn tail_start_offset(&self) -> binparse::Len {
+                self.n_end_offset()
+            }
+            pub fn tail_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.tail_start_offset().bits()..self.tail_end_offset().bits()
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_until_array() {
+    assert_generated_eq(
+        "struct CStr { @until(x00) name: [u8], after: u8 }",
+        r#"
+        #[allow(non_camel_case_types)]
+        pub struct CStr_name_Iterator<'a> {
+            idx: usize,
+            count: usize,
+            data: &'a [u8],
+        }
+        impl<'a> ::std::iter::Iterator for CStr_name_Iterator<'a> {
+            type Item = ::binparse::ParseResult<u8>;
+            fn next(&mut self) -> std::option::Option<Self::Item> {
+                if self.idx == self.count {
+                    return None;
+                }
+                self.idx += 1;
+                let value = self.data[0];
+                self.data = &self.data[1..];
+                Some(Ok(value))
+            }
+        }
+        pub struct CStr<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> CStr<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.name_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.after_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.after_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn name(&self) -> ::binparse::ParseResult<CStr_name_Iterator<'_>> {
+                Ok(CStr_name_Iterator {
+                    idx: 0,
+                    count: self.data[0usize..].iter().position(|&b| b == 0u8).unwrap_or(0),
+                    data: &self.data[0usize..],
+                })
+            }
+            pub fn name_end_offset(&self) -> binparse::Len {
+                ::binparse::Len {
+                    byte: 0usize,
+                    bit: 0usize,
+                }
+                    + ({
+                        {
+                            let start = 0usize;
+                            let byte = match self
+                                .data
+                                .get(start..)
+                                .and_then(|rest| rest.iter().position(|&b| b == 0u8))
+                            {
+                                Some(pos) => pos.saturating_add(1),
+                                None => self.data.len().saturating_add(1).saturating_sub(start),
+                            };
+                            ::binparse::Len { byte, bit: 0 }
+                        }
+                    })
+            }
+            pub fn name_start_offset(&self) -> binparse::Len {
+                binparse::Len::ZERO
+            }
+            pub fn name_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.name_start_offset().bits()..self.name_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn after(&self) -> u8 {
+                {
+                    let offset = ::binparse::Len {
+                        byte: 0usize,
+                        bit: 0usize,
+                    }
+                        + ({
+                            {
+                                let start = 0usize;
+                                let byte = match self
+                                    .data
+                                    .get(start..)
+                                    .and_then(|rest| rest.iter().position(|&b| b == 0u8))
+                                {
+                                    Some(pos) => pos.saturating_add(1),
+                                    None => {
+                                        self.data.len().saturating_add(1).saturating_sub(start)
+                                    }
+                                };
+                                ::binparse::Len { byte, bit: 0 }
+                            }
+                        });
+                    debug_assert!(offset.bit == 0, "primitive requires byte alignment");
+                    self.data[offset.byte]
+                }
+            }
+            pub fn after_end_offset(&self) -> binparse::Len {
+                ({
+                    ::binparse::Len {
+                        byte: 0usize,
+                        bit: 0usize,
+                    }
+                        + ({
+                            {
+                                let start = 0usize;
+                                let byte = match self
+                                    .data
+                                    .get(start..)
+                                    .and_then(|rest| rest.iter().position(|&b| b == 0u8))
+                                {
+                                    Some(pos) => pos.saturating_add(1),
+                                    None => {
+                                        self.data.len().saturating_add(1).saturating_sub(start)
+                                    }
+                                };
+                                ::binparse::Len { byte, bit: 0 }
+                            }
+                        })
+                })
+                    + ::binparse::Len {
+                        byte: 1usize,
+                        bit: 0usize,
+                    }
+            }
+            pub fn after_start_offset(&self) -> binparse::Len {
+                self.name_end_offset()
+            }
+            pub fn after_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.after_start_offset().bits()..self.after_end_offset().bits()
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
 fn golden_struct_ref_array() {
     assert_generated_eq(
         "struct Inner { a: u8 } struct StructArray { count: u8, items: [Inner; count] }",
@@ -2739,4 +3013,102 @@ fn conditional_forward_reference_is_rejected() {
         err.to_string()
             .contains("expression '(later == 1)' references field 'later' which is unknown or not yet parsed")
     );
+}
+
+#[test]
+fn unsized_array_without_strategy_is_rejected() {
+    let err = generate_err("struct Foo { data: [u8] }");
+    assert!(
+        err.to_string()
+            .contains("array without size requires @until, @greedy, or @hook")
+    );
+}
+
+#[test]
+fn until_on_sized_array_is_rejected() {
+    let err = generate_err("struct Foo { @until(x00) data: [u8; 4] }");
+    assert!(
+        err.to_string()
+            .contains("@until requires an array without an explicit size")
+    );
+}
+
+#[test]
+fn greedy_on_sized_array_is_rejected() {
+    let err = generate_err("struct Foo { @greedy(unsafe_eof) data: [u8; 4] }");
+    assert!(
+        err.to_string()
+            .contains("@greedy requires an array without an explicit size")
+    );
+}
+
+#[test]
+fn until_on_non_array_is_rejected() {
+    let err = generate_err("struct Foo { @until(x00) data: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@until can only be applied to array fields")
+    );
+}
+
+#[test]
+fn max_iter_on_non_array_is_rejected() {
+    let err = generate_err("struct Foo { @max_iter(4) data: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@max_iter can only be applied to array fields")
+    );
+}
+
+#[test]
+fn until_with_greedy_is_rejected() {
+    let err = generate_err("struct Foo { @until(x00) @greedy(unsafe_eof) data: [u8] }");
+    assert!(
+        err.to_string()
+            .contains("@until and @greedy cannot be combined")
+    );
+}
+
+#[test]
+fn greedy_with_hook_is_rejected() {
+    let err = generate_err("struct Foo { @hook(f, u8) @greedy(unsafe_eof) data: [u8] }");
+    assert!(
+        err.to_string()
+            .contains("@greedy cannot be combined with @hook")
+    );
+}
+
+#[test]
+fn invalid_greedy_value_is_rejected() {
+    let err = generate_err("struct Foo { @greedy(eof) data: [u8] }");
+    assert!(
+        err.to_string()
+            .contains("@greedy argument must be 'unsafe_eof', got 'eof'")
+    );
+}
+
+#[test]
+fn until_sentinel_too_wide_is_rejected() {
+    let err = generate_err("struct Foo { @until(x0100) data: [u8] }");
+    assert!(
+        err.to_string()
+            .contains("@until sentinel must be an integer literal fitting in one byte")
+    );
+}
+
+#[test]
+fn greedy_dynamic_elem_without_max_iter_is_rejected() {
+    let err = generate_err(
+        "struct Opt { kind: u8, if (kind > 0) { body: u8 } } struct Foo { @greedy(unsafe_eof) opts: [Opt] }",
+    );
+    assert!(
+        err.to_string()
+            .contains("@greedy with dynamic-length elements requires @max_iter")
+    );
+}
+
+#[test]
+fn greedy_zero_sized_elem_is_rejected() {
+    let err = generate_err("struct Empty { } struct Foo { @greedy(unsafe_eof) xs: [Empty] }");
+    assert!(err.to_string().contains("@greedy element type has zero length"));
 }

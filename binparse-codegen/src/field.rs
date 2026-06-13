@@ -21,6 +21,7 @@ pub(crate) struct FieldAccum {
     pub(crate) helper_fns: TokenStream,
     pub(crate) field_getter: TokenStream,
     pub(crate) offset_getter: TokenStream,
+    pub(crate) parse_checks: TokenStream,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -52,6 +53,7 @@ impl FieldAccum {
             helper_fns: TokenStream::new(),
             field_getter: TokenStream::new(),
             offset_getter: TokenStream::new(),
+            parse_checks: TokenStream::new(),
         }
     }
 }
@@ -74,6 +76,7 @@ pub(crate) fn generate<'a>(
             if attrs.bit_order.is_some() {
                 check_bit_order_applies(ty)?;
             }
+            check_array_attrs_apply(&attrs, ty)?;
 
             if struct_accum.condition.is_some() && matches!(ty, ast::Type::Concat(_)) {
                 todo!("concat fields inside conditionals");
@@ -87,19 +90,25 @@ pub(crate) fn generate<'a>(
                     generate_vla_hook(hook, struct_accum, &mut field_accum)?;
                 }
                 (Some(hook), false) => {
-                    let start_offset = struct_accum.offset.clone();
                     generate_fixed_hook(
                         hook,
                         ty,
                         done,
                         struct_accum,
                         &mut field_accum,
-                        start_offset,
                         field_inherited,
+                        &attrs,
                     )?;
                 }
                 (None, _) => {
-                    generate_plain(ty, done, struct_accum, &mut field_accum, field_inherited)?;
+                    generate_plain(
+                        ty,
+                        done,
+                        struct_accum,
+                        &mut field_accum,
+                        field_inherited,
+                        &attrs,
+                    )?;
                 }
             }
         }
@@ -115,7 +124,15 @@ pub(crate) fn generate<'a>(
             if attrs.bit_order.is_some() {
                 check_bit_order_applies(&ty)?;
             }
-            generate_plain(&ty, done, struct_accum, &mut field_accum, field_inherited)?;
+            check_array_attrs_apply(&attrs, &ty)?;
+            generate_plain(
+                &ty,
+                done,
+                struct_accum,
+                &mut field_accum,
+                field_inherited,
+                &attrs,
+            )?;
             constant = Some(lit.value);
         }
     };
@@ -190,6 +207,9 @@ pub(crate) fn generate<'a>(
         }),
         None => struct_accum.parse_checks.extend(length_check),
     }
+    struct_accum
+        .parse_checks
+        .extend(std::mem::take(&mut field_accum.parse_checks));
     struct_accum.last_offset_getter_fn_name = Some(offset_getter_fn_name);
     struct_accum.done_fields.push(DoneField {
         name: ast.name.to_string(),
@@ -295,9 +315,18 @@ fn generate_plain<'a>(
     struct_accum: &mut StructAccum,
     field_accum: &mut FieldAccum,
     inherited: attr::Inherited,
+    attrs: &ParsedAttrs<'a>,
 ) -> Result<(), Error> {
     let start_offset = struct_accum.offset.clone();
-    let info = type_::generate(ty, done, struct_accum, field_accum, start_offset, inherited)?;
+    let info = type_::generate(
+        ty,
+        done,
+        struct_accum,
+        field_accum,
+        start_offset,
+        inherited,
+        attrs,
+    )?;
 
     field_accum.len = info.len;
     field_accum.field_type = info.field_type;
@@ -389,6 +418,29 @@ fn check_endian_applies(ty: &ast::Type<'_>) -> Result<(), attr::Error> {
     }
 }
 
+fn check_array_attrs_apply(attrs: &ParsedAttrs<'_>, ty: &ast::Type<'_>) -> Result<(), attr::Error> {
+    let array_attrs = [
+        ("until", attrs.until.is_some()),
+        ("greedy", attrs.greedy),
+        ("max_iter", attrs.max_iter.is_some()),
+    ];
+    for (name, present) in array_attrs {
+        if !present {
+            continue;
+        }
+        if attrs.hook.is_some() {
+            return Err(attr::Error::ArrayAttrWithHook(name));
+        }
+        if !matches!(ty, ast::Type::Array(_)) {
+            return Err(attr::Error::ArrayAttrOnNonArray(name));
+        }
+    }
+    if attrs.until.is_some() && attrs.greedy {
+        return Err(attr::Error::UntilWithGreedy);
+    }
+    Ok(())
+}
+
 fn check_bit_order_applies(ty: &ast::Type<'_>) -> Result<(), attr::Error> {
     match ty {
         ast::Type::BitField(_)
@@ -445,10 +497,19 @@ fn generate_fixed_hook<'a>(
     done: &HashMap<&'a str, GeneratedStruct>,
     struct_accum: &mut StructAccum,
     field_accum: &mut FieldAccum,
-    start_offset: GeneratedLen,
     inherited: attr::Inherited,
+    attrs: &ParsedAttrs<'a>,
 ) -> Result<(), Error> {
-    let info = type_::generate(ty, done, struct_accum, field_accum, start_offset, inherited)?;
+    let start_offset = struct_accum.offset.clone();
+    let info = type_::generate(
+        ty,
+        done,
+        struct_accum,
+        field_accum,
+        start_offset,
+        inherited,
+        attrs,
+    )?;
 
     field_accum.len = info.len;
     field_accum.field_type = DoneFieldType::Other;

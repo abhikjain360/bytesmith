@@ -51,6 +51,7 @@ pub(crate) fn generate<'a>(
             field_accum,
             current_offset.clone(),
             item_inherited,
+            &item_attrs,
         )?;
 
         let return_ty = info.return_ty;

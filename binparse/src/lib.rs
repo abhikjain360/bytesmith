@@ -32,6 +32,8 @@ pub enum ParseError {
     UnalignedLength(Len),
     #[error("validation failed for field '{field}': actual value {actual}")]
     ValidationFailed { field: &'static str, actual: u128 },
+    #[error("field '{field}' has more than {max} elements")]
+    MaxIterationsExceeded { field: &'static str, max: usize },
 }
 
 pub type ParseResult<T> = std::result::Result<T, ParseError>;

@@ -70,6 +70,32 @@ struct Conditional {
     }
     tail: u8,
 }
+
+struct Rest {
+    n: u8,
+    @greedy(unsafe_eof) words: [u16],
+}
+
+struct CStr {
+    @until(x00) name: [u8],
+    after: u8,
+}
+
+struct Capped {
+    count: u8,
+    @max_iter(4) vals: [u8; count],
+}
+
+struct Opt {
+    kind: u8,
+    if (kind > 0) {
+        body: u8,
+    }
+}
+
+struct Opts {
+    @greedy(unsafe_eof) @max_iter(8) opts: [Opt],
+}
 "#;
 
 fn main() {

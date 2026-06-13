@@ -509,6 +509,216 @@ mod tests {{
     }}
 
     #[test]
+    fn greedy_rest_consumes_remaining_bytes() {{
+        let data = [5, 1, 2, 3];
+        let (packet, rem) = Rest::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        let tail = packet
+            .tail()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(tail, vec![1, 2, 3]);
+        assert_eq!(packet.tail_bit_range(), 8..32);
+
+        let (packet, rem) = Rest::parse(&[7]).unwrap();
+        assert!(rem.is_empty());
+        let tail = packet
+            .tail()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert!(tail.is_empty());
+
+        assert_parse_no_panic("Rest", &data, |data| {{
+            let _ = Rest::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn greedy_rest_multibyte_requires_whole_elements() {{
+        let data = [9, 0x12, 0x34, 0x56, 0x78];
+        let (packet, rem) = RestWide::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        let words = packet
+            .words()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(words, vec![0x1234, 0x5678]);
+        assert_eq!(packet.words_bit_range(), 8..40);
+
+        assert_eq!(
+            RestWide::parse(&[9, 0x12, 0x34, 0x56]).map(|_| ()).unwrap_err(),
+            binparse::ParseError::NotEnoughData {{
+                expected: 5,
+                got: 4,
+            }}
+        );
+        assert_parse_no_panic("RestWide", &data, |data| {{
+            let _ = RestWide::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn until_array_stops_at_sentinel() {{
+        let data = [b'h', b'i', 0, 7];
+        let (packet, rem) = CStr::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        let name = packet
+            .name()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(name, vec![b'h', b'i']);
+        assert_eq!(packet.after(), 7);
+        assert_eq!(packet.name_bit_range(), 0..24);
+        assert_eq!(packet.after_bit_range(), 24..32);
+
+        let (packet, rem) = CStr::parse(&[0, 7]).unwrap();
+        assert!(rem.is_empty());
+        let name = packet
+            .name()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert!(name.is_empty());
+        assert_eq!(packet.after(), 7);
+
+        assert_eq!(
+            CStr::parse(&[1, 2, 3]).map(|_| ()).unwrap_err(),
+            binparse::ParseError::NotEnoughData {{
+                expected: 4,
+                got: 3,
+            }}
+        );
+        assert_parse_no_panic("CStr", &data, |data| {{
+            let _ = CStr::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn greedy_struct_array_decodes_fixed_elements() {{
+        let data = [1, 0x02, 0x03, 4, 0x05, 0x06];
+        let (packet, rem) = GreedyStructs::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        let items = packet
+            .items()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].a(), 1);
+        assert_eq!(items[0].b(), 0x0203);
+        assert_eq!(items[1].a(), 4);
+        assert_eq!(items[1].b(), 0x0506);
+        assert_eq!(packet.items_bit_range(), 0..48);
+
+        assert_eq!(
+            GreedyStructs::parse(&[1, 2, 3, 4]).map(|_| ()).unwrap_err(),
+            binparse::ParseError::NotEnoughData {{
+                expected: 6,
+                got: 4,
+            }}
+        );
+        assert_parse_no_panic("GreedyStructs", &data, |data| {{
+            let _ = GreedyStructs::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn max_iter_bounds_sized_array() {{
+        let data = [3, 1, 2, 3];
+        let (packet, rem) = Capped::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        let vals = packet
+            .vals()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(vals, vec![1, 2, 3]);
+
+        let exceeded = [5, 1, 2, 3, 4, 5];
+        assert_eq!(
+            Capped::parse(&exceeded).map(|_| ()).unwrap_err(),
+            binparse::ParseError::MaxIterationsExceeded {{
+                field: "Capped.vals",
+                max: 4,
+            }}
+        );
+
+        assert_eq!(
+            Capped::parse(&[5, 1]).map(|_| ()).unwrap_err(),
+            binparse::ParseError::NotEnoughData {{
+                expected: 6,
+                got: 2,
+            }}
+        );
+        assert_parse_no_panic("Capped", &exceeded, |data| {{
+            let _ = Capped::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn greedy_dynamic_struct_array_parses_until_exhausted() {{
+        let data = [2, 9, 0];
+        let (packet, rem) = Opts::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        let opts = packet
+            .opts()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(opts.len(), 2);
+        assert_eq!(opts[0].kind(), 2);
+        assert_eq!(opts[0].body(), Some(9));
+        assert_eq!(opts[1].kind(), 0);
+        assert_eq!(opts[1].body(), None);
+        assert_eq!(packet.opts_bit_range(), 0..24);
+
+        let too_many = [0u8; 9];
+        let (packet, _) = Opts::parse(&too_many).unwrap();
+        assert_eq!(
+            packet
+                .opts()
+                .unwrap()
+                .collect::<binparse::ParseResult<Vec<_>>>()
+                .map(|opts| opts.len())
+                .unwrap_err(),
+            binparse::ParseError::MaxIterationsExceeded {{
+                field: "Opts.opts",
+                max: 8,
+            }}
+        );
+
+        let (packet, _) = Opts::parse(&[1]).unwrap();
+        assert_eq!(
+            packet
+                .opts()
+                .unwrap()
+                .collect::<binparse::ParseResult<Vec<_>>>()
+                .map(|opts| opts.len())
+                .unwrap_err(),
+            binparse::ParseError::NotEnoughData {{
+                expected: 2,
+                got: 1,
+            }}
+        );
+
+        assert_parse_no_panic("Opts", &too_many, |data| {{
+            let _ = Opts::parse(data);
+            if let Ok((packet, _)) = Opts::parse(data)
+                && let Ok(opts) = packet.opts()
+            {{
+                for opt in opts.flatten() {{
+                    let _ = opt.kind();
+                    let _ = opt.body();
+                }}
+            }}
+        }});
+    }}
+
+    #[test]
     fn lsb_bit_order_decodes_with_field_override() {{
         let data = [0b1010_1101, 0b0100_0011];
         let (packet, rem) = LsbFlags::parse(&data).unwrap();
@@ -656,6 +866,41 @@ struct CondElse {
         big: u16,
     }
     tail: u8,
+}
+
+struct Rest {
+    n: u8,
+    @greedy(unsafe_eof) tail: [u8],
+}
+
+struct RestWide {
+    n: u8,
+    @greedy(unsafe_eof) words: [u16],
+}
+
+struct CStr {
+    @until(x00) name: [u8],
+    after: u8,
+}
+
+struct GreedyStructs {
+    @greedy(unsafe_eof) items: [Inner],
+}
+
+struct Capped {
+    len: u8,
+    @max_iter(4) vals: [u8; len],
+}
+
+struct Opt {
+    kind: u8,
+    if (kind > 0) {
+        body: u8,
+    }
+}
+
+struct Opts {
+    @greedy(unsafe_eof) @max_iter(8) opts: [Opt],
 }
 "#;
 

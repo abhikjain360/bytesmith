@@ -6,7 +6,7 @@ use proc_macro2::TokenStream;
 
 use crate::{
     GeneratedLen,
-    attr::Inherited,
+    attr::{Inherited, ParsedAttrs},
     field::FieldAccum,
     struct_::{DoneFieldType, GeneratedStruct, StructAccum},
 };
@@ -35,6 +35,10 @@ pub enum Error {
     InvalidAlignment(Len),
     #[error("unknown type: {0}")]
     UnknownType(String),
+    #[error("array without size requires @until, @greedy, or @hook")]
+    UnsizedArray,
+    #[error("@greedy element type has zero length")]
+    GreedyZeroSizedElem,
     #[error(transparent)]
     Concat(#[from] concat::Error),
     #[error(transparent)]
@@ -54,6 +58,7 @@ pub(crate) fn generate<'a>(
     field_accum: &mut FieldAccum,
     start_offset: GeneratedLen,
     inherited: Inherited,
+    attrs: &ParsedAttrs<'a>,
 ) -> Result<GeneratedTypeInfo, Error> {
     match ast {
         ast::Type::Primitive(p) => primitive::generate(*p, start_offset, inherited.endian),
@@ -65,7 +70,7 @@ pub(crate) fn generate<'a>(
             struct_ref::generate(struct_name, done, field_accum, start_offset)
         }
         ast::Type::Array(array_type) => {
-            array::generate(array_type, done, struct_accum, field_accum, start_offset, inherited)
+            array::generate(array_type, attrs, done, struct_accum, field_accum, start_offset, inherited)
         }
         ast::Type::Union(u) => union_::generate(u, done, struct_accum, field_accum, start_offset, inherited),
     }
