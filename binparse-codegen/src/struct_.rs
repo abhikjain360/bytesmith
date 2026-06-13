@@ -5,7 +5,7 @@ use binparse_dsl as ast;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::{GeneratedLen, attr::{Endian, ParsedAttrs}, field};
+use crate::{GeneratedLen, attr::{Inherited, ParsedAttrs}, field};
 
 #[derive(Clone, Copy)]
 pub(crate) enum DoneFieldType {
@@ -22,7 +22,7 @@ pub(crate) struct DoneField {
 
 pub(crate) struct StructAccum {
     pub(crate) name: syn::Ident,
-    pub(crate) endian: Endian,
+    pub(crate) inherited: Inherited,
     pub(crate) offset: GeneratedLen,
     pub(crate) done_fields: Vec<DoneField>,
     pub(crate) other_entities: TokenStream,
@@ -52,10 +52,10 @@ pub enum Error {
 }
 
 impl StructAccum {
-    pub(crate) fn new(name: &str, endian: Endian) -> Self {
+    pub(crate) fn new(name: &str, inherited: Inherited) -> Self {
         Self {
             name: format_ident!("{}", name),
-            endian,
+            inherited,
             offset: GeneratedLen::Fixed(Len { byte: 0, bit: 0 }),
             done_fields: vec![],
             other_entities: TokenStream::new(),
@@ -72,8 +72,8 @@ pub(crate) fn generate<'a>(
     done: &mut HashMap<&'a str, GeneratedStruct>,
 ) -> Result<(), Error> {
     let attrs = ParsedAttrs::parse(&ast.attributes)?;
-    let struct_endian = attrs.merge_endian(Endian::default());
-    let mut accum = StructAccum::new(ast.name, struct_endian);
+    let struct_inherited = attrs.merge_inherited(Inherited::default());
+    let mut accum = StructAccum::new(ast.name, struct_inherited);
 
     for item in &ast.items {
         if let ast::StructItem::Field(ast_field) = item {
@@ -88,7 +88,7 @@ pub(crate) fn generate<'a>(
 
     let StructAccum {
         name,
-        endian: _,
+        inherited: _,
         offset,
         done_fields: _,
         other_entities,

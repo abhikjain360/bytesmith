@@ -6,7 +6,7 @@ use proc_macro2::TokenStream;
 
 use crate::{
     GeneratedLen,
-    attr::Endian,
+    attr::Inherited,
     field::FieldAccum,
     struct_::{DoneFieldType, GeneratedStruct, StructAccum},
 };
@@ -53,20 +53,20 @@ pub(crate) fn generate<'a>(
     struct_accum: &mut StructAccum,
     field_accum: &mut FieldAccum,
     start_offset: GeneratedLen,
-    endian: Endian,
+    inherited: Inherited,
 ) -> Result<GeneratedTypeInfo, Error> {
     match ast {
-        ast::Type::Primitive(p) => primitive::generate(*p, start_offset, endian),
-        ast::Type::BitField(width) => bitfield::generate(*width as usize, start_offset),
+        ast::Type::Primitive(p) => primitive::generate(*p, start_offset, inherited.endian),
+        ast::Type::BitField(width) => bitfield::generate(*width as usize, start_offset, inherited.bit_order),
         ast::Type::Concat(items) => {
-            concat::generate(items, done, struct_accum, field_accum, start_offset, endian)
+            concat::generate(items, done, struct_accum, field_accum, start_offset, inherited)
         }
         ast::Type::StructRef(struct_name) => {
             struct_ref::generate(struct_name, done, field_accum, start_offset)
         }
         ast::Type::Array(array_type) => {
-            array::generate(array_type, done, struct_accum, field_accum, start_offset, endian)
+            array::generate(array_type, done, struct_accum, field_accum, start_offset, inherited)
         }
-        ast::Type::Union(u) => union_::generate(u, done, struct_accum, field_accum, start_offset, endian),
+        ast::Type::Union(u) => union_::generate(u, done, struct_accum, field_accum, start_offset, inherited),
     }
 }

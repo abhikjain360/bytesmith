@@ -5,6 +5,11 @@ pub enum Primitive {
     U32,
     U64,
     U128,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -6,7 +6,7 @@ use quote::{format_ident, quote};
 
 use crate::{
     GeneratedLen,
-    attr::Endian,
+    attr::{BitOrder, Endian, Inherited},
     expr::{self, ExprType},
     field::FieldAccum,
     struct_::{DoneFieldType, GeneratedStruct, StructAccum},
@@ -19,8 +19,9 @@ pub(crate) fn generate(
     struct_accum: &mut StructAccum,
     accum: &mut FieldAccum,
     start_offset: GeneratedLen,
-    endian: Endian,
+    inherited: Inherited,
 ) -> Result<GeneratedTypeInfo, type_::Error> {
+    let Inherited { endian, bit_order } = inherited;
     let field_name = &accum.field_name;
 
     let (count, static_count) = match &array_type.size {
@@ -70,9 +71,9 @@ pub(crate) fn generate(
                     count: #count,
                     data: &self.data[#offset..],
                 };
-                let next_body = if matches!(prim, ast::Primitive::U8) {
+                let next_body = if let Some(read) = crate::single_byte_read(prim) {
                     quote! {
-                        let value = self.data[0];
+                        let value = self.data[0] #read;
                         self.data = &self.data[1..];
                         Some(Ok(value))
                     }
@@ -149,21 +150,39 @@ pub(crate) fn generate(
                     data: &self.data[#offset..],
                     bit_offset: 0,
                 };
+                let extract = match bit_order {
+                    BitOrder::Msb => quote! {
+                        if bit_idx + #width <= 8 {
+                            let mask = (1u8 << #width) - 1;
+                            (self.data[byte_idx] >> (8 - bit_idx - #width)) & mask
+                        } else {
+                            let bits_in_first = 8 - bit_idx;
+                            let bits_in_second = #width - bits_in_first;
+                            let first_mask = (1u8 << bits_in_first) - 1;
+                            let first_part = self.data[byte_idx] & first_mask;
+                            let second_part = self.data[byte_idx + 1] >> (8 - bits_in_second);
+                            (first_part << bits_in_second) | second_part
+                        }
+                    },
+                    BitOrder::Lsb => quote! {
+                        if bit_idx + #width <= 8 {
+                            let mask = (1u8 << #width) - 1;
+                            (self.data[byte_idx] >> bit_idx) & mask
+                        } else {
+                            let bits_in_first = 8 - bit_idx;
+                            let bits_in_second = #width - bits_in_first;
+                            let first_mask = (1u8 << bits_in_first) - 1;
+                            let second_mask = (1u8 << bits_in_second) - 1;
+                            let first_part = (self.data[byte_idx] >> bit_idx) & first_mask;
+                            let second_part = self.data[byte_idx + 1] & second_mask;
+                            first_part | (second_part << bits_in_first)
+                        }
+                    },
+                };
                 let next_body = quote! {
                     let byte_idx = self.bit_offset / 8;
                     let bit_idx = self.bit_offset % 8;
-                    let value = if bit_idx + #width <= 8 {
-                        let mask = (1u8 << #width) - 1;
-                        (self.data[byte_idx] >> bit_idx) & mask
-                    } else {
-                        let bits_in_first = 8 - bit_idx;
-                        let bits_in_second = #width - bits_in_first;
-                        let first_mask = (1u8 << bits_in_first) - 1;
-                        let second_mask = (1u8 << bits_in_second) - 1;
-                        let first_part = (self.data[byte_idx] >> bit_idx) & first_mask;
-                        let second_part = self.data[byte_idx + 1] & second_mask;
-                        first_part | (second_part << bits_in_first)
-                    };
+                    let value = #extract;
                     self.bit_offset += #width;
                     Some(Ok(value))
                 };

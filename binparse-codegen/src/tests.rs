@@ -178,7 +178,7 @@ fn golden_bitfields() {
             }
             #[allow(clippy::identity_op)]
             pub fn version(&self) -> u8 {
-                (self.data[0usize] >> 0usize) & 15u8
+                (self.data[0usize] >> 4usize) & 15u8
             }
             pub fn version_end_offset(&self) -> binparse::Len {
                 binparse::Len {
@@ -194,7 +194,7 @@ fn golden_bitfields() {
             }
             #[allow(clippy::identity_op)]
             pub fn ihl(&self) -> u8 {
-                (self.data[0usize] >> 4usize) & 15u8
+                (self.data[0usize] >> 0usize) & 15u8
             }
             pub fn ihl_end_offset(&self) -> binparse::Len {
                 binparse::Len {
@@ -210,7 +210,7 @@ fn golden_bitfields() {
             }
             #[allow(clippy::identity_op)]
             pub fn dscp(&self) -> u8 {
-                (self.data[1usize] >> 0usize) & 63u8
+                (self.data[1usize] >> 2usize) & 63u8
             }
             pub fn dscp_end_offset(&self) -> binparse::Len {
                 binparse::Len {
@@ -226,7 +226,7 @@ fn golden_bitfields() {
             }
             #[allow(clippy::identity_op)]
             pub fn ecn(&self) -> u8 {
-                (self.data[1usize] >> 6usize) & 3u8
+                (self.data[1usize] >> 0usize) & 3u8
             }
             pub fn ecn_end_offset(&self) -> binparse::Len {
                 binparse::Len {
@@ -301,7 +301,7 @@ fn golden_cross_byte_bitfield() {
             }
             #[allow(clippy::identity_op)]
             pub fn a(&self) -> u8 {
-                (self.data[0usize] >> 0usize) & 31u8
+                (self.data[0usize] >> 3usize) & 31u8
             }
             pub fn a_end_offset(&self) -> binparse::Len {
                 binparse::Len {
@@ -318,9 +318,9 @@ fn golden_cross_byte_bitfield() {
             #[allow(clippy::identity_op)]
             pub fn b(&self) -> u8 {
                 {
-                    let first_part = (self.data[0usize] >> 5usize) & 7u8;
-                    let second_part = self.data[1usize] & 7u8;
-                    first_part | (second_part << 3usize)
+                    let first_part = self.data[0usize] & 7u8;
+                    let second_part = self.data[1usize] >> 5usize;
+                    (first_part << 3usize) | second_part
                 }
             }
             pub fn b_end_offset(&self) -> binparse::Len {
@@ -337,7 +337,7 @@ fn golden_cross_byte_bitfield() {
             }
             #[allow(clippy::identity_op)]
             pub fn c(&self) -> u8 {
-                (self.data[1usize] >> 3usize) & 31u8
+                (self.data[1usize] >> 0usize) & 31u8
             }
             pub fn c_end_offset(&self) -> binparse::Len {
                 binparse::Len {
@@ -929,15 +929,14 @@ fn golden_bitfield_array() {
                 let bit_idx = self.bit_offset % 8;
                 let value = if bit_idx + 4usize <= 8 {
                     let mask = (1u8 << 4usize) - 1;
-                    (self.data[byte_idx] >> bit_idx) & mask
+                    (self.data[byte_idx] >> (8 - bit_idx - 4usize)) & mask
                 } else {
                     let bits_in_first = 8 - bit_idx;
                     let bits_in_second = 4usize - bits_in_first;
                     let first_mask = (1u8 << bits_in_first) - 1;
-                    let second_mask = (1u8 << bits_in_second) - 1;
-                    let first_part = (self.data[byte_idx] >> bit_idx) & first_mask;
-                    let second_part = self.data[byte_idx + 1] & second_mask;
-                    first_part | (second_part << bits_in_first)
+                    let first_part = self.data[byte_idx] & first_mask;
+                    let second_part = self.data[byte_idx + 1] >> (8 - bits_in_second);
+                    (first_part << bits_in_second) | second_part
                 };
                 self.bit_offset += 4usize;
                 Some(Ok(value))
@@ -1044,7 +1043,7 @@ fn golden_concat() {
             }
             #[allow(clippy::identity_op)]
             pub fn flags(&self) -> u8 {
-                (self.data[0usize] >> 0usize) & 7u8
+                (self.data[0usize] >> 5usize) & 7u8
             }
             pub fn flags_end_offset(&self) -> binparse::Len {
                 binparse::Len {
@@ -1060,7 +1059,7 @@ fn golden_concat() {
             }
             #[allow(clippy::identity_op)]
             pub fn fragment_offset_0(&self) -> u8 {
-                (self.data[0usize] >> 3usize) & 31u8
+                (self.data[0usize] >> 0usize) & 31u8
             }
             #[allow(clippy::identity_op)]
             pub fn fragment_offset_1(&self) -> u8 {
@@ -1525,6 +1524,194 @@ fn golden_endian_attributes() {
 }
 
 #[test]
+fn golden_signed_primitives() {
+    assert_generated_eq(
+        "@endian(little) struct SignedPrim { a: i8, b: i16, @endian(big) c: i32 }",
+        r#"
+        pub struct SignedPrim<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> SignedPrim<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.a_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.b_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.c_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.c_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn a(&self) -> i8 {
+                self.data[0usize] as i8
+            }
+            pub fn a_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn a_start_offset(&self) -> binparse::Len {
+                binparse::Len::ZERO
+            }
+            pub fn a_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.a_start_offset().bits()..self.a_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn b(&self) -> i16 {
+                i16::from_le_bytes(self.data[1usize..3usize].try_into().unwrap())
+            }
+            pub fn b_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 3usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn b_start_offset(&self) -> binparse::Len {
+                self.a_end_offset()
+            }
+            pub fn b_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.b_start_offset().bits()..self.b_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn c(&self) -> i32 {
+                i32::from_be_bytes(self.data[3usize..7usize].try_into().unwrap())
+            }
+            pub fn c_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 7usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn c_start_offset(&self) -> binparse::Len {
+                self.b_end_offset()
+            }
+            pub fn c_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.c_start_offset().bits()..self.c_end_offset().bits()
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_lsb_bit_order() {
+    assert_generated_eq(
+        "@bit_order(lsb) struct LsbBits { low: b<3>, high: b<5> }",
+        r#"
+        pub struct LsbBits<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> LsbBits<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.low_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.high_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.high_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn low(&self) -> u8 {
+                (self.data[0usize] >> 0usize) & 7u8
+            }
+            pub fn low_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 0usize,
+                    bit: 3usize,
+                }
+            }
+            pub fn low_start_offset(&self) -> binparse::Len {
+                binparse::Len::ZERO
+            }
+            pub fn low_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.low_start_offset().bits()..self.low_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn high(&self) -> u8 {
+                (self.data[0usize] >> 3usize) & 31u8
+            }
+            pub fn high_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn high_start_offset(&self) -> binparse::Len {
+                self.low_end_offset()
+            }
+            pub fn high_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.high_start_offset().bits()..self.high_end_offset().bits()
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
 fn golden_fixed_hook() {
     assert_generated_eq(
         r#"struct WithFixedHook {
@@ -1738,7 +1925,10 @@ fn duplicate_struct_is_rejected() {
 #[test]
 fn endian_on_u8_is_rejected() {
     let err = generate_err("struct Foo { @endian(little) a: u8 }");
-    assert!(err.to_string().contains("@endian cannot be applied to u8"));
+    assert!(
+        err.to_string()
+            .contains("@endian cannot be applied to single-byte integers")
+    );
 }
 
 #[test]
@@ -1763,6 +1953,67 @@ fn endian_on_struct_ref_is_rejected() {
 fn invalid_endian_value_is_rejected() {
     let err = generate_err("struct Foo { @endian(middle) a: u16 }");
     assert!(err.to_string().contains("@endian argument must be"));
+}
+
+#[test]
+fn endian_on_i8_is_rejected() {
+    let err = generate_err("struct Foo { @endian(little) a: i8 }");
+    assert!(
+        err.to_string()
+            .contains("@endian cannot be applied to single-byte integers")
+    );
+}
+
+#[test]
+fn endian_on_single_byte_array_is_rejected() {
+    let err = generate_err("struct Foo { @endian(little) xs: [u8; 2] }");
+    assert!(
+        err.to_string()
+            .contains("@endian cannot be applied to single-byte integers")
+    );
+}
+
+#[test]
+fn endian_on_bitfield_array_is_rejected() {
+    let err = generate_err("struct Foo { @endian(little) xs: [b<4>; 2] }");
+    assert!(
+        err.to_string()
+            .contains("@endian cannot be applied to bitfields")
+    );
+}
+
+#[test]
+fn endian_on_struct_ref_array_is_rejected() {
+    let err =
+        generate_err("struct Inner { x: u8 } struct Foo { @endian(big) xs: [Inner; 2] }");
+    assert!(
+        err.to_string()
+            .contains("@endian cannot be applied to struct ref")
+    );
+}
+
+#[test]
+fn bit_order_on_primitive_is_rejected() {
+    let err = generate_err("struct Foo { @bit_order(lsb) a: u16 }");
+    assert!(
+        err.to_string()
+            .contains("@bit_order can only be applied to bitfields")
+    );
+}
+
+#[test]
+fn bit_order_on_struct_ref_is_rejected() {
+    let err = generate_err("struct Inner { x: u8 } struct Foo { @bit_order(lsb) inner: Inner }");
+    assert!(
+        err.to_string()
+            .contains("@bit_order can only be applied to bitfields")
+    );
+}
+
+#[test]
+fn invalid_bit_order_value_is_rejected() {
+    let err = generate_err("struct Foo { @bit_order(big) a: b<4> }");
+    assert!(err.to_string().contains("@bit_order argument must be"));
 }
 
 #[test]

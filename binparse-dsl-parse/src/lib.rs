@@ -358,6 +358,13 @@ fn primitive(input: &mut Input<'_>) -> ModalResult<ast::Primitive> {
             "u64".map(|_| ast::Primitive::U64),
             "u128".map(|_| ast::Primitive::U128),
         )),
+        'i' => alt((
+            "i8".map(|_| ast::Primitive::I8),
+            "i16".map(|_| ast::Primitive::I16),
+            "i32".map(|_| ast::Primitive::I32),
+            "i64".map(|_| ast::Primitive::I64),
+            "i128".map(|_| ast::Primitive::I128),
+        )),
         _ => fail
     }
     .parse_next(input)
@@ -695,6 +702,59 @@ mod tests {
             }
         "#;
         parse_helper(src);
+    }
+
+    #[test]
+    fn test_signed_primitives() {
+        let src = r#"
+            struct Signed {
+                a: i8,
+                b: i16,
+                c: i32,
+                d: i64,
+                e: i128,
+                f: [i16; 4],
+            }
+        "#;
+        let defs = parse_helper(src);
+        let ast::Definition::Struct(s) = &defs[0] else {
+            panic!("expected struct");
+        };
+        let types: Vec<_> = s
+            .items
+            .iter()
+            .map(|item| match item {
+                ast::StructItem::Field(f) => &f.value,
+                _ => panic!("expected field"),
+            })
+            .collect();
+        assert_eq!(
+            types[0],
+            &ast::FieldValue::Type(ast::Type::Primitive(ast::Primitive::I8))
+        );
+        assert_eq!(
+            types[1],
+            &ast::FieldValue::Type(ast::Type::Primitive(ast::Primitive::I16))
+        );
+        assert_eq!(
+            types[2],
+            &ast::FieldValue::Type(ast::Type::Primitive(ast::Primitive::I32))
+        );
+        assert_eq!(
+            types[3],
+            &ast::FieldValue::Type(ast::Type::Primitive(ast::Primitive::I64))
+        );
+        assert_eq!(
+            types[4],
+            &ast::FieldValue::Type(ast::Type::Primitive(ast::Primitive::I128))
+        );
+        assert!(matches!(
+            types[5],
+            ast::FieldValue::Type(ast::Type::Array(ast::ArrayType {
+                elem_ty: ast::ArrayElemType::Primitive(ast::Primitive::I16),
+                ..
+            }))
+        ));
     }
 
     #[test]

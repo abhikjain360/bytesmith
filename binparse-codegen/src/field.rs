@@ -55,20 +55,16 @@ pub(crate) fn generate<'a>(
     struct_accum: &mut StructAccum,
 ) -> Result<(), Error> {
     let attrs = ParsedAttrs::parse(&ast.attributes)?;
-    let field_endian = attrs.merge_endian(struct_accum.endian);
+    let field_inherited = attrs.merge_inherited(struct_accum.inherited);
     let mut field_accum = FieldAccum::new(ast.name);
 
     match &ast.value {
         ast::FieldValue::Type(ty) => {
             if attrs.endian.is_some() {
-                match ty {
-                    ast::Type::Primitive(ast::Primitive::U8) => {
-                        return Err(attr::Error::EndianOnU8.into())
-                    }
-                    ast::Type::BitField(_) => return Err(attr::Error::EndianOnBitfield.into()),
-                    ast::Type::StructRef(_) => return Err(attr::Error::EndianOnStructRef.into()),
-                    _ => {}
-                }
+                check_endian_applies(ty)?;
+            }
+            if attrs.bit_order.is_some() {
+                check_bit_order_applies(ty)?;
             }
 
             match (&attrs.hook, is_vla(ty)) {
@@ -84,7 +80,7 @@ pub(crate) fn generate<'a>(
                         struct_accum,
                         &mut field_accum,
                         start_offset,
-                        field_endian,
+                        field_inherited,
                     )?;
                 }
                 (None, _) => {
@@ -95,7 +91,7 @@ pub(crate) fn generate<'a>(
                         struct_accum,
                         &mut field_accum,
                         start_offset,
-                        field_endian,
+                        field_inherited,
                     )?;
 
                     field_accum.len = info.len;
@@ -193,6 +189,38 @@ fn is_vla(ty: &ast::Type<'_>) -> bool {
     matches!(ty, ast::Type::Array(ast::ArrayType { size: None, .. }))
 }
 
+fn check_endian_applies(ty: &ast::Type<'_>) -> Result<(), attr::Error> {
+    match ty {
+        ast::Type::Primitive(ast::Primitive::U8 | ast::Primitive::I8) => {
+            Err(attr::Error::EndianOnSingleByte)
+        }
+        ast::Type::BitField(_) => Err(attr::Error::EndianOnBitfield),
+        ast::Type::StructRef(_) => Err(attr::Error::EndianOnStructRef),
+        ast::Type::Array(ast::ArrayType { elem_ty, .. }) => match elem_ty {
+            ast::ArrayElemType::Primitive(ast::Primitive::U8 | ast::Primitive::I8) => {
+                Err(attr::Error::EndianOnSingleByte)
+            }
+            ast::ArrayElemType::BitField(_) => Err(attr::Error::EndianOnBitfield),
+            ast::ArrayElemType::StructRef(_) => Err(attr::Error::EndianOnStructRef),
+            ast::ArrayElemType::Primitive(_) => Ok(()),
+        },
+        _ => Ok(()),
+    }
+}
+
+fn check_bit_order_applies(ty: &ast::Type<'_>) -> Result<(), attr::Error> {
+    match ty {
+        ast::Type::BitField(_)
+        | ast::Type::Array(ast::ArrayType {
+            elem_ty: ast::ArrayElemType::BitField(_),
+            ..
+        })
+        | ast::Type::Concat(_)
+        | ast::Type::Union(_) => Ok(()),
+        _ => Err(attr::Error::BitOrderOnNonBitfield),
+    }
+}
+
 fn generate_vla_hook(
     hook: &Hook,
     struct_accum: &mut StructAccum,
@@ -237,9 +265,9 @@ fn generate_fixed_hook<'a>(
     struct_accum: &mut StructAccum,
     field_accum: &mut FieldAccum,
     start_offset: GeneratedLen,
-    endian: attr::Endian,
+    inherited: attr::Inherited,
 ) -> Result<(), Error> {
-    let info = type_::generate(ty, done, struct_accum, field_accum, start_offset, endian)?;
+    let info = type_::generate(ty, done, struct_accum, field_accum, start_offset, inherited)?;
 
     field_accum.len = info.len;
     field_accum.field_type = DoneFieldType::Other;

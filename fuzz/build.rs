@@ -38,6 +38,18 @@ struct SizeExpr {
     n: u64,
     xs: [u8; n * 2],
 }
+
+@endian(little)
+struct Mixed {
+    a: i8,
+    b: i16,
+    @endian(big) c: i64,
+    version: b<4>,
+    ihl: b<4>,
+    @bit_order(lsb) low: b<3>,
+    @bit_order(lsb) high: b<5>,
+    vals: [i16; ihl],
+}
 "#;
 
 fn main() {

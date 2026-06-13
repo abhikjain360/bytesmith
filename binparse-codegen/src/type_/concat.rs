@@ -7,7 +7,7 @@ use quote::{format_ident, quote};
 
 use crate::{
     GeneratedLen,
-    attr::{Endian, ParsedAttrs},
+    attr::{Inherited, ParsedAttrs},
     field::FieldAccum,
     struct_::{DoneFieldType, GeneratedStruct, StructAccum},
     type_::{self, GeneratedTypeInfo},
@@ -27,7 +27,7 @@ pub(crate) fn generate<'a>(
     struct_accum: &mut StructAccum,
     field_accum: &mut FieldAccum,
     start_offset: GeneratedLen,
-    endian: Endian,
+    inherited: Inherited,
 ) -> Result<GeneratedTypeInfo, type_::Error> {
     let mut total_len = GeneratedLen::Fixed(Len::default());
     let mut field_types = Vec::new();
@@ -42,7 +42,7 @@ pub(crate) fn generate<'a>(
         };
 
         let item_attrs = ParsedAttrs::parse(&item.attributes)?;
-        let item_endian = item_attrs.merge_endian(endian);
+        let item_inherited = item_attrs.merge_inherited(inherited);
 
         let info = type_::generate(
             &item.ty,
@@ -50,7 +50,7 @@ pub(crate) fn generate<'a>(
             struct_accum,
             field_accum,
             current_offset.clone(),
-            item_endian,
+            item_inherited,
         )?;
 
         let return_ty = info.return_ty;

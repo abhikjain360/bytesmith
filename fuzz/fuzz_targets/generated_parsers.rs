@@ -63,4 +63,18 @@ fuzz_target!(|data: &[u8]| {
             let _ = xs.collect::<binparse::ParseResult<Vec<_>>>();
         }
     }
+
+    if let Ok((packet, _)) = Mixed::parse(data) {
+        let _ = packet.a();
+        let _ = packet.b();
+        let _ = packet.c();
+        let _ = packet.version();
+        let _ = packet.ihl();
+        let _ = packet.low();
+        let _ = packet.high();
+        let _ = packet.vals_bit_range();
+        if let Ok(vals) = packet.vals() {
+            let _ = vals.collect::<binparse::ParseResult<Vec<_>>>();
+        }
+    }
 });

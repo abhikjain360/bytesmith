@@ -5,7 +5,7 @@ use quote::{format_ident, quote};
 
 use crate::{
     GeneratedLen,
-    attr::Endian,
+    attr::Inherited,
     expr,
     field::{self, FieldAccum},
     struct_::{DoneFieldType, GeneratedStruct, StructAccum},
@@ -28,7 +28,7 @@ pub(crate) fn generate(
     struct_accum: &mut StructAccum,
     accum: &mut FieldAccum,
     start_offset: GeneratedLen,
-    endian: Endian,
+    inherited: Inherited,
 ) -> Result<GeneratedTypeInfo, type_::Error> {
     let num_args = union.args.len();
     if num_args == 0 {
@@ -71,9 +71,9 @@ pub(crate) fn generate(
         let struct_name = format_ident!("{}_{}_{}", parent_struct_name, field_name, inline_struct.name);
 
         let variant_attrs = crate::attr::ParsedAttrs::parse(&inline_struct.attributes)?;
-        let variant_endian = variant_attrs.merge_endian(endian);
+        let variant_inherited = variant_attrs.merge_inherited(inherited);
 
-        let (variant_struct, variant_len) = generate_variant_struct(&struct_name, &inline_struct.items, done, variant_endian)?;
+        let (variant_struct, variant_len) = generate_variant_struct(&struct_name, &inline_struct.items, done, variant_inherited)?;
         variant_structs.extend(variant_struct);
 
         enum_variants.extend(quote! {
@@ -131,9 +131,9 @@ fn generate_variant_struct(
     struct_name: &syn::Ident,
     items: &[ast::StructItem<'_>],
     done: &HashMap<&str, GeneratedStruct>,
-    endian: Endian,
+    inherited: Inherited,
 ) -> Result<(TokenStream, GeneratedLen), type_::Error> {
-    let mut variant_accum = StructAccum::new(&struct_name.to_string(), endian);
+    let mut variant_accum = StructAccum::new(&struct_name.to_string(), inherited);
 
     for item in items {
         let ast::StructItem::Field(ast_field) = item else {

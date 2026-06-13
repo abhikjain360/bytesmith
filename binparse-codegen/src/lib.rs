@@ -230,5 +230,18 @@ fn match_primitive(primitive: &ast::Primitive) -> (Len, TokenStream) {
         ast::Primitive::U32 => (Len { byte: 4, bit: 0 }, quote! { u32 }),
         ast::Primitive::U64 => (Len { byte: 8, bit: 0 }, quote! { u64 }),
         ast::Primitive::U128 => (Len { byte: 16, bit: 0 }, quote! { u128 }),
+        ast::Primitive::I8 => (Len { byte: 1, bit: 0 }, quote! { i8 }),
+        ast::Primitive::I16 => (Len { byte: 2, bit: 0 }, quote! { i16 }),
+        ast::Primitive::I32 => (Len { byte: 4, bit: 0 }, quote! { i32 }),
+        ast::Primitive::I64 => (Len { byte: 8, bit: 0 }, quote! { i64 }),
+        ast::Primitive::I128 => (Len { byte: 16, bit: 0 }, quote! { i128 }),
+    }
+}
+
+fn single_byte_read(primitive: &ast::Primitive) -> Option<TokenStream> {
+    match primitive {
+        ast::Primitive::U8 => Some(TokenStream::new()),
+        ast::Primitive::I8 => Some(quote! { as i8 }),
+        _ => None,
     }
 }

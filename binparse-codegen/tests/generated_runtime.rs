@@ -87,7 +87,7 @@ mod tests {{
         assert_eq!(packet.word(), 0x1234);
         assert_eq!(packet.be(), 0x0102_0304);
         assert_eq!(packet.flag_a(), 5);
-        assert_eq!(packet.flag_b(), 21);
+        assert_eq!(packet.flag_b(), 13);
 
         let fixed = packet
             .fixed()
@@ -147,9 +147,9 @@ mod tests {{
         let data = [0xad, 0xad];
         let (packet, rem) = CrossByte::parse(&data).unwrap();
         assert!(rem.is_empty());
-        assert_eq!(packet.high(), 13);
+        assert_eq!(packet.high(), 21);
         assert_eq!(packet.mid(), 45);
-        assert_eq!(packet.low(), 21);
+        assert_eq!(packet.low(), 13);
         assert_eq!(packet.high_bit_range(), 0..5);
         assert_eq!(packet.mid_bit_range(), 5..11);
         assert_eq!(packet.low_bit_range(), 11..16);
@@ -257,6 +257,91 @@ mod tests {{
             let _ = StructArray::parse(data);
         }});
     }}
+
+    #[test]
+    fn signed_integers_decode_with_endian_inheritance() {{
+        let mut data = vec![0xff, 0xfe, 0xff];
+        data.extend((-3i32).to_be_bytes());
+        data.extend((-4i64).to_le_bytes());
+        data.extend((-5i128).to_le_bytes());
+        data.extend(5i16.to_le_bytes());
+        data.extend((-5i16).to_le_bytes());
+        data.extend([0x7f, 0x80]);
+        let (packet, rem) = Signed::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.a(), -1i8);
+        assert_eq!(packet.b(), -2i16);
+        assert_eq!(packet.c(), -3i32);
+        assert_eq!(packet.d(), -4i64);
+        assert_eq!(packet.e(), -5i128);
+        let vals = packet
+            .vals()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(vals, vec![5i16, -5i16]);
+        let small = packet
+            .small()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(small, vec![127i8, -128i8]);
+        assert_eq!(packet.a_bit_range(), 0..8);
+        assert_eq!(packet.b_bit_range(), 8..24);
+        assert_parse_no_panic("Signed", &data, |data| {{
+            let _ = Signed::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn ipv4_version_and_ihl_decode_msb_first() {{
+        let data = [0x45];
+        let (packet, rem) = Ipv4Start::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.version(), 4);
+        assert_eq!(packet.ihl(), 5);
+        assert_eq!(packet.version_bit_range(), 0..4);
+        assert_eq!(packet.ihl_bit_range(), 4..8);
+        assert_parse_no_panic("Ipv4Start", &data, |data| {{
+            let _ = Ipv4Start::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn tcp_flags_decode_without_hooks() {{
+        let data = [0x50, 0b0001_1000];
+        let (packet, rem) = TcpFlags::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.data_offset(), 5);
+        assert_eq!(packet.reserved(), 0);
+        assert_eq!(packet.ns(), 0);
+        assert_eq!(packet.cwr(), 0);
+        assert_eq!(packet.ece(), 0);
+        assert_eq!(packet.urg(), 0);
+        assert_eq!(packet.ack(), 1);
+        assert_eq!(packet.psh(), 1);
+        assert_eq!(packet.rst(), 0);
+        assert_eq!(packet.syn(), 0);
+        assert_eq!(packet.fin(), 0);
+        assert_eq!(packet.ack_bit_range(), 11..12);
+        assert_parse_no_panic("TcpFlags", &data, |data| {{
+            let _ = TcpFlags::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn lsb_bit_order_decodes_with_field_override() {{
+        let data = [0b1010_1101, 0b0100_0011];
+        let (packet, rem) = LsbFlags::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.low(), 5);
+        assert_eq!(packet.high(), 21);
+        assert_eq!(packet.top(), 4);
+        assert_eq!(packet.bottom(), 3);
+        assert_parse_no_panic("LsbFlags", &data, |data| {{
+            let _ = LsbFlags::parse(data);
+        }});
+    }}
 }}
 "#
         ),
@@ -318,6 +403,44 @@ struct Huge {
 struct SizeExpr {
     n: u64,
     xs: [u8; n * 2],
+}
+
+@endian(little)
+struct Signed {
+    a: i8,
+    b: i16,
+    @endian(big) c: i32,
+    d: i64,
+    e: i128,
+    vals: [i16; 2],
+    small: [i8; 2],
+}
+
+struct Ipv4Start {
+    version: b<4>,
+    ihl: b<4>,
+}
+
+struct TcpFlags {
+    data_offset: b<4>,
+    reserved: b<3>,
+    ns: b<1>,
+    cwr: b<1>,
+    ece: b<1>,
+    urg: b<1>,
+    ack: b<1>,
+    psh: b<1>,
+    rst: b<1>,
+    syn: b<1>,
+    fin: b<1>,
+}
+
+@bit_order(lsb)
+struct LsbFlags {
+    low: b<3>,
+    high: b<5>,
+    @bit_order(msb) top: b<4>,
+    @bit_order(msb) bottom: b<4>,
 }
 "#;
 

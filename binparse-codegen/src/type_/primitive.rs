@@ -22,6 +22,8 @@ pub(crate) fn generate(
         Endian::Little => quote! { from_le_bytes },
     };
 
+    let single_byte = crate::single_byte_read(&primitive);
+
     let field_getter_body = match start_offset {
         GeneratedLen::Fixed(offset) => {
             if offset.bit != 0 {
@@ -30,8 +32,8 @@ pub(crate) fn generate(
 
             let start_byte = offset.byte;
 
-            if matches!(primitive, ast::Primitive::U8) {
-                quote! { self.data[#start_byte] }
+            if let Some(read) = &single_byte {
+                quote! { self.data[#start_byte] #read }
             } else {
                 let end_byte = offset.byte + len.byte;
                 quote! {
@@ -41,12 +43,12 @@ pub(crate) fn generate(
         }
 
         GeneratedLen::Dynamic(offset_expr) => {
-            if matches!(primitive, ast::Primitive::U8) {
+            if let Some(read) = &single_byte {
                 quote! {
                     {
                         let offset = #offset_expr;
                         debug_assert!(offset.bit == 0, "primitive requires byte alignment");
-                        self.data[offset.byte]
+                        self.data[offset.byte] #read
                     }
                 }
             } else {

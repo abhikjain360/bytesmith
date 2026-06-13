@@ -9,6 +9,25 @@ pub(crate) enum Endian {
     Little,
 }
 
+/// Bit order for bitfields within a byte.
+///
+/// The default is `Msb`: the first declared bitfield occupies the most
+/// significant bits of its byte, matching network protocol diagrams (e.g. the
+/// IPv4 `version` nibble is the high nibble of byte 0). `@bit_order(lsb)`
+/// makes the first declared bitfield occupy the least significant bits.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum BitOrder {
+    #[default]
+    Msb,
+    Lsb,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct Inherited {
+    pub endian: Endian,
+    pub bit_order: BitOrder,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Hook {
     pub fn_path: TokenStream,
@@ -25,12 +44,16 @@ pub enum Error {
     },
     #[error("@endian argument must be 'big' or 'little', got '{0}'")]
     InvalidEndianValue(String),
-    #[error("@endian cannot be applied to u8 (single byte has no endianness)")]
-    EndianOnU8,
+    #[error("@endian cannot be applied to single-byte integers (no endianness)")]
+    EndianOnSingleByte,
     #[error("@endian cannot be applied to bitfields")]
     EndianOnBitfield,
     #[error("@endian cannot be applied to struct ref (struct uses its own definition's endianness)")]
     EndianOnStructRef,
+    #[error("@bit_order argument must be 'msb' or 'lsb', got '{0}'")]
+    InvalidBitOrderValue(String),
+    #[error("@bit_order can only be applied to bitfields")]
+    BitOrderOnNonBitfield,
     #[error("@hook arguments must be paths (fn_name, ReturnType)")]
     InvalidHookArg,
     #[error("@hook on VLA requires [u8] type")]
@@ -40,6 +63,7 @@ pub enum Error {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ParsedAttrs {
     pub endian: Option<Endian>,
+    pub bit_order: Option<BitOrder>,
     pub hook: Option<Hook>,
 }
 
@@ -49,6 +73,7 @@ impl ParsedAttrs {
         for attr in attrs {
             match attr.name {
                 "endian" => result.endian = Some(Self::parse_endian(attr)?),
+                "bit_order" => result.bit_order = Some(Self::parse_bit_order(attr)?),
                 "hook" => result.hook = Some(Self::parse_hook(attr)?),
                 _ => {}
             }
@@ -71,6 +96,24 @@ impl ParsedAttrs {
                 other => Err(Error::InvalidEndianValue(other.to_string())),
             },
             _ => Err(Error::InvalidEndianValue("<non-identifier>".to_string())),
+        }
+    }
+
+    fn parse_bit_order(attr: &ast::Attribute<'_>) -> Result<BitOrder, Error> {
+        if attr.args.len() != 1 {
+            return Err(Error::WrongArgCount {
+                attr: "bit_order",
+                expected: 1,
+                got: attr.args.len(),
+            });
+        }
+        match &attr.args[0] {
+            ast::Expr::Path(path) if path.len() == 1 => match path[0] {
+                "msb" => Ok(BitOrder::Msb),
+                "lsb" => Ok(BitOrder::Lsb),
+                other => Err(Error::InvalidBitOrderValue(other.to_string())),
+            },
+            _ => Err(Error::InvalidBitOrderValue("<non-identifier>".to_string())),
         }
     }
 
@@ -97,7 +140,10 @@ impl ParsedAttrs {
         }
     }
 
-    pub fn merge_endian(&self, default: Endian) -> Endian {
-        self.endian.unwrap_or(default)
+    pub fn merge_inherited(&self, default: Inherited) -> Inherited {
+        Inherited {
+            endian: self.endian.unwrap_or(default.endian),
+            bit_order: self.bit_order.unwrap_or(default.bit_order),
+        }
     }
 }
