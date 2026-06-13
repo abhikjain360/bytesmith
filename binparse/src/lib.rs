@@ -1,6 +1,33 @@
-use std::ops::{Add, Mul};
+use std::ops::{Add, Mul, Range};
 
 pub mod hooks;
+mod tree;
+
+pub use tree::{FieldNode, Status, Value};
+
+/// Protocol handoff metadata for chaining parsers without depending on the
+/// concrete generated types. `keys` holds each `@discriminator` field's value
+/// (e.g. EtherType, IP protocol number, UDP/TCP port) widened to `u128`, in
+/// declaration order. `payload` is the `@payload` field's bytes and
+/// `payload_byte_range` is its absolute byte range within the parsed struct's
+/// data slice. A dependent crate matches on `keys` to pick the next parser and
+/// feeds it `payload`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Handoff<'a> {
+    pub keys: Vec<u128>,
+    pub payload: &'a [u8],
+    pub payload_byte_range: Range<usize>,
+}
+
+/// Generic dissection interface implemented by every generated struct so a
+/// dependent crate can inspect packets and chain parsers without naming the
+/// concrete protocol types. `handoff` returns `Some` only when the struct
+/// declared a `@payload` field. Public stability of this trait is deferred to
+/// publish readiness.
+pub trait Dissect<'a> {
+    fn field_tree(&self) -> FieldNode<'a>;
+    fn handoff(&self) -> Option<Handoff<'a>>;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Len {
