@@ -78,6 +78,18 @@ fuzz_target!(|data: &[u8]| {
         }
     }
 
+    if let Ok((packet, _)) = Conditional::parse(data) {
+        let _ = packet.version();
+        let _ = packet.ihl();
+        if let Some(Ok(options)) = packet.options() {
+            let _ = options.collect::<binparse::ParseResult<Vec<_>>>();
+        }
+        let _ = packet.big();
+        let _ = packet.tail();
+        let _ = packet.options_bit_range();
+        let _ = packet.tail_bit_range();
+    }
+
     if let Ok((packet, _)) = Validated::parse(data) {
         let _ = packet.magic();
         let _ = packet.version();

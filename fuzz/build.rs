@@ -59,6 +59,17 @@ struct Validated {
     reserved = b00,
     @check(flags <= 3) flags: b<6>,
 }
+
+struct Conditional {
+    version: b<4>,
+    ihl: b<4>,
+    if (ihl > 5) {
+        options: [u8; (ihl - 5) * 4],
+    } else {
+        big: u16,
+    }
+    tail: u8,
+}
 "#;
 
 fn main() {

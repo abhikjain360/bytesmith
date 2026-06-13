@@ -413,6 +413,102 @@ mod tests {{
     }}
 
     #[test]
+    fn ipv4_options_decode_when_ihl_exceeds_five() {{
+        let data = [0x46, 0xaa, 0xbb, 0xcc, 0xdd, 0x11];
+        let (packet, rem) = Ipv4WithOptions::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.version(), 4);
+        assert_eq!(packet.ihl(), 6);
+        let options = packet
+            .options()
+            .expect("options should be present")
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(options, vec![0xaa, 0xbb, 0xcc, 0xdd]);
+        assert_eq!(packet.proto(), 0x11);
+        assert_eq!(packet.options_bit_range(), 8..40);
+        assert_eq!(packet.proto_bit_range(), 40..48);
+        assert_parse_no_panic("Ipv4WithOptions", &data, |data| {{
+            let _ = Ipv4WithOptions::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn ipv4_options_absent_when_ihl_is_five() {{
+        let data = [0x45, 0x11];
+        let (packet, rem) = Ipv4WithOptions::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert!(packet.options().is_none());
+        assert_eq!(packet.proto(), 0x11);
+        assert_eq!(packet.proto_bit_range(), 8..16);
+        assert_parse_no_panic("Ipv4WithOptions absent", &data, |data| {{
+            let _ = Ipv4WithOptions::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn ipv4_options_truncation_errors_instead_of_panicking() {{
+        let data = [0x46, 0xaa, 0xbb];
+        assert_eq!(
+            Ipv4WithOptions::parse(&data).map(|_| ()).unwrap_err(),
+            binparse::ParseError::NotEnoughData {{
+                expected: 5,
+                got: 3,
+            }}
+        );
+    }}
+
+    #[test]
+    fn tcp_options_decode_based_on_data_offset() {{
+        let data = [0x60, 0x01, 0x02, 0x03, 0x04];
+        let (packet, rem) = TcpStart::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.data_offset(), 6);
+        let options = packet
+            .options()
+            .expect("options should be present")
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(options, vec![1, 2, 3, 4]);
+
+        let no_options = [0x50];
+        let (packet, rem) = TcpStart::parse(&no_options).unwrap();
+        assert!(rem.is_empty());
+        assert!(packet.options().is_none());
+        assert_parse_no_panic("TcpStart", &data, |data| {{
+            let _ = TcpStart::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn conditional_else_branch_updates_offsets() {{
+        let then_data = [1, 7, 9];
+        let (packet, rem) = CondElse::parse(&then_data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.small(), Some(7));
+        assert_eq!(packet.big(), None);
+        assert_eq!(packet.tail(), 9);
+        assert_eq!(packet.tail_bit_range(), 16..24);
+
+        let else_data = [0, 0x12, 0x34, 9];
+        let (packet, rem) = CondElse::parse(&else_data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.small(), None);
+        assert_eq!(packet.big(), Some(0x1234));
+        assert_eq!(packet.tail(), 9);
+        assert_eq!(packet.tail_bit_range(), 24..32);
+
+        assert_parse_no_panic("CondElse then", &then_data, |data| {{
+            let _ = CondElse::parse(data);
+        }});
+        assert_parse_no_panic("CondElse else", &else_data, |data| {{
+            let _ = CondElse::parse(data);
+        }});
+    }}
+
+    #[test]
     fn lsb_bit_order_decodes_with_field_override() {{
         let data = [0b1010_1101, 0b0100_0011];
         let (packet, rem) = LsbFlags::parse(&data).unwrap();
@@ -533,6 +629,33 @@ struct Validated {
     @range(20, 60) total_len: u16,
     reserved = b00,
     @check(flags <= 3) flags: b<6>,
+}
+
+struct Ipv4WithOptions {
+    version: b<4>,
+    ihl: b<4>,
+    if (ihl > 5) {
+        options: [u8; (ihl - 5) * 4],
+    }
+    proto: u8,
+}
+
+struct TcpStart {
+    data_offset: b<4>,
+    reserved: b<4>,
+    if (data_offset > 5) {
+        options: [u8; (data_offset - 5) * 4],
+    }
+}
+
+struct CondElse {
+    kind: u8,
+    if (kind == 1) {
+        small: u8,
+    } else {
+        big: u16,
+    }
+    tail: u8,
 }
 "#;
 

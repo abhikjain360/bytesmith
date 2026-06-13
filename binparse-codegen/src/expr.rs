@@ -31,6 +31,8 @@ pub enum Error {
     UnknownField { expr: String, field: String },
     #[error("expression '{expr}' references field '{field}' which is not a numeric field")]
     NonNumericField { expr: String, field: String },
+    #[error("expression '{expr}' references conditional field '{field}' which may be absent")]
+    ConditionalField { expr: String, field: String },
     #[error("expression '{expr}' uses nested path '{path}' which is not supported")]
     NestedPath { expr: String, path: String },
     #[error("expression '{expr}' is a {got} but a {expected} is required")]
@@ -111,6 +113,12 @@ fn lower_inner(
                     expr: render(root),
                     field: field_name.to_string(),
                 })?;
+            if done_field.conditional {
+                return Err(Error::ConditionalField {
+                    expr: render(root),
+                    field: field_name.to_string(),
+                });
+            }
             match done_field.field_type {
                 DoneFieldType::Primitive | DoneFieldType::BitField => {
                     let getter = format_ident!("{}", field_name);

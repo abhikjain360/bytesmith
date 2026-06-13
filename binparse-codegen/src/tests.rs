@@ -2168,7 +2168,7 @@ fn numeric_done_fields() -> Vec<crate::struct_::DoneField> {
         .map(|name| crate::struct_::DoneField {
             name: name.to_string(),
             field_type: crate::struct_::DoneFieldType::Primitive,
-            offset_getter_fn_name: quote::format_ident!("{}_end_offset", name),
+            conditional: false,
         })
         .collect()
 }
@@ -2529,5 +2529,214 @@ fn lower_bool_rejects_numeric_logic_operand() {
     assert!(
         err.to_string()
             .contains("is a number but a boolean is required")
+    );
+}
+
+#[test]
+fn golden_conditional_fields() {
+    assert_generated_eq(
+        r#"
+        struct Cond {
+            n: u8,
+            if (n == 1) {
+                x: u16,
+            } else {
+                y: u8,
+            }
+            tail: u8,
+        }
+        "#,
+        r#"
+        pub struct Cond<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Cond<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.n_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                if me.conditional_0_present() {
+                    {
+                        let len = me.x_end_offset();
+                        let expected = len.byte_ceil();
+                        if data.len() < expected {
+                            return Err(binparse::ParseError::NotEnoughData {
+                                expected,
+                                got: data.len(),
+                            });
+                        }
+                    }
+                }
+                if me.conditional_0_absent() {
+                    {
+                        let len = me.y_end_offset();
+                        let expected = len.byte_ceil();
+                        if data.len() < expected {
+                            return Err(binparse::ParseError::NotEnoughData {
+                                expected,
+                                got: data.len(),
+                            });
+                        }
+                    }
+                }
+                {
+                    let len = me.tail_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                let len = me.tail_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn n(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn n_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn n_start_offset(&self) -> binparse::Len {
+                binparse::Len::ZERO
+            }
+            pub fn n_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.n_start_offset().bits()..self.n_end_offset().bits()
+            }
+            #[allow(dead_code, unused_parens)]
+            fn conditional_0_present(&self) -> bool {
+                ((self.n() as usize) == (1usize))
+            }
+            #[allow(clippy::identity_op)]
+            fn x_raw(&self) -> u16 {
+                u16::from_be_bytes(self.data[1usize..3usize].try_into().unwrap())
+            }
+            pub fn x(&self) -> Option<u16> {
+                if self.conditional_0_present() { Some(self.x_raw()) } else { None }
+            }
+            pub fn x_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 3usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn x_start_offset(&self) -> binparse::Len {
+                self.n_end_offset()
+            }
+            pub fn x_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.x_start_offset().bits()..self.x_end_offset().bits()
+            }
+            #[allow(dead_code, unused_parens)]
+            fn conditional_0_absent(&self) -> bool {
+                !((self.n() as usize) == (1usize))
+            }
+            #[allow(clippy::identity_op)]
+            fn y_raw(&self) -> u8 {
+                self.data[1usize]
+            }
+            pub fn y(&self) -> Option<u8> {
+                if self.conditional_0_absent() { Some(self.y_raw()) } else { None }
+            }
+            pub fn y_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn y_start_offset(&self) -> binparse::Len {
+                self.n_end_offset()
+            }
+            pub fn y_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.y_start_offset().bits()..self.y_end_offset().bits()
+            }
+            fn conditional_0_end_offset(&self) -> binparse::Len {
+                if self.conditional_0_present() {
+                    self.x_end_offset()
+                } else {
+                    self.y_end_offset()
+                }
+            }
+            #[allow(clippy::identity_op)]
+            pub fn tail(&self) -> u8 {
+                {
+                    let offset = self.conditional_0_end_offset();
+                    debug_assert!(offset.bit == 0, "primitive requires byte alignment");
+                    self.data[offset.byte]
+                }
+            }
+            pub fn tail_end_offset(&self) -> binparse::Len {
+                ({ self.conditional_0_end_offset() })
+                    + ::binparse::Len {
+                        byte: 1usize,
+                        bit: 0usize,
+                    }
+            }
+            pub fn tail_start_offset(&self) -> binparse::Len {
+                self.conditional_0_end_offset()
+            }
+            pub fn tail_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.tail_start_offset().bits()..self.tail_end_offset().bits()
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn conditional_field_reference_is_rejected() {
+    let err = generate_err("struct Foo { n: u8, if (n == 1) { m: u8 } data: [u8; m] }");
+    assert!(
+        err.to_string()
+            .contains("expression 'm' references conditional field 'm' which may be absent")
+    );
+}
+
+#[test]
+fn conditional_intra_branch_reference_is_rejected() {
+    let err = generate_err("struct Foo { n: u8, if (n == 1) { m: u8, data: [u8; m] } }");
+    assert!(
+        err.to_string()
+            .contains("expression 'm' references conditional field 'm' which may be absent")
+    );
+}
+
+#[test]
+fn conditional_numeric_condition_is_rejected() {
+    let err = generate_err("struct Foo { n: u8, if (n) { m: u8 } }");
+    assert!(
+        err.to_string()
+            .contains("expression 'n' is a number but a boolean is required")
+    );
+}
+
+#[test]
+fn conditional_forward_reference_is_rejected() {
+    let err = generate_err("struct Foo { if (later == 1) { m: u8 } later: u8 }");
+    assert!(
+        err.to_string()
+            .contains("expression '(later == 1)' references field 'later' which is unknown or not yet parsed")
     );
 }

@@ -75,7 +75,14 @@ pub(crate) fn generate<'a>(
                 check_bit_order_applies(ty)?;
             }
 
+            if struct_accum.condition.is_some() && matches!(ty, ast::Type::Concat(_)) {
+                todo!("concat fields inside conditionals");
+            }
+
             match (&attrs.hook, is_vla(ty)) {
+                (Some(_), _) if struct_accum.condition.is_some() => {
+                    todo!("hooks inside conditionals");
+                }
                 (Some(hook), true) => {
                     generate_vla_hook(hook, struct_accum, &mut field_accum)?;
                 }
@@ -163,7 +170,7 @@ pub(crate) fn generate<'a>(
     struct_accum.functions.extend(field_accum.helper_fns);
     struct_accum.functions.extend(field_accum.field_getter);
     struct_accum.functions.extend(field_accum.offset_getter);
-    struct_accum.parse_checks.extend(quote! {
+    let length_check = quote! {
         {
             let len = me.#offset_getter_fn_name();
             let expected = len.byte_ceil();
@@ -174,12 +181,20 @@ pub(crate) fn generate<'a>(
                 });
             }
         }
-    });
-    struct_accum.last_offset_getter_fn_name = Some(offset_getter_fn_name.clone());
+    };
+    match &struct_accum.condition {
+        Some(gate) => struct_accum.parse_checks.extend(quote! {
+            if me.#gate() {
+                #length_check
+            }
+        }),
+        None => struct_accum.parse_checks.extend(length_check),
+    }
+    struct_accum.last_offset_getter_fn_name = Some(offset_getter_fn_name);
     struct_accum.done_fields.push(DoneField {
         name: ast.name.to_string(),
         field_type,
-        offset_getter_fn_name,
+        conditional: struct_accum.condition.is_some(),
     });
 
     generate_validations(ast, &attrs, constant, field_type, struct_accum)?;
@@ -196,6 +211,10 @@ fn generate_validations<'a>(
 ) -> Result<(), Error> {
     if constant.is_none() && attrs.check.is_none() && attrs.range.is_none() {
         return Ok(());
+    }
+
+    if struct_accum.condition.is_some() {
+        todo!("validations on conditional fields");
     }
 
     if !matches!(
@@ -283,15 +302,37 @@ fn generate_plain<'a>(
     field_accum.len = info.len;
     field_accum.field_type = info.field_type;
 
-    let field_name = &field_accum.field_name;
+    let field_name = field_accum.field_name.clone();
     let return_ty = info.return_ty;
     let field_getter_body = info.field_getter_body;
-    field_accum.field_getter = quote! {
-        #[allow(clippy::identity_op)]
-        pub fn #field_name(&self) -> #return_ty {
-            #field_getter_body
+    match &struct_accum.condition {
+        Some(gate) => {
+            let raw_fn_name = format_ident!("{}_raw", field_name);
+            field_accum.helper_fns.extend(quote! {
+                #[allow(clippy::identity_op)]
+                fn #raw_fn_name(&self) -> #return_ty {
+                    #field_getter_body
+                }
+            });
+            field_accum.field_getter = quote! {
+                pub fn #field_name(&self) -> Option<#return_ty> {
+                    if self.#gate() {
+                        Some(self.#raw_fn_name())
+                    } else {
+                        None
+                    }
+                }
+            };
         }
-    };
+        None => {
+            field_accum.field_getter = quote! {
+                #[allow(clippy::identity_op)]
+                pub fn #field_name(&self) -> #return_ty {
+                    #field_getter_body
+                }
+            };
+        }
+    }
 
     Ok(())
 }

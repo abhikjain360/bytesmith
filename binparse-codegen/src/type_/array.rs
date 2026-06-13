@@ -31,8 +31,6 @@ pub(crate) fn generate(
         }
         None => todo!("try from attributes"),
     };
-    let done_fields = &struct_accum.done_fields;
-
     let offset = match &start_offset {
         GeneratedLen::Fixed(len) => {
             if len.bit != 0 {
@@ -41,13 +39,9 @@ pub(crate) fn generate(
             let byte = len.byte;
             quote! { #byte }
         }
-        GeneratedLen::Dynamic(_) => {
-            let offset_getter_fn_name = &done_fields
-                .last()
-                .expect("dynamic offset requires previous field")
-                .offset_getter_fn_name;
+        GeneratedLen::Dynamic(tokens) => {
             quote! {{
-                let len = self.#offset_getter_fn_name();
+                let len = #tokens;
                 if len.bit > 0 { return Err(::binparse::ParseError::UnalignedLength(len)) };
                 len.byte
             }}
