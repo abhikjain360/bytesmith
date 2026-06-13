@@ -58,27 +58,59 @@ pub enum Error {
     InvalidHookArg,
     #[error("@hook on VLA requires [u8] type")]
     HookVlaNotU8,
+    #[error("@check and @range can only be applied to primitive and bitfield fields")]
+    ValidationOnNonNumeric,
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ParsedAttrs {
+pub(crate) struct ParsedAttrs<'a> {
     pub endian: Option<Endian>,
     pub bit_order: Option<BitOrder>,
     pub hook: Option<Hook>,
+    pub check: Option<ast::Expr<'a>>,
+    pub range: Option<(ast::Expr<'a>, ast::Expr<'a>)>,
 }
 
-impl ParsedAttrs {
-    pub fn parse(attrs: &[ast::Attribute<'_>]) -> Result<Self, Error> {
+impl<'a> ParsedAttrs<'a> {
+    pub fn parse(attrs: &[ast::Attribute<'a>]) -> Result<Self, Error> {
         let mut result = Self::default();
         for attr in attrs {
             match attr.name {
                 "endian" => result.endian = Some(Self::parse_endian(attr)?),
                 "bit_order" => result.bit_order = Some(Self::parse_bit_order(attr)?),
                 "hook" => result.hook = Some(Self::parse_hook(attr)?),
+                "check" => result.check = Some(Self::parse_check(attr, "check")?),
+                "validate" => result.check = Some(Self::parse_check(attr, "validate")?),
+                "range" => result.range = Some(Self::parse_range(attr)?),
                 _ => {}
             }
         }
         Ok(result)
+    }
+
+    fn parse_check(
+        attr: &ast::Attribute<'a>,
+        name: &'static str,
+    ) -> Result<ast::Expr<'a>, Error> {
+        let [expr] = attr.args.as_slice() else {
+            return Err(Error::WrongArgCount {
+                attr: name,
+                expected: 1,
+                got: attr.args.len(),
+            });
+        };
+        Ok(expr.clone())
+    }
+
+    fn parse_range(attr: &ast::Attribute<'a>) -> Result<(ast::Expr<'a>, ast::Expr<'a>), Error> {
+        let [min, max] = attr.args.as_slice() else {
+            return Err(Error::WrongArgCount {
+                attr: "range",
+                expected: 2,
+                got: attr.args.len(),
+            });
+        };
+        Ok((min.clone(), max.clone()))
     }
 
     fn parse_endian(attr: &ast::Attribute<'_>) -> Result<Endian, Error> {

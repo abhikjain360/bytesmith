@@ -7,6 +7,7 @@ use quote::{format_ident, quote};
 use crate::{
     GeneratedLen,
     attr::{self, Hook, ParsedAttrs},
+    expr,
     struct_::{DoneField, DoneFieldType, GeneratedStruct, StructAccum},
     type_,
 };
@@ -30,6 +31,12 @@ pub enum Error {
     UnknownOffset,
     #[error(transparent)]
     Attr(#[from] attr::Error),
+    #[error(transparent)]
+    Expr(#[from] expr::Error),
+    #[error("constant field literal width {width} is not supported")]
+    ConstantTooWide { width: u8 },
+    #[error("@range minimum {min} is greater than maximum {max}")]
+    InvalidRange { min: usize, max: usize },
 }
 
 impl FieldAccum {
@@ -58,6 +65,7 @@ pub(crate) fn generate<'a>(
     let field_inherited = attrs.merge_inherited(struct_accum.inherited);
     let mut field_accum = FieldAccum::new(ast.name);
 
+    let mut constant = None;
     match &ast.value {
         ast::FieldValue::Type(ty) => {
             if attrs.endian.is_some() {
@@ -84,33 +92,25 @@ pub(crate) fn generate<'a>(
                     )?;
                 }
                 (None, _) => {
-                    let start_offset = struct_accum.offset.clone();
-                    let info = type_::generate(
-                        ty,
-                        done,
-                        struct_accum,
-                        &mut field_accum,
-                        start_offset,
-                        field_inherited,
-                    )?;
-
-                    field_accum.len = info.len;
-                    field_accum.field_type = info.field_type;
-
-                    let field_name = &field_accum.field_name;
-                    let return_ty = info.return_ty;
-                    let field_getter_body = info.field_getter_body;
-                    field_accum.field_getter = quote! {
-                        #[allow(clippy::identity_op)]
-                        pub fn #field_name(&self) -> #return_ty {
-                            #field_getter_body
-                        }
-                    };
+                    generate_plain(ty, done, struct_accum, &mut field_accum, field_inherited)?;
                 }
             }
         }
 
-        ast::FieldValue::Constraint(_) => todo!("handle constraint-type fields"),
+        ast::FieldValue::Constraint(expr) => {
+            let ast::Expr::Literal(ast::Literal::Int(lit)) = expr else {
+                todo!("non-literal constraint fields")
+            };
+            let ty = constant_type(lit)?;
+            if attrs.endian.is_some() {
+                check_endian_applies(&ty)?;
+            }
+            if attrs.bit_order.is_some() {
+                check_bit_order_applies(&ty)?;
+            }
+            generate_plain(&ty, done, struct_accum, &mut field_accum, field_inherited)?;
+            constant = Some(lit.value);
+        }
     };
 
     let offset_getter_fn_name = field_accum.offset_getter_fn_name;
@@ -182,7 +182,147 @@ pub(crate) fn generate<'a>(
         offset_getter_fn_name,
     });
 
+    generate_validations(ast, &attrs, constant, field_type, struct_accum)?;
+
     Ok(())
+}
+
+fn generate_validations<'a>(
+    ast: &ast::Field<'a>,
+    attrs: &ParsedAttrs<'a>,
+    constant: Option<usize>,
+    field_type: DoneFieldType,
+    struct_accum: &mut StructAccum,
+) -> Result<(), Error> {
+    if constant.is_none() && attrs.check.is_none() && attrs.range.is_none() {
+        return Ok(());
+    }
+
+    if !matches!(
+        field_type,
+        DoneFieldType::Primitive | DoneFieldType::BitField
+    ) {
+        return Err(attr::Error::ValidationOnNonNumeric.into());
+    }
+
+    let field_name = format_ident!("{}", ast.name);
+    let field_path = format!("{}.{}", struct_accum.name, ast.name);
+    let validation_error = quote! {
+        binparse::ParseError::ValidationFailed {
+            field: #field_path,
+            actual: self.#field_name() as u128,
+        }
+    };
+
+    let mut validations = TokenStream::new();
+
+    if let Some(value) = constant {
+        let expected = proc_macro2::Literal::u128_unsuffixed(value as u128);
+        validations.extend(quote! {
+            if self.#field_name() != #expected {
+                return Err(#validation_error);
+            }
+        });
+    }
+
+    if let Some((min, max)) = &attrs.range {
+        let min = expr::lower(min, expr::ExprType::Numeric, &struct_accum.done_fields)?;
+        let max = expr::lower(max, expr::ExprType::Numeric, &struct_accum.done_fields)?;
+        if let (Some(min_value), Some(max_value)) = (min.const_value, max.const_value)
+            && min_value > max_value
+        {
+            return Err(Error::InvalidRange {
+                min: min_value,
+                max: max_value,
+            });
+        }
+        let min_tokens = min.tokens;
+        let max_tokens = max.tokens;
+        validations.extend(quote! {
+            if !((#min_tokens)..=(#max_tokens)).contains(&(self.#field_name() as usize)) {
+                return Err(#validation_error);
+            }
+        });
+    }
+
+    if let Some(check) = &attrs.check {
+        let check = expr::lower(check, expr::ExprType::Bool, &struct_accum.done_fields)?;
+        let check_tokens = check.tokens;
+        validations.extend(quote! {
+            if !#check_tokens {
+                return Err(#validation_error);
+            }
+        });
+    }
+
+    let validate_fn_name = format_ident!("{}_validate", ast.name);
+    struct_accum.functions.extend(quote! {
+        #[allow(clippy::unnecessary_cast)]
+        fn #validate_fn_name(&self) -> Result<(), binparse::ParseError> {
+            #validations
+            Ok(())
+        }
+    });
+    struct_accum.parse_checks.extend(quote! {
+        me.#validate_fn_name()?;
+    });
+
+    Ok(())
+}
+
+fn generate_plain<'a>(
+    ty: &ast::Type<'a>,
+    done: &HashMap<&'a str, GeneratedStruct>,
+    struct_accum: &mut StructAccum,
+    field_accum: &mut FieldAccum,
+    inherited: attr::Inherited,
+) -> Result<(), Error> {
+    let start_offset = struct_accum.offset.clone();
+    let info = type_::generate(ty, done, struct_accum, field_accum, start_offset, inherited)?;
+
+    field_accum.len = info.len;
+    field_accum.field_type = info.field_type;
+
+    let field_name = &field_accum.field_name;
+    let return_ty = info.return_ty;
+    let field_getter_body = info.field_getter_body;
+    field_accum.field_getter = quote! {
+        #[allow(clippy::identity_op)]
+        pub fn #field_name(&self) -> #return_ty {
+            #field_getter_body
+        }
+    };
+
+    Ok(())
+}
+
+fn constant_type(lit: &ast::IntLiteral) -> Result<ast::Type<'static>, Error> {
+    match lit.ty {
+        ast::IntType::Binary => match lit.width {
+            1..=8 => Ok(ast::Type::BitField(lit.width)),
+            _ => Err(Error::ConstantTooWide { width: lit.width }),
+        },
+        ast::IntType::Hex => match usize::from(lit.width).div_ceil(2) {
+            1 => Ok(ast::Type::Primitive(ast::Primitive::U8)),
+            2 => Ok(ast::Type::Primitive(ast::Primitive::U16)),
+            3..=4 => Ok(ast::Type::Primitive(ast::Primitive::U32)),
+            5..=8 => Ok(ast::Type::Primitive(ast::Primitive::U64)),
+            9..=16 => Ok(ast::Type::Primitive(ast::Primitive::U128)),
+            _ => Err(Error::ConstantTooWide { width: lit.width }),
+        },
+        ast::IntType::Decimal => {
+            let primitive = if lit.value <= usize::from(u8::MAX) {
+                ast::Primitive::U8
+            } else if lit.value <= usize::from(u16::MAX) {
+                ast::Primitive::U16
+            } else if u32::try_from(lit.value).is_ok() {
+                ast::Primitive::U32
+            } else {
+                ast::Primitive::U64
+            };
+            Ok(ast::Type::Primitive(primitive))
+        }
+    }
 }
 
 fn is_vla(ty: &ast::Type<'_>) -> bool {

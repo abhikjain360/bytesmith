@@ -77,4 +77,13 @@ fuzz_target!(|data: &[u8]| {
             let _ = vals.collect::<binparse::ParseResult<Vec<_>>>();
         }
     }
+
+    if let Ok((packet, _)) = Validated::parse(data) {
+        let _ = packet.magic();
+        let _ = packet.version();
+        let _ = packet.ihl();
+        let _ = packet.total_len();
+        let _ = packet.reserved();
+        let _ = packet.flags();
+    }
 });

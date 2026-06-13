@@ -330,6 +330,89 @@ mod tests {{
     }}
 
     #[test]
+    fn validated_packet_decodes() {{
+        let data = [0x89, 0x50, 0x4e, 0x47, 0x45, 0x00, 0x14, 0b00_000011];
+        let (packet, rem) = Validated::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.magic(), 0x89504e47);
+        assert_eq!(packet.version(), 4);
+        assert_eq!(packet.ihl(), 5);
+        assert_eq!(packet.total_len(), 20);
+        assert_eq!(packet.reserved(), 0);
+        assert_eq!(packet.flags(), 3);
+        assert_parse_no_panic("Validated", &data, |data| {{
+            let _ = Validated::parse(data);
+        }});
+    }}
+
+    #[test]
+    fn validation_failures_report_field_and_actual_value() {{
+        let valid = [0x89, 0x50, 0x4e, 0x47, 0x45, 0x00, 0x14, 0b00_000011];
+
+        let mut bad_magic = valid;
+        bad_magic[0] = 0x88;
+        assert_eq!(
+            Validated::parse(&bad_magic).map(|_| ()).unwrap_err(),
+            binparse::ParseError::ValidationFailed {{
+                field: "Validated.magic",
+                actual: 0x88504e47,
+            }}
+        );
+
+        let mut bad_version = valid;
+        bad_version[4] = 0x55;
+        assert_eq!(
+            Validated::parse(&bad_version).map(|_| ()).unwrap_err(),
+            binparse::ParseError::ValidationFailed {{
+                field: "Validated.version",
+                actual: 5,
+            }}
+        );
+
+        let mut bad_len = valid;
+        bad_len[6] = 0x13;
+        assert_eq!(
+            Validated::parse(&bad_len).map(|_| ()).unwrap_err(),
+            binparse::ParseError::ValidationFailed {{
+                field: "Validated.total_len",
+                actual: 19,
+            }}
+        );
+
+        let mut bad_reserved = valid;
+        bad_reserved[7] = 0b01_000011;
+        assert_eq!(
+            Validated::parse(&bad_reserved).map(|_| ()).unwrap_err(),
+            binparse::ParseError::ValidationFailed {{
+                field: "Validated.reserved",
+                actual: 1,
+            }}
+        );
+
+        let mut bad_flags = valid;
+        bad_flags[7] = 0b00_000111;
+        assert_eq!(
+            Validated::parse(&bad_flags).map(|_| ()).unwrap_err(),
+            binparse::ParseError::ValidationFailed {{
+                field: "Validated.flags",
+                actual: 7,
+            }}
+        );
+    }}
+
+    #[test]
+    fn truncation_is_reported_before_validation() {{
+        let bad_magic = [0x88, 0x50, 0x4e];
+        assert_eq!(
+            Validated::parse(&bad_magic).map(|_| ()).unwrap_err(),
+            binparse::ParseError::NotEnoughData {{
+                expected: 4,
+                got: 3,
+            }}
+        );
+    }}
+
+    #[test]
     fn lsb_bit_order_decodes_with_field_override() {{
         let data = [0b1010_1101, 0b0100_0011];
         let (packet, rem) = LsbFlags::parse(&data).unwrap();
@@ -441,6 +524,15 @@ struct LsbFlags {
     high: b<5>,
     @bit_order(msb) top: b<4>,
     @bit_order(msb) bottom: b<4>,
+}
+
+struct Validated {
+    magic = x89504e47,
+    @check(version == 4) version: b<4>,
+    ihl: b<4>,
+    @range(20, 60) total_len: u16,
+    reserved = b00,
+    @check(flags <= 3) flags: b<6>,
 }
 "#;
 

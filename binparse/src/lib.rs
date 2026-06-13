@@ -30,6 +30,8 @@ pub enum ParseError {
     NotEnoughData { expected: usize, got: usize },
     #[error("unaligned length: {0:?}")]
     UnalignedLength(Len),
+    #[error("validation failed for field '{field}': actual value {actual}")]
+    ValidationFailed { field: &'static str, actual: u128 },
 }
 
 pub type ParseResult<T> = std::result::Result<T, ParseError>;

@@ -2204,6 +2204,320 @@ fn lower_bool_rejects_numeric_expr() {
 }
 
 #[test]
+fn golden_constant_fields() {
+    assert_generated_eq(
+        "struct Magic { magic = xc0de, flags = b101 }",
+        r#"
+        pub struct Magic<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Magic<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.magic_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                me.magic_validate()?;
+                {
+                    let len = me.flags_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                me.flags_validate()?;
+                let len = me.flags_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn magic(&self) -> u16 {
+                u16::from_be_bytes(self.data[0usize..2usize].try_into().unwrap())
+            }
+            pub fn magic_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn magic_start_offset(&self) -> binparse::Len {
+                binparse::Len::ZERO
+            }
+            pub fn magic_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.magic_start_offset().bits()..self.magic_end_offset().bits()
+            }
+            #[allow(clippy::unnecessary_cast)]
+            fn magic_validate(&self) -> Result<(), binparse::ParseError> {
+                if self.magic() != 49374 {
+                    return Err(binparse::ParseError::ValidationFailed {
+                        field: "Magic.magic",
+                        actual: self.magic() as u128,
+                    });
+                }
+                Ok(())
+            }
+            #[allow(clippy::identity_op)]
+            pub fn flags(&self) -> u8 {
+                (self.data[2usize] >> 5usize) & 7u8
+            }
+            pub fn flags_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 3usize,
+                }
+            }
+            pub fn flags_start_offset(&self) -> binparse::Len {
+                self.magic_end_offset()
+            }
+            pub fn flags_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.flags_start_offset().bits()..self.flags_end_offset().bits()
+            }
+            #[allow(clippy::unnecessary_cast)]
+            fn flags_validate(&self) -> Result<(), binparse::ParseError> {
+                if self.flags() != 5 {
+                    return Err(binparse::ParseError::ValidationFailed {
+                        field: "Magic.flags",
+                        actual: self.flags() as u128,
+                    });
+                }
+                Ok(())
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn golden_check_and_range() {
+    assert_generated_eq(
+        "struct Checked { n: u8, @range(1, n + 1) @check(m >= n) m: u8 }",
+        r#"
+        pub struct Checked<'a> {
+            #[allow(dead_code)]
+            data: &'a [u8],
+        }
+        impl<'a> Checked<'a> {
+            pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), binparse::ParseError> {
+                let me = Self { data };
+                {
+                    let len = me.n_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                {
+                    let len = me.m_end_offset();
+                    let expected = len.byte_ceil();
+                    if data.len() < expected {
+                        return Err(binparse::ParseError::NotEnoughData {
+                            expected,
+                            got: data.len(),
+                        });
+                    }
+                }
+                me.m_validate()?;
+                let len = me.m_end_offset();
+                if len.bit != 0 {
+                    return Err(binparse::ParseError::UnalignedLength(len));
+                }
+                if data.len() < len.byte {
+                    return Err(binparse::ParseError::NotEnoughData {
+                        expected: len.byte,
+                        got: data.len(),
+                    });
+                }
+                Ok((me, &data[len.byte..]))
+            }
+            #[allow(clippy::identity_op)]
+            pub fn n(&self) -> u8 {
+                self.data[0usize]
+            }
+            pub fn n_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn n_start_offset(&self) -> binparse::Len {
+                binparse::Len::ZERO
+            }
+            pub fn n_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.n_start_offset().bits()..self.n_end_offset().bits()
+            }
+            #[allow(clippy::identity_op)]
+            pub fn m(&self) -> u8 {
+                self.data[1usize]
+            }
+            pub fn m_end_offset(&self) -> binparse::Len {
+                binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+            }
+            pub fn m_start_offset(&self) -> binparse::Len {
+                self.n_end_offset()
+            }
+            pub fn m_bit_range(&self) -> ::core::ops::Range<usize> {
+                self.m_start_offset().bits()..self.m_end_offset().bits()
+            }
+            #[allow(clippy::unnecessary_cast)]
+            fn m_validate(&self) -> Result<(), binparse::ParseError> {
+                if !((1usize)..=((self.n() as usize).saturating_add(1usize)))
+                    .contains(&(self.m() as usize))
+                {
+                    return Err(binparse::ParseError::ValidationFailed {
+                        field: "Checked.m",
+                        actual: self.m() as u128,
+                    });
+                }
+                if !((self.m() as usize) >= (self.n() as usize)) {
+                    return Err(binparse::ParseError::ValidationFailed {
+                        field: "Checked.m",
+                        actual: self.m() as u128,
+                    });
+                }
+                Ok(())
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn constant_decimal_infers_smallest_type() {
+    let code = generate("struct Foo { small = 10, medium = 65536 }");
+    assert!(code.contains("pub fn small(&self) -> u8"));
+    assert!(code.contains("pub fn medium(&self) -> u32"));
+}
+
+#[test]
+fn constant_hex_infers_type_from_width() {
+    let code = generate("struct Foo { a = x0f, b = x0102030405060708 }");
+    assert!(code.contains("pub fn a(&self) -> u8"));
+    assert!(code.contains("pub fn b(&self) -> u64"));
+}
+
+#[test]
+fn validate_attribute_is_an_alias_for_check() {
+    let code = generate("struct Foo { @validate(n == 1) n: u8 }");
+    assert!(code.contains("fn n_validate"));
+    assert!(code.contains("me.n_validate()?"));
+}
+
+#[test]
+fn constant_binary_too_wide_is_rejected() {
+    let err = generate_err("struct Foo { f = b101010101 }");
+    assert!(
+        err.to_string()
+            .contains("constant field literal width 9 is not supported")
+    );
+}
+
+#[test]
+fn constant_field_rejects_endian_on_single_byte() {
+    let err = generate_err("struct Foo { @endian(little) f = x01 }");
+    assert!(
+        err.to_string()
+            .contains("@endian cannot be applied to single-byte integers")
+    );
+}
+
+#[test]
+fn check_on_struct_ref_is_rejected() {
+    let err = generate_err("struct Inner { x: u8 } struct Foo { @check(1 == 1) inner: Inner }");
+    assert!(
+        err.to_string()
+            .contains("@check and @range can only be applied to primitive and bitfield fields")
+    );
+}
+
+#[test]
+fn range_on_array_is_rejected() {
+    let err = generate_err("struct Foo { @range(1, 2) xs: [u8; 4] }");
+    assert!(
+        err.to_string()
+            .contains("@check and @range can only be applied to primitive and bitfield fields")
+    );
+}
+
+#[test]
+fn check_with_numeric_expr_is_rejected() {
+    let err = generate_err("struct Foo { @check(n + 1) n: u8 }");
+    assert!(
+        err.to_string()
+            .contains("is a number but a boolean is required")
+    );
+}
+
+#[test]
+fn range_with_bool_expr_is_rejected() {
+    let err = generate_err("struct Foo { n: u8, @range(n == 1, 5) m: u8 }");
+    assert!(
+        err.to_string()
+            .contains("is a boolean but a number is required")
+    );
+}
+
+#[test]
+fn check_unknown_field_is_rejected() {
+    let err = generate_err("struct Foo { @check(later == 1) n: u8, later: u8 }");
+    assert!(
+        err.to_string()
+            .contains("references field 'later' which is unknown or not yet parsed")
+    );
+}
+
+#[test]
+fn check_wrong_arg_count_is_rejected() {
+    let err = generate_err("struct Foo { @check(n == 1, n == 2) n: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@check requires exactly 1 argument(s), got 2")
+    );
+}
+
+#[test]
+fn range_wrong_arg_count_is_rejected() {
+    let err = generate_err("struct Foo { @range(1) n: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@range requires exactly 2 argument(s), got 1")
+    );
+}
+
+#[test]
+fn range_min_greater_than_max_is_rejected() {
+    let err = generate_err("struct Foo { @range(5, 1) n: u8 }");
+    assert!(
+        err.to_string()
+            .contains("@range minimum 5 is greater than maximum 1")
+    );
+}
+
+#[test]
 fn lower_bool_rejects_numeric_logic_operand() {
     let ast = binparse_dsl_parse::parse_str("struct Foo { c = n == 1 && 2 }").unwrap();
     let err = crate::expr::lower(

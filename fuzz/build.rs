@@ -50,6 +50,15 @@ struct Mixed {
     @bit_order(lsb) high: b<5>,
     vals: [i16; ihl],
 }
+
+struct Validated {
+    magic = x89504e47,
+    @check(version == 4) version: b<4>,
+    ihl: b<4>,
+    @range(20, 60) total_len: u16,
+    reserved = b00,
+    @check(flags <= 3) flags: b<6>,
+}
 "#;
 
 fn main() {
