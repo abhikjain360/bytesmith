@@ -38,7 +38,7 @@ pub enum Error {
     #[error(transparent)]
     Concat(#[from] concat::Error),
     #[error(transparent)]
-    Array(#[from] array::Error),
+    Expr(#[from] crate::expr::Error),
     #[error(transparent)]
     Union(#[from] union_::Error),
     #[error("field error: {0}")]

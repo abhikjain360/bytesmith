@@ -541,12 +541,12 @@ fn golden_fixed_array() {
         "struct WithArray { count: u8, data: [u32; 4] }",
         r#"
         #[allow(non_camel_case_types)]
-        pub struct data_Iterator<'a> {
+        pub struct WithArray_data_Iterator<'a> {
             idx: usize,
             count: usize,
             data: &'a [u8],
         }
-        impl<'a> ::std::iter::Iterator for data_Iterator<'a> {
+        impl<'a> ::std::iter::Iterator for WithArray_data_Iterator<'a> {
             type Item = ::binparse::ParseResult<u32>;
             fn next(&mut self) -> std::option::Option<Self::Item> {
                 if self.idx == self.count {
@@ -614,8 +614,8 @@ fn golden_fixed_array() {
                 self.count_start_offset().bits()..self.count_end_offset().bits()
             }
             #[allow(clippy::identity_op)]
-            pub fn data(&self) -> ::binparse::ParseResult<data_Iterator<'_>> {
-                Ok(data_Iterator {
+            pub fn data(&self) -> ::binparse::ParseResult<WithArray_data_Iterator<'_>> {
+                Ok(WithArray_data_Iterator {
                     idx: 0,
                     count: 4usize,
                     data: &self.data[1usize..],
@@ -644,12 +644,12 @@ fn golden_expression_sized_array() {
         "struct ExprArray { n: u8, items: [u16; n * 2] }",
         r#"
         #[allow(non_camel_case_types)]
-        pub struct items_Iterator<'a> {
+        pub struct ExprArray_items_Iterator<'a> {
             idx: usize,
             count: usize,
             data: &'a [u8],
         }
-        impl<'a> ::std::iter::Iterator for items_Iterator<'a> {
+        impl<'a> ::std::iter::Iterator for ExprArray_items_Iterator<'a> {
             type Item = ::binparse::ParseResult<u16>;
             fn next(&mut self) -> std::option::Option<Self::Item> {
                 if self.idx == self.count {
@@ -717,10 +717,10 @@ fn golden_expression_sized_array() {
                 self.n_start_offset().bits()..self.n_end_offset().bits()
             }
             #[allow(clippy::identity_op)]
-            pub fn items(&self) -> ::binparse::ParseResult<items_Iterator<'_>> {
-                Ok(items_Iterator {
+            pub fn items(&self) -> ::binparse::ParseResult<ExprArray_items_Iterator<'_>> {
+                Ok(ExprArray_items_Iterator {
                     idx: 0,
-                    count: (self.n() as usize * 2usize) as usize,
+                    count: (self.n() as usize).saturating_mul(2usize),
                     data: &self.data[1usize..],
                 })
             }
@@ -733,7 +733,7 @@ fn golden_expression_sized_array() {
                         ::binparse::Len {
                             byte: 2usize,
                             bit: 0usize,
-                        } * ((self.n() as usize * 2usize) as usize)
+                        } * ((self.n() as usize).saturating_mul(2usize))
                     })
             }
             pub fn items_start_offset(&self) -> binparse::Len {
@@ -799,12 +799,12 @@ fn golden_struct_ref_array() {
             }
         }
         #[allow(non_camel_case_types)]
-        pub struct items_Iterator<'a> {
+        pub struct StructArray_items_Iterator<'a> {
             idx: usize,
             count: usize,
             data: &'a [u8],
         }
-        impl<'a> ::std::iter::Iterator for items_Iterator<'a> {
+        impl<'a> ::std::iter::Iterator for StructArray_items_Iterator<'a> {
             type Item = ::binparse::ParseResult<Inner<'a>>;
             fn next(&mut self) -> std::option::Option<Self::Item> {
                 if self.idx == self.count {
@@ -876,8 +876,8 @@ fn golden_struct_ref_array() {
                 self.count_start_offset().bits()..self.count_end_offset().bits()
             }
             #[allow(clippy::identity_op)]
-            pub fn items(&self) -> ::binparse::ParseResult<items_Iterator<'_>> {
-                Ok(items_Iterator {
+            pub fn items(&self) -> ::binparse::ParseResult<StructArray_items_Iterator<'_>> {
+                Ok(StructArray_items_Iterator {
                     idx: 0,
                     count: self.count() as usize,
                     data: &self.data[1usize..],
@@ -912,13 +912,13 @@ fn golden_bitfield_array() {
         "struct BitArray { nibbles: [b<4>; 4] }",
         r#"
         #[allow(non_camel_case_types)]
-        pub struct nibbles_Iterator<'a> {
+        pub struct BitArray_nibbles_Iterator<'a> {
             idx: usize,
             count: usize,
             data: &'a [u8],
             bit_offset: usize,
         }
-        impl<'a> ::std::iter::Iterator for nibbles_Iterator<'a> {
+        impl<'a> ::std::iter::Iterator for BitArray_nibbles_Iterator<'a> {
             type Item = ::binparse::ParseResult<u8>;
             fn next(&mut self) -> std::option::Option<Self::Item> {
                 if self.idx == self.count {
@@ -973,8 +973,8 @@ fn golden_bitfield_array() {
                 Ok((me, &data[len.byte..]))
             }
             #[allow(clippy::identity_op)]
-            pub fn nibbles(&self) -> ::binparse::ParseResult<nibbles_Iterator<'_>> {
-                Ok(nibbles_Iterator {
+            pub fn nibbles(&self) -> ::binparse::ParseResult<BitArray_nibbles_Iterator<'_>> {
+                Ok(BitArray_nibbles_Iterator {
                     idx: 0,
                     count: 4usize,
                     data: &self.data[0usize..],
@@ -1191,7 +1191,7 @@ fn golden_union_single_discriminant() {
             }
             #[allow(clippy::identity_op)]
             pub fn payload(&self) -> Packet_payload<'_> {
-                match self.ty() {
+                match self.ty() as usize {
                     1 => {
                         Packet_payload::Echo(Packet_payload_Echo {
                             data: &self.data[1usize..],
@@ -1210,7 +1210,7 @@ fn golden_union_single_discriminant() {
                     bit: 0usize,
                 }
                     + ({
-                        match self.ty() {
+                        match self.ty() as usize {
                             1 => {
                                 ::binparse::Len {
                                     byte: 2usize,
@@ -1366,7 +1366,7 @@ fn golden_union_tuple_discriminant_with_multiple_matchers() {
             }
             #[allow(clippy::identity_op)]
             pub fn payload(&self) -> Packet_payload<'_> {
-                match (self.ty(), self.code()) {
+                match (self.ty() as usize, self.code() as usize) {
                     (0, 0) | (0, 8) => {
                         Packet_payload::Echo(Packet_payload_Echo {
                             data: &self.data[2usize..],
@@ -1385,7 +1385,7 @@ fn golden_union_tuple_discriminant_with_multiple_matchers() {
                     bit: 0usize,
                 }
                     + ({
-                        match (self.ty(), self.code()) {
+                        match (self.ty() as usize, self.code() as usize) {
                             (0, 0) | (0, 8) => {
                                 ::binparse::Len {
                                     byte: 2usize,
@@ -1776,7 +1776,7 @@ fn array_size_unknown_field_is_rejected() {
     let err = generate_err("struct Foo { items: [u16; nope] }");
     assert!(
         err.to_string()
-            .contains("array size path references unknown field 'nope'")
+            .contains("expression 'nope' references field 'nope' which is unknown or not yet parsed")
     );
 }
 
@@ -1785,7 +1785,7 @@ fn array_size_non_numeric_field_is_rejected() {
     let err = generate_err("struct Inner { x: u8 } struct Foo { inner: Inner, items: [u8; inner] }");
     assert!(
         err.to_string()
-            .contains("array size path must reference a primitive or bitfield")
+            .contains("expression 'inner' references field 'inner' which is not a numeric field")
     );
 }
 
@@ -1799,5 +1799,170 @@ fn union_unknown_argument_is_rejected() {
             },
         }"#,
     );
-    assert!(err.to_string().contains("argument not found kind"));
+    assert!(
+        err.to_string()
+            .contains("expression 'kind' references field 'kind' which is unknown or not yet parsed")
+    );
+}
+
+#[test]
+fn union_non_numeric_argument_is_rejected() {
+    let err = generate_err(
+        r#"struct Inner { x: u8 }
+        struct Foo {
+            inner: Inner,
+            payload: union(inner) {
+                1 => A { x: u8 },
+                _ => B { },
+            },
+        }"#,
+    );
+    assert!(
+        err.to_string()
+            .contains("expression 'inner' references field 'inner' which is not a numeric field")
+    );
+}
+
+#[test]
+fn array_size_forward_reference_is_rejected() {
+    let err = generate_err("struct Foo { data: [u8; later], later: u8 }");
+    assert!(
+        err.to_string()
+            .contains("references field 'later' which is unknown or not yet parsed")
+    );
+}
+
+#[test]
+fn array_size_bool_expr_is_rejected() {
+    let err = generate_err("struct Foo { n: u8, data: [u8; n == 1] }");
+    assert!(
+        err.to_string()
+            .contains("is a boolean but a number is required")
+    );
+}
+
+#[test]
+fn array_size_string_is_rejected() {
+    let err = generate_err(r#"struct Foo { data: [u8; "two"] }"#);
+    assert!(
+        err.to_string()
+            .contains("is a string but a number is required")
+    );
+}
+
+#[test]
+fn array_size_nested_path_is_rejected() {
+    let err = generate_err("struct Foo { a: u8, data: [u8; a.len] }");
+    assert!(err.to_string().contains("nested path 'a.len'"));
+}
+
+#[test]
+fn array_size_const_overflow_is_rejected() {
+    let err = generate_err("struct Foo { data: [u8; 4294967296 * 4294967296] }");
+    assert!(err.to_string().contains("overflows"));
+}
+
+#[test]
+fn array_size_division_by_zero_is_rejected() {
+    let err = generate_err("struct Foo { data: [u8; 8 / 0] }");
+    assert!(err.to_string().contains("divides by zero"));
+}
+
+#[test]
+fn array_size_dynamic_divisor_is_rejected() {
+    let err = generate_err("struct Foo { n: u8, data: [u8; 8 / n] }");
+    assert!(
+        err.to_string()
+            .contains("divides by a non-constant value")
+    );
+}
+
+#[test]
+fn same_array_field_name_in_two_structs_does_not_collide() {
+    let code = generate(
+        "struct First { n: u8, xs: [u8; n] } struct Second { n: u8, xs: [u16; n] }",
+    );
+    assert!(code.contains("First_xs_Iterator"));
+    assert!(code.contains("Second_xs_Iterator"));
+}
+
+#[test]
+fn array_size_const_expr_is_folded() {
+    let code = generate("struct Foo { data: [u8; 2 * 3 + 1] }");
+    assert!(code.contains("count: 7usize"));
+}
+
+#[test]
+fn array_size_subtraction_saturates() {
+    let code = generate("struct Foo { n: u8, data: [u8; n - 1] }");
+    assert!(code.contains("(self.n() as usize).saturating_sub(1usize)"));
+}
+
+fn constraint_expr<'a>(ast: &'a [binparse_dsl::Definition<'a>]) -> &'a binparse_dsl::Expr<'a> {
+    let binparse_dsl::Definition::Struct(s) = &ast[0] else {
+        panic!("expected struct");
+    };
+    let binparse_dsl::StructItem::Field(f) = &s.items[0] else {
+        panic!("expected field");
+    };
+    let binparse_dsl::FieldValue::Constraint(e) = &f.value else {
+        panic!("expected constraint");
+    };
+    e
+}
+
+fn numeric_done_fields() -> Vec<crate::struct_::DoneField> {
+    ["n", "m"]
+        .into_iter()
+        .map(|name| crate::struct_::DoneField {
+            name: name.to_string(),
+            field_type: crate::struct_::DoneFieldType::Primitive,
+            offset_getter_fn_name: quote::format_ident!("{}_end_offset", name),
+        })
+        .collect()
+}
+
+#[test]
+fn lower_bool_expr() {
+    let ast = binparse_dsl_parse::parse_str("struct Foo { c = n == 1 && m < 2 }").unwrap();
+    let lowered = crate::expr::lower(
+        constraint_expr(&ast),
+        crate::expr::ExprType::Bool,
+        &numeric_done_fields(),
+    )
+    .unwrap();
+    let expected = quote::quote! {
+        ((((self.n() as usize) == (1usize))) && (((self.m() as usize) < (2usize))))
+    };
+    assert_eq!(lowered.tokens.to_string(), expected.to_string());
+}
+
+#[test]
+fn lower_bool_rejects_numeric_expr() {
+    let ast = binparse_dsl_parse::parse_str("struct Foo { c = n + 1 }").unwrap();
+    let err = crate::expr::lower(
+        constraint_expr(&ast),
+        crate::expr::ExprType::Bool,
+        &numeric_done_fields(),
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("expression '(n + 1)' is a number but a boolean is required")
+    );
+}
+
+#[test]
+fn lower_bool_rejects_numeric_logic_operand() {
+    let ast = binparse_dsl_parse::parse_str("struct Foo { c = n == 1 && 2 }").unwrap();
+    let err = crate::expr::lower(
+        constraint_expr(&ast),
+        crate::expr::ExprType::Bool,
+        &numeric_done_fields(),
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("is a number but a boolean is required")
+    );
 }

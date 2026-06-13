@@ -11,6 +11,7 @@ use quote::quote;
 use struct_::*;
 
 mod attr;
+mod expr;
 mod field;
 mod struct_;
 mod type_;
@@ -219,21 +220,6 @@ fn find_conditional_dependencies<'a>(
     find_dependencies(&conditional.then_branch, dependencies);
     if let Some(else_branch) = &conditional.else_branch {
         find_dependencies(else_branch, dependencies);
-    }
-}
-
-fn match_binop(binop: ast::NumericBinaryOp) -> (TokenStream, Box<dyn Fn(usize, usize) -> usize>) {
-    use ast::NumericBinaryOp::*;
-
-    match binop {
-        Add => (quote! { + }, Box::new(|a, b| a + b)),
-        Sub => (quote! { - }, Box::new(|a, b| a - b)),
-        Mul => (quote! { * }, Box::new(|a, b| a * b)),
-        Div => (quote! { / }, Box::new(|a, b| a / b)),
-        Mod => (quote! { % }, Box::new(|a, b| a % b)),
-        BitAnd => (quote! { & }, Box::new(|a, b| a & b)),
-        BitOr => (quote! { | }, Box::new(|a, b| a | b)),
-        BitXor => (quote! { ^ }, Box::new(|a, b| a ^ b)),
     }
 }
 

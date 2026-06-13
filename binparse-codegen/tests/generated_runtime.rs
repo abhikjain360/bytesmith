@@ -161,6 +161,36 @@ mod tests {{
     }}
 
     #[test]
+    fn size_expression_valid_packet_decodes() {{
+        let data = [0, 0, 0, 0, 0, 0, 0, 2, 1, 2, 3, 4];
+        let (packet, rem) = SizeExpr::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        let xs = packet
+            .xs()
+            .unwrap()
+            .collect::<binparse::ParseResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(xs, vec![1, 2, 3, 4]);
+        assert_eq!(packet.xs_bit_range(), 64..96);
+    }}
+
+    #[test]
+    fn size_expression_overflow_saturates_instead_of_panicking() {{
+        let data = [0xff; 8];
+        let err = SizeExpr::parse(&data).map(|_| ()).unwrap_err();
+        assert_eq!(
+            err,
+            binparse::ParseError::NotEnoughData {{
+                expected: usize::MAX,
+                got: 8,
+            }}
+        );
+        assert_parse_no_panic("SizeExpr", &data, |data| {{
+            let _ = SizeExpr::parse(data);
+        }});
+    }}
+
+    #[test]
     fn huge_array_count_errors_instead_of_overflowing() {{
         let data = [0xff; 8];
         let err = Huge::parse(&data).map(|_| ()).unwrap_err();
@@ -283,6 +313,11 @@ struct CrossByte {
 struct Huge {
     n: u64,
     xs: [u128; n],
+}
+
+struct SizeExpr {
+    n: u64,
+    xs: [u8; n * 2],
 }
 "#;
 

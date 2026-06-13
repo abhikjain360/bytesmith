@@ -56,4 +56,11 @@ fuzz_target!(|data: &[u8]| {
             let _ = item.b();
         }
     }
+
+    if let Ok((packet, _)) = SizeExpr::parse(data) {
+        let _ = packet.xs_bit_range();
+        if let Ok(xs) = packet.xs() {
+            let _ = xs.collect::<binparse::ParseResult<Vec<_>>>();
+        }
+    }
 });

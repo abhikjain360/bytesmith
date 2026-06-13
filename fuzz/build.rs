@@ -33,6 +33,11 @@ struct StructArray {
     count: u8,
     items: [Inner; count],
 }
+
+struct SizeExpr {
+    n: u64,
+    xs: [u8; n * 2],
+}
 "#;
 
 fn main() {

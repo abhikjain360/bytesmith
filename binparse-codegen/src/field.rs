@@ -190,13 +190,7 @@ pub(crate) fn generate<'a>(
 }
 
 fn is_vla(ty: &ast::Type<'_>) -> bool {
-    matches!(
-        ty,
-        ast::Type::Array(ast::ArrayType {
-            size: ast::ArraySize::Dynamic,
-            ..
-        })
-    )
+    matches!(ty, ast::Type::Array(ast::ArrayType { size: None, .. }))
 }
 
 fn generate_vla_hook(

@@ -7,20 +7,11 @@ use quote::{format_ident, quote};
 use crate::{
     GeneratedLen,
     attr::Endian,
+    expr::{self, ExprType},
     field::FieldAccum,
-    struct_::{DoneField, DoneFieldType, GeneratedStruct, StructAccum},
+    struct_::{DoneFieldType, GeneratedStruct, StructAccum},
     type_::{self, GeneratedTypeInfo},
 };
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("array size path is empty")]
-    EmptyPath,
-    #[error("array size path references unknown field '{0}'")]
-    UnknownField(String),
-    #[error("array size path must reference a primitive or bitfield, not '{0}'")]
-    InvalidSizeType(String),
-}
 
 pub(crate) fn generate(
     array_type: &ast::ArrayType<'_>,
@@ -30,10 +21,16 @@ pub(crate) fn generate(
     start_offset: GeneratedLen,
     endian: Endian,
 ) -> Result<GeneratedTypeInfo, type_::Error> {
-    let done_fields = &struct_accum.done_fields;
     let field_name = &accum.field_name;
 
-    let (count, static_count) = generate_array_size(&array_type.size, done_fields)?;
+    let (count, static_count) = match &array_type.size {
+        Some(size) => {
+            let lowered = expr::lower(size, ExprType::Numeric, &struct_accum.done_fields)?;
+            (lowered.tokens, lowered.const_value)
+        }
+        None => todo!("try from attributes"),
+    };
+    let done_fields = &struct_accum.done_fields;
 
     let offset = match &start_offset {
         GeneratedLen::Fixed(len) => {
@@ -56,7 +53,7 @@ pub(crate) fn generate(
         }
     };
 
-    let iterator_name = format_ident!("{}_Iterator", field_name);
+    let iterator_name = format_ident!("{}_{}_Iterator", struct_accum.name, field_name);
 
     let (elem_len, elem_return_ty, iterator_fields, iterator_init, next_body) =
         match &array_type.elem_ty {
@@ -219,46 +216,4 @@ pub(crate) fn generate(
         return_ty: quote! { ::binparse::ParseResult<#iterator_name<'_>> },
         field_type: DoneFieldType::Other,
     })
-}
-
-fn generate_array_size(
-    size: &ast::ArraySize,
-    done_fields: &[DoneField],
-) -> Result<(proc_macro2::TokenStream, Option<usize>), Error> {
-    match size {
-        ast::ArraySize::Dynamic => todo!("try from attributes"),
-
-        ast::ArraySize::Path(path) => {
-            let field_name = path.first().ok_or(Error::EmptyPath)?;
-            let done_field = done_fields
-                .iter()
-                .find(|f| f.name == *field_name)
-                .ok_or_else(|| Error::UnknownField(field_name.to_string()))?;
-
-            match done_field.field_type {
-                DoneFieldType::Primitive | DoneFieldType::BitField => {
-                    let getter = format_ident!("{}", field_name);
-                    Ok((quote! { self.#getter() as usize }, None))
-                }
-                DoneFieldType::Other => Err(Error::InvalidSizeType(field_name.to_string())),
-            }
-        }
-
-        ast::ArraySize::Int(ast::IntLiteral { value, .. }) => {
-            let v = *value;
-            Ok((quote! { #v }, Some(v)))
-        }
-
-        ast::ArraySize::Binary(array_size) => {
-            let (lhs_tokens, lhs_count) = generate_array_size(&array_size.lhs, done_fields)?;
-            let (rhs_tokens, rhs_count) = generate_array_size(&array_size.rhs, done_fields)?;
-            let (op_tokens, op_fn) = crate::match_binop(array_size.op);
-
-            Ok((
-                quote! { (#lhs_tokens #op_tokens #rhs_tokens) as usize },
-                lhs_count
-                    .and_then(|lhs_count| rhs_count.map(|rhs_count| op_fn(lhs_count, rhs_count))),
-            ))
-        }
-    }
 }

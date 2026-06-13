@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use binparse_dsl as ast;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -6,6 +6,7 @@ use quote::{format_ident, quote};
 use crate::{
     GeneratedLen,
     attr::Endian,
+    expr,
     field::{self, FieldAccum},
     struct_::{DoneFieldType, GeneratedStruct, StructAccum},
     type_::{self, GeneratedTypeInfo},
@@ -19,8 +20,6 @@ pub enum Error {
     NoVariants,
     #[error("matcher has {got} elements but union has {expected} arguments")]
     MatcherCountMismatch { expected: usize, got: usize },
-    #[error("argument not found {0}")]
-    InvalidArgument(String),
 }
 
 pub(crate) fn generate(
@@ -39,18 +38,7 @@ pub(crate) fn generate(
         return Err(type_::Error::Union(Error::NoVariants));
     }
 
-    let done_fields_names = struct_accum
-        .done_fields
-        .iter()
-        .map(|done| done.name.as_str())
-        .collect::<HashSet<_>>();
-    if let Some(argument) = union
-        .args
-        .iter()
-        .find(|arg| !done_fields_names.contains(*arg))
-    {
-        return Err(Error::InvalidArgument(argument.to_string()).into());
-    }
+    let match_expr = expr::lower_discriminants(&union.args, &struct_accum.done_fields)?;
 
     let start_byte: TokenStream = match &start_offset {
         GeneratedLen::Fixed(offset) => {
@@ -63,19 +51,6 @@ pub(crate) fn generate(
         GeneratedLen::Dynamic(tokens) => {
             quote! { (#tokens).byte }
         }
-    };
-
-    let discriminants: Vec<_> = union
-        .args
-        .iter()
-        .map(|arg| format_ident!("{}", arg))
-        .collect();
-    let match_expr = if discriminants.len() == 1 {
-        let d = &discriminants[0];
-        quote! { self.#d() }
-    } else {
-        let getters = discriminants.iter().map(|d| quote! { self.#d() });
-        quote! { (#(#getters),*) }
     };
 
     let parent_struct_name = &struct_accum.name;

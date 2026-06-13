@@ -148,24 +148,9 @@ pub enum ArrayElemType<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ArraySize<'a> {
-    Dynamic,
-    Path(Vec<&'a str>),
-    Int(IntLiteral),
-    Binary(Box<ArraySizeBinary<'a>>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ArraySizeBinary<'a> {
-    pub lhs: ArraySize<'a>,
-    pub op: NumericBinaryOp,
-    pub rhs: ArraySize<'a>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct ArrayType<'a> {
     pub elem_ty: ArrayElemType<'a>,
-    pub size: ArraySize<'a>,
+    pub size: Option<Expr<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
