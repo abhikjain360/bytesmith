@@ -1,10 +1,14 @@
 - rust codebase, edition 2024, resolver 3
 - ast definitions in binparse-dsl
   - it is always recommended to read the binparse-dsl/src/lib.rs as it has the AST definition which you'll probably need for most tasks
-- string to ast parser in biparse-dsl-parse
-- common lib in binparse
-- codgen in binparse-codegen
+- string to ast parser in binparse-dsl-parse
+- common lib in binparse (runtime: offsets, errors, hooks, dissection tree)
+- codegen in binparse-codegen
   - everywhere `use binparse_dsl as ast;`
+  - codegen also emits writers (writer.rs, `generate_writers`) and a dissection tree (`Dissect`/`field_tree()`/`handoff()`); attribute parsing lives in attr.rs
+- generated protocol specs in binparse-protocols (specs/*.bp, 15 protocols)
+- criterion benches in binparse-bench
+- language server in binparse-lsp
 - run codegen test using cargo run -p binparse-codegen --example test
 - make sure to run cargo clippy --all-targets at the end
 - as this codebase is complex, do only one step at a time, only do what is asked for and no more and ask for clarifications if doing what is asked for is not enough according to your analysis.

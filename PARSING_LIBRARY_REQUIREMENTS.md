@@ -374,5 +374,4 @@ R15 runs throughout the sequence: each implemented requirement should add or upd
 - Conversation tracking.
 - Protocol preference UI.
 - Plugin loading for external applications.
-- Serialization or packet writing.
 - Cross-language code generation.

@@ -88,11 +88,13 @@ Nothing is enabled by default — turn on what you need, or `all`.
 Zero-copy isn't a slogan here. Benchmarked (criterion) against the best crates in
 each niche:
 
-- **DNS** — edges out `simple-dns`, thanks to cached lengths and borrowed name views.
-- **MQTT** — wins outright; decoding-into-owned can't keep up with reading in place.
+- **DNS** — beats `simple-dns` on both read and write, thanks to cached lengths and
+  borrowed name views (~1.9× on the write path).
+- **MQTT** — wins outright; decoding-into-owned can't keep up with reading in place
+  (~2.5–3× faster than `mqttbytes`/`rumqttc`/`rumqttd` on writes).
 
-`binparse-bench` runs the head-to-heads against `etherparse`, `pnet`, `tls-parser`,
-`simple-dns`, and `mqttbytes`.
+`binparse-bench` runs the head-to-heads against `etherparse`, `pnet_packet`,
+`tls-parser`, `simple-dns`, `mqttbytes`, `rumqttc`, and `rumqttd`.
 
 ## The workspace
 
@@ -104,6 +106,7 @@ each niche:
 | `binparse` | The runtime: offsets, errors, hooks, field tree. |
 | `binparse-protocols` | The 15 shipped protocol parsers. |
 | `binparse-bench` | Criterion benchmarks vs. the field. |
+| `binparse-lsp` | Language server: parse + codegen diagnostics. |
 
 ## Hacking
 
@@ -115,8 +118,11 @@ cargo clippy --all-targets
 
 ## Status
 
-Work in progress, not yet on crates.io. The parse path is complete and fast; writers
-and the dissection API are landing feature by feature.
+Work in progress, not yet on crates.io. The parse path is complete and fast. Writers
+ship for the full protocol suite — MQTT v3/v5 and DNS (with codegen-derived name
+compression) round-trip and benchmark ahead of the hand-written codecs. The
+remaining writer frontier is content-range checksums and a typestate builder. The
+dissection API is landing feature by feature.
 
 ## License
 
