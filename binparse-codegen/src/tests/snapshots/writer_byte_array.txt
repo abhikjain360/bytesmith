@@ -1,0 +1,496 @@
+#[allow(non_camel_case_types)]
+pub struct Eth_dst_Iterator<'a> {
+    idx: usize,
+    count: usize,
+    data: &'a [u8],
+}
+
+#[allow(non_camel_case_types)]
+pub struct Eth_src_Iterator<'a> {
+    idx: usize,
+    count: usize,
+    data: &'a [u8],
+}
+
+impl<'a> ::binparse::Dissect<'a> for Eth<'a> {
+    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        Eth::field_tree(self)
+    }
+    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        Eth::handoff(self)
+    }
+}
+
+impl<'a> ::std::iter::Iterator for Eth_dst_Iterator<'a> {
+    type Item = ::binparse::ParseResult<u8>;
+    fn next(&mut self) -> std::option::Option<Self::Item> {
+        if self.idx == self.count {
+            return None;
+        }
+        self.idx += 1;
+        let value = self.data[0];
+        self.data = &self.data[1..];
+        Some(Ok(value))
+    }
+}
+
+impl<'a> ::std::iter::Iterator for Eth_src_Iterator<'a> {
+    type Item = ::binparse::ParseResult<u8>;
+    fn next(&mut self) -> std::option::Option<Self::Item> {
+        if self.idx == self.count {
+            return None;
+        }
+        self.idx += 1;
+        let value = self.data[0];
+        self.data = &self.data[1..];
+        Some(Ok(value))
+    }
+}
+
+impl<'a> Eth<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
+        let me = Self { data };
+        me.dst_fatal_check()?;
+        me.dst_recoverable_check()?;
+        me.src_fatal_check()?;
+        me.src_recoverable_check()?;
+        me.ethertype_fatal_check()?;
+        me.ethertype_recoverable_check()?;
+        let len = me.ethertype_end_offset();
+        if len.bit != 0 {
+            return Err(::binparse::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::binparse::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = self;
+            children.push(me.dst_present_node());
+        }
+        {
+            let me = self;
+            children.push(me.src_present_node());
+        }
+        {
+            let me = self;
+            children.push(me.ethertype_present_node());
+        }
+        let mut root = ::binparse::FieldNode::new(
+                "Eth",
+                "Eth",
+                0usize..self.ethertype_end_offset().bits(),
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
+        let me = Self { data };
+        let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::binparse::ParseError> = None;
+        if fatal.is_none() {
+            match me.dst_fatal_check() {
+                Err(error) => {
+                    let start = me.dst_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "dst",
+                                    "[u8]",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.dst_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.dst_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "dst",
+                                            "[u8]",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.dst_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.src_fatal_check() {
+                Err(error) => {
+                    let start = me.src_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "src",
+                                    "[u8]",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.src_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.src_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "src",
+                                            "[u8]",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.src_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.ethertype_fatal_check() {
+                Err(error) => {
+                    let start = me.ethertype_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "ethertype",
+                                    "u16",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.ethertype_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.ethertype_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "ethertype",
+                                            "u16",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.ethertype_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::binparse::FieldNode::new(
+                "Eth",
+                "Eth",
+                0usize..root_end,
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::binparse::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn dst_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.dst_bit_range();
+        {
+            let mut elem_nodes = ::std::vec::Vec::new();
+            if let Ok(iter) = self.dst() {
+                let mut start = bit_range.start;
+                for (i, elem) in iter.enumerate() {
+                    let end = start.saturating_add(8usize);
+                    match elem {
+                        Ok(value) => {
+                            elem_nodes
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                        i.to_string(),
+                                        "u8",
+                                        start..end,
+                                        ::binparse::Value::UInt(u128::from(value)),
+                                    ),
+                                )
+                        }
+                        Err(error) => {
+                            elem_nodes
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            i.to_string(),
+                                            "u8",
+                                            start..start,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                    }
+                    start = end;
+                }
+            }
+            ::binparse::FieldNode::new(
+                    "dst",
+                    "[u8]",
+                    bit_range.clone(),
+                    ::binparse::Value::Array,
+                )
+                .with_children(elem_nodes)
+        }
+    }
+    #[allow(clippy::identity_op)]
+    pub fn dst(&self) -> ::binparse::ParseResult<Eth_dst_Iterator<'a>> {
+        Ok(Eth_dst_Iterator {
+            idx: 0,
+            count: 6usize,
+            data: &self.data[0usize..],
+        })
+    }
+    pub fn dst_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 6usize,
+            bit: 0usize,
+        }
+    }
+    pub fn dst_start_offset(&self) -> binparse::Len {
+        binparse::Len::ZERO
+    }
+    pub fn dst_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.dst_start_offset().bits()..self.dst_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn dst_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.dst_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn dst_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn src_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.src_bit_range();
+        {
+            let mut elem_nodes = ::std::vec::Vec::new();
+            if let Ok(iter) = self.src() {
+                let mut start = bit_range.start;
+                for (i, elem) in iter.enumerate() {
+                    let end = start.saturating_add(8usize);
+                    match elem {
+                        Ok(value) => {
+                            elem_nodes
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                        i.to_string(),
+                                        "u8",
+                                        start..end,
+                                        ::binparse::Value::UInt(u128::from(value)),
+                                    ),
+                                )
+                        }
+                        Err(error) => {
+                            elem_nodes
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            i.to_string(),
+                                            "u8",
+                                            start..start,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                    }
+                    start = end;
+                }
+            }
+            ::binparse::FieldNode::new(
+                    "src",
+                    "[u8]",
+                    bit_range.clone(),
+                    ::binparse::Value::Array,
+                )
+                .with_children(elem_nodes)
+        }
+    }
+    #[allow(clippy::identity_op)]
+    pub fn src(&self) -> ::binparse::ParseResult<Eth_src_Iterator<'a>> {
+        Ok(Eth_src_Iterator {
+            idx: 0,
+            count: 6usize,
+            data: &self.data[6usize..],
+        })
+    }
+    pub fn src_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 12usize,
+            bit: 0usize,
+        }
+    }
+    pub fn src_start_offset(&self) -> binparse::Len {
+        self.dst_end_offset()
+    }
+    pub fn src_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.src_start_offset().bits()..self.src_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn src_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.src_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn src_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn ethertype_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.ethertype_bit_range();
+        ::binparse::FieldNode::new(
+            "ethertype",
+            "u16",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.ethertype())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn ethertype(&self) -> u16 {
+        u16::from_be_bytes(self.data[12usize..14usize].try_into().unwrap())
+    }
+    pub fn ethertype_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 14usize,
+            bit: 0usize,
+        }
+    }
+    pub fn ethertype_start_offset(&self) -> binparse::Len {
+        self.src_end_offset()
+    }
+    pub fn ethertype_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.ethertype_start_offset().bits()..self.ethertype_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn ethertype_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.ethertype_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn ethertype_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+}
+
+impl<'a> EthWriter<'a> {
+    pub const SIZE: usize = 14usize;
+    pub fn new(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn dst_mut(&mut self) -> &mut [u8] {
+        &mut self.data[0usize..6usize]
+    }
+    pub fn src_mut(&mut self) -> &mut [u8] {
+        &mut self.data[6usize..12usize]
+    }
+    pub fn set_ethertype(&mut self, value: u16) -> &mut Self {
+        self.data[12usize..14usize].copy_from_slice(&value.to_be_bytes());
+        self
+    }
+    pub fn write_into(
+        data: &'a mut [u8],
+        content: &EthContent,
+    ) -> ::binparse::WriteResult<usize> {
+        let mut w = Self::new(data)?;
+        w.dst_mut().copy_from_slice(&content.dst);
+        w.src_mut().copy_from_slice(&content.src);
+        w.set_ethertype(content.ethertype);
+        Ok(Self::SIZE)
+    }
+    pub fn to_vec(content: &EthContent) -> ::std::vec::Vec<u8> {
+        let mut buf = ::std::vec![0u8; Self::SIZE];
+        let _ = EthWriter::write_into(&mut buf, content);
+        buf
+    }
+}
+
+pub struct Eth<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
+pub struct EthContent {
+    pub dst: [u8; 6usize],
+    pub src: [u8; 6usize],
+    pub ethertype: u16,
+}
+
+pub struct EthWriter<'a> {
+    data: &'a mut [u8],
+}
+

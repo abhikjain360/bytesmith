@@ -105,6 +105,21 @@ pub enum ParseError {
 
 pub type ParseResult<T> = std::result::Result<T, ParseError>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum WriteError {
+    #[error("not enough space: need {expected} bytes, got {got}")]
+    NotEnoughSpace { expected: usize, got: usize },
+    #[error("value {value} too large for field '{field}' (max {max})")]
+    ValueTooLarge {
+        field: &'static str,
+        value: usize,
+        max: usize,
+    },
+}
+
+pub type WriteResult<T> = std::result::Result<T, WriteError>;
+
 impl Add for Len {
     type Output = Self;
 

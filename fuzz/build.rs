@@ -185,10 +185,99 @@ struct StructBoundedNested {
 }
 "#;
 
+const WRITER_BASELINE_DSL: &str = r#"
+@endian(little)
+struct WPrim {
+    a: u8,
+    word: u16,
+    @endian(big) be: u32,
+    sword: i16,
+}
+
+@endian(big)
+struct WBits {
+    flag_a: b<4>,
+    flag_b: b<4>,
+    ttl: u8,
+    total: u16,
+}
+
+struct WFixedArr {
+    tag: u8,
+    bytes: [u8; 4],
+    tail: u16,
+}
+
+@endian(big)
+struct WInner {
+    a: u8,
+    b: u16,
+}
+
+@endian(big)
+struct WNested {
+    tag: u8,
+    inner: WInner,
+    trailer: u8,
+}
+
+struct WLenTail {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+}
+
+struct WVarint {
+    tag: u8,
+    @hook(read_leb128, u64) @write_hook(binparse.hooks.write_leb128_unsigned, binparse.hooks.leb128_unsigned_len) len: [u8],
+    body: [u8; len],
+}
+
+@endian(big)
+struct WUnion {
+    kind: u8,
+    body: union(kind) {
+        1 => WConnect { keep_alive: u16 },
+        2 => WConnack { ack: u8, code: u8 },
+        _ => Unknown { },
+    },
+}
+
+struct WEthernet {
+    dst: [u8; 6],
+    src: [u8; 6],
+    @discriminator ethertype: u16,
+    @greedy(unsafe_eof) @payload payload: [u8],
+}
+
+struct WVlan {
+    dst: [u8; 6],
+    src: [u8; 6],
+    tpid = x8100,
+    pcp: b<3>,
+    dei: b<1>,
+    vid_hi: b<4>,
+    vid_lo: u8,
+    ethertype: u16,
+    @greedy(unsafe_eof) payload: [u8],
+}
+"#;
+
 fn main() {
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
+
     let ast = binparse_dsl_parse::parse_str(BASELINE_DSL).expect("failed to parse baseline DSL");
     let code = binparse_codegen::CodeGen::generate(&ast).expect("failed to generate baseline code");
-    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     std::fs::write(std::path::Path::new(&out_dir).join("generated.rs"), code)
         .expect("failed to write generated code");
+
+    let writer_ast = binparse_dsl_parse::parse_str(WRITER_BASELINE_DSL)
+        .expect("failed to parse writer baseline DSL");
+    let writer_code = binparse_codegen::CodeGen::generate_writers(&writer_ast)
+        .expect("failed to generate writer baseline code");
+    std::fs::write(
+        std::path::Path::new(&out_dir).join("generated_writers.rs"),
+        writer_code,
+    )
+    .expect("failed to write generated writer code");
 }

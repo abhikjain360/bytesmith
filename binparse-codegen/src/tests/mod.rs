@@ -10,10 +10,17 @@ mod len_bounds;
 mod primitives;
 mod structs;
 mod unions;
+mod writer;
+mod writer_snapshots;
 
 fn generate(dsl: &str) -> String {
     let ast = binparse_dsl_parse::parse_str(dsl).expect("failed to parse DSL");
     CodeGen::generate(&ast).expect("failed to generate code")
+}
+
+fn generate_writers(dsl: &str) -> String {
+    let ast = binparse_dsl_parse::parse_str(dsl).expect("failed to parse DSL");
+    CodeGen::generate_writers(&ast).expect("failed to generate code")
 }
 
 fn generate_err(dsl: &str) -> Error {

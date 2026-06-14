@@ -15,6 +15,7 @@ mod expr;
 mod field;
 mod struct_;
 mod type_;
+mod writer;
 
 #[cfg(test)]
 mod tests;
@@ -100,10 +101,20 @@ pub enum Error {
     DependencyCycle { structs: Vec<String> },
     #[error("generated code failed to parse: {message}")]
     InvalidGeneratedCode { message: String },
+    #[error(transparent)]
+    Writer(#[from] writer::Error),
 }
 
 impl<'a> CodeGen<'a> {
     pub fn generate(ast: &'a [ast::Definition<'a>]) -> Result<String, Error> {
+        Self::generate_with(ast, false)
+    }
+
+    pub fn generate_writers(ast: &'a [ast::Definition<'a>]) -> Result<String, Error> {
+        Self::generate_with(ast, true)
+    }
+
+    fn generate_with(ast: &'a [ast::Definition<'a>], emit_writers: bool) -> Result<String, Error> {
         let mut structs = HashMap::new();
         let mut reverse_deps = HashMap::<_, HashSet<_>>::new();
 
@@ -166,6 +177,8 @@ impl<'a> CodeGen<'a> {
             done: HashMap::new(),
         };
         let mut next = Vec::new();
+        let mut writer_sizes: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
         while !roots.is_empty() {
             for root in roots.drain(..) {
                 let Some(todo) = me.todo.remove(root) else {
@@ -178,6 +191,17 @@ impl<'a> CodeGen<'a> {
                         source,
                     }
                 })?;
+
+                if emit_writers {
+                    let (writer_tokens, writer_size) =
+                        writer::generate(todo.origin, &writer_sizes)?;
+                    if let Some(size) = writer_size {
+                        writer_sizes.insert(root, size);
+                    }
+                    if let Some(g) = me.done.get_mut(root) {
+                        g.tokens.extend(writer_tokens);
+                    }
+                }
 
                 for dependant in todo.dependants {
                     if let Some(dependant_todo) = me.todo.get_mut(dependant) {

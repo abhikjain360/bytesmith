@@ -1,4 +1,4 @@
-use crate::{HookContext, ParseError, ParseResult};
+use crate::{HookContext, ParseError, ParseResult, WriteError, WriteResult};
 
 pub fn cstring(data: &[u8], _ctx: HookContext<'_>) -> ParseResult<(String, usize)> {
     match data.iter().position(|&b| b == 0) {
@@ -85,6 +85,40 @@ pub fn quic_varint(data: &[u8], _ctx: HookContext<'_>) -> ParseResult<(u64, usiz
         value = (value << 8) | u64::from(byte);
     }
     Ok((value, len))
+}
+
+pub fn write_leb128_unsigned(mut value: u64, dst: &mut [u8]) -> WriteResult<usize> {
+    let mut i = 0;
+    loop {
+        let mut byte = (value & 0x7F) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        match dst.get_mut(i) {
+            Some(slot) => *slot = byte,
+            None => {
+                return Err(WriteError::NotEnoughSpace {
+                    expected: i + 1,
+                    got: dst.len(),
+                });
+            }
+        }
+        i += 1;
+        if value == 0 {
+            return Ok(i);
+        }
+    }
+}
+
+pub fn leb128_unsigned_len(value: u64) -> usize {
+    let mut n = 1;
+    let mut v = value >> 7;
+    while v != 0 {
+        n += 1;
+        v >>= 7;
+    }
+    n
 }
 
 #[cfg(test)]
@@ -285,6 +319,29 @@ mod tests {
         assert_eq!(
             quic_varint(&data, ctx(&data)),
             Err(ParseError::NotEnoughData {
+                expected: 2,
+                got: 1
+            })
+        );
+    }
+
+    #[test]
+    fn test_write_leb128_unsigned_round_trip() {
+        for &value in &[0u64, 127, 128, 300, 624485, u64::MAX] {
+            let mut buf = [0u8; 16];
+            let written = write_leb128_unsigned(value, &mut buf).unwrap();
+            assert_eq!(written, leb128_unsigned_len(value));
+            let (decoded, consumed) = leb128_unsigned(&buf[..written], ctx(&buf)).unwrap();
+            assert_eq!(decoded, value);
+            assert_eq!(consumed, written);
+        }
+    }
+
+    #[test]
+    fn test_write_leb128_unsigned_not_enough_space() {
+        assert_eq!(
+            write_leb128_unsigned(300, &mut [0u8; 1]),
+            Err(WriteError::NotEnoughSpace {
                 expected: 2,
                 got: 1
             })

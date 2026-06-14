@@ -22,4 +22,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "generated_writers"
+path = "fuzz_targets/generated_writers.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
