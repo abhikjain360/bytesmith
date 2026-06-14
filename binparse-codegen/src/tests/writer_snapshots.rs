@@ -132,6 +132,83 @@ fn writer_union() {
 }
 
 #[test]
+fn writer_union_multi_literal() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Packet {
+            kind: u8,
+            body: union(kind) {
+                1 | 2 => Hello { v: u16 },
+                3 => Bye { code: u8 },
+                _ => Unknown { },
+            },
+        }"#,
+        "writer_union_multi_literal",
+    );
+}
+
+#[test]
+fn writer_union_tuple_discriminant() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Packet {
+            a: u8,
+            b: u8,
+            body: union(a, b) {
+                (0, 0) => Both { v: u16 },
+                (1, 2) => OneTwo { code: u8 },
+                _ => Unknown { },
+            },
+        }"#,
+        "writer_union_tuple_discriminant",
+    );
+}
+
+#[test]
+fn writer_union_writable_wildcard() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Packet {
+            kind: u8,
+            body: union(kind) {
+                1 => Connect { keep_alive: u16 },
+                _ => Generic { a: u8, b: u8 },
+            },
+        }"#,
+        "writer_union_writable_wildcard",
+    );
+}
+
+#[test]
+fn writer_union_error_arm() {
+    assert_generated_writers_eq(
+        r#"error { BadKind { got: u8 }, }
+        @endian(big) struct Packet {
+            kind: u8,
+            body: union(kind) {
+                1 => Connect { keep_alive: u16 },
+                _ => @error(BadKind { got: kind }),
+            },
+        }"#,
+        "writer_union_error_arm",
+    );
+}
+
+#[test]
+fn writer_union_dynamic_variant_skipped() {
+    let code = generate_writers(
+        r#"@endian(big) struct Rr {
+            atype: u8,
+            rdlength: u8,
+            @len(rdlength) rdata: union(atype) {
+                1 => A { addr: [u8; 4] },
+                5 => Cname { @greedy(unsafe_eof) labels: [u8] },
+                _ => Raw { @greedy(unsafe_eof) bytes: [u8] },
+            },
+        }"#,
+    );
+    syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
+    assert!(!code.contains("RrWriter"));
+}
+
+#[test]
 fn writer_counted_array_of_structs() {
     assert_generated_writers_eq(
         r#"@endian(big) struct Pair { a: u8, b: u16 } @endian(big) struct Rec { n: u8, items: [Pair; n], crc: u16 }"#,

@@ -101,13 +101,13 @@ struct UnionVariantInfo {
     name: syn::Ident,
     reader_variant: syn::Ident,
     fields: Vec<WriterField>,
-    disc_value: proc_macro2::Literal,
+    disc_values: Option<Vec<proc_macro2::Literal>>,
 }
 
 struct UnionLayout {
     field_name: String,
     prefix_fields: Vec<WriterField>,
-    disc: WriterField,
+    discs: Vec<WriterField>,
     prefix_size: usize,
     variants: Vec<UnionVariantInfo>,
 }
@@ -907,6 +907,64 @@ fn classify_fixed_items(
     Some(fields)
 }
 
+fn union_disc_field(prefix_fields: &[WriterField], disc_name: &str) -> Option<WriterField> {
+    let disc = prefix_fields.iter().find(|f| f.name == disc_name)?;
+    match &disc.kind {
+        FieldKind::Primitive { primitive, endian } => Some(WriterField {
+            name: disc.name.clone(),
+            kind: FieldKind::Primitive {
+                primitive: *primitive,
+                endian: *endian,
+            },
+            bit_offset: disc.bit_offset,
+        }),
+        FieldKind::BitField { width, bit_order } => Some(WriterField {
+            name: disc.name.clone(),
+            kind: FieldKind::BitField {
+                width: *width,
+                bit_order: *bit_order,
+            },
+            bit_offset: disc.bit_offset,
+        }),
+        FieldKind::ByteArray { .. } | FieldKind::StructRef { .. } | FieldKind::Constant { .. } => {
+            None
+        }
+    }
+}
+
+fn matcher_disc_values(
+    matcher: &ast::UnionMatcher<'_>,
+    num_args: usize,
+) -> Option<Option<Vec<proc_macro2::Literal>>> {
+    match matcher {
+        ast::UnionMatcher::Literal(ast::Literal::Int(int_lit)) => {
+            if num_args != 1 {
+                return None;
+            }
+            Some(Some(vec![proc_macro2::Literal::u128_unsuffixed(
+                int_lit.value as u128,
+            )]))
+        }
+        ast::UnionMatcher::Literal(_) => None,
+        ast::UnionMatcher::Wildcard => Some(None),
+        ast::UnionMatcher::Tuple(elements) => {
+            if elements.len() != num_args {
+                return None;
+            }
+            let mut values = Vec::with_capacity(elements.len());
+            for element in elements {
+                match element {
+                    ast::UnionMatcher::Literal(ast::Literal::Int(int_lit)) => {
+                        values.push(proc_macro2::Literal::u128_unsuffixed(int_lit.value as u128))
+                    }
+                    _ => return None,
+                }
+            }
+            Some(Some(values))
+        }
+    }
+}
+
 fn build_union_layout(
     union: &ast::Union<'_>,
     field_name: &str,
@@ -915,59 +973,44 @@ fn build_union_layout(
     struct_inherited: Inherited,
     writer_sizes: &HashMap<&str, usize>,
 ) -> Option<UnionLayout> {
-    let [disc_name] = union.args.as_slice() else {
+    let num_args = union.args.len();
+    if num_args == 0 {
         return None;
-    };
-    let disc = prefix_fields.iter().find(|f| f.name == disc_name)?;
-    let disc = match &disc.kind {
-        FieldKind::Primitive { primitive, endian } => WriterField {
-            name: disc.name.clone(),
-            kind: FieldKind::Primitive {
-                primitive: *primitive,
-                endian: *endian,
-            },
-            bit_offset: disc.bit_offset,
-        },
-        FieldKind::BitField { width, bit_order } => WriterField {
-            name: disc.name.clone(),
-            kind: FieldKind::BitField {
-                width: *width,
-                bit_order: *bit_order,
-            },
-            bit_offset: disc.bit_offset,
-        },
-        FieldKind::ByteArray { .. } | FieldKind::StructRef { .. } | FieldKind::Constant { .. } => {
-            return None;
-        }
-    };
+    }
+    let mut discs = Vec::with_capacity(num_args);
+    for disc_name in &union.args {
+        discs.push(union_disc_field(&prefix_fields, disc_name)?);
+    }
+    let wildcard_writable =
+        discs.len() == 1 && matches!(discs[0].kind, FieldKind::Primitive { .. });
 
     let mut variants = Vec::with_capacity(union.variants.len());
     for variant in &union.variants {
-        let [matcher] = variant.matchers.as_slice() else {
-            return None;
-        };
-        let disc_value = match matcher {
-            ast::UnionMatcher::Literal(ast::Literal::Int(int_lit)) => {
-                proc_macro2::Literal::u128_unsuffixed(int_lit.value as u128)
-            }
-            ast::UnionMatcher::Literal(_) | ast::UnionMatcher::Tuple(_) => return None,
-            ast::UnionMatcher::Wildcard => continue,
-        };
         let inline = match &variant.body {
             ast::UnionBody::NamedInline(inline) => inline,
-            ast::UnionBody::Error(..) => return None,
+            ast::UnionBody::Error(..) => continue,
         };
-        let variant_inherited = match ParsedAttrs::parse(&inline.attributes) {
-            Ok(attrs) if struct_attrs_supported(&attrs) => attrs.merge_inherited(struct_inherited),
-            _ => return None,
+        let [matcher] = variant.matchers.as_slice() else {
+            let disc_values = first_matcher_disc_values(&variant.matchers, num_args)?;
+            push_union_variant(
+                &mut variants,
+                inline,
+                disc_values,
+                wildcard_writable,
+                struct_inherited,
+                writer_sizes,
+            )?;
+            continue;
         };
-        let fields = classify_fixed_items(&inline.items, variant_inherited, writer_sizes)?;
-        variants.push(UnionVariantInfo {
-            name: format_ident!("{}", inline.name),
-            reader_variant: format_ident!("{}", inline.name),
-            fields,
-            disc_value,
-        });
+        let disc_values = matcher_disc_values(matcher, num_args)?;
+        push_union_variant(
+            &mut variants,
+            inline,
+            disc_values,
+            wildcard_writable,
+            struct_inherited,
+            writer_sizes,
+        )?;
     }
 
     if variants.is_empty() {
@@ -977,10 +1020,116 @@ fn build_union_layout(
     Some(UnionLayout {
         field_name: field_name.to_string(),
         prefix_fields,
-        disc,
+        discs,
         prefix_size: bit_offset / 8,
         variants,
     })
+}
+
+fn is_disc_field(discs: &[WriterField], name: &syn::Ident) -> bool {
+    discs.iter().any(|disc| disc.name == *name)
+}
+
+fn variant_disc_writes(
+    variant: &UnionVariantInfo,
+    discs: &[WriterField],
+    target: &TokenStream,
+) -> TokenStream {
+    match &variant.disc_values {
+        None => TokenStream::new(),
+        Some(values) => {
+            let writes = discs.iter().zip(values).map(|(disc, value)| {
+                let disc_ty = field_type(disc);
+                let disc_body = setter_body_into(disc, target);
+                quote! {
+                    let value: #disc_ty = #value;
+                    #disc_body
+                }
+            });
+            quote! { #(#writes)* }
+        }
+    }
+}
+
+fn union_variant_decl(variant: &UnionVariantInfo, discs: &[WriterField]) -> TokenStream {
+    let reader_variant = &variant.reader_variant;
+    let variant_content = format_ident!("{}Content", variant.name);
+    if variant.disc_values.is_none() {
+        let disc_ty = field_type(&discs[0]);
+        quote! { #reader_variant { discriminant: #disc_ty, content: #variant_content } }
+    } else {
+        quote! { #reader_variant(#variant_content) }
+    }
+}
+
+fn union_variant_size_pat(body_enum: &syn::Ident, variant: &UnionVariantInfo) -> TokenStream {
+    let reader_variant = &variant.reader_variant;
+    if variant.disc_values.is_none() {
+        quote! { #body_enum::#reader_variant { .. } }
+    } else {
+        quote! { #body_enum::#reader_variant(_) }
+    }
+}
+
+fn union_variant_write_pat(
+    body_enum: &syn::Ident,
+    variant: &UnionVariantInfo,
+    discs: &[WriterField],
+    target: &TokenStream,
+) -> (TokenStream, TokenStream, TokenStream) {
+    let reader_variant = &variant.reader_variant;
+    if variant.disc_values.is_none() {
+        let disc = &discs[0];
+        let disc_ty = field_type(disc);
+        let disc_body = setter_body_into(disc, target);
+        let pat = quote! { #body_enum::#reader_variant { discriminant, content } };
+        let disc_write = quote! { let value: #disc_ty = *discriminant; #disc_body };
+        (pat, quote! { content }, disc_write)
+    } else {
+        let disc_writes = variant_disc_writes(variant, discs, target);
+        (quote! { #body_enum::#reader_variant(c) }, quote! { c }, disc_writes)
+    }
+}
+
+fn first_matcher_disc_values(
+    matchers: &[ast::UnionMatcher<'_>],
+    num_args: usize,
+) -> Option<Option<Vec<proc_macro2::Literal>>> {
+    let mut chosen: Option<Vec<proc_macro2::Literal>> = None;
+    for matcher in matchers {
+        let values = matcher_disc_values(matcher, num_args)?;
+        if chosen.is_none()
+            && let Some(values) = values
+        {
+            chosen = Some(values);
+        }
+    }
+    Some(chosen)
+}
+
+fn push_union_variant(
+    variants: &mut Vec<UnionVariantInfo>,
+    inline: &ast::NamedInlineStruct<'_>,
+    disc_values: Option<Vec<proc_macro2::Literal>>,
+    wildcard_writable: bool,
+    struct_inherited: Inherited,
+    writer_sizes: &HashMap<&str, usize>,
+) -> Option<()> {
+    let variant_inherited = match ParsedAttrs::parse(&inline.attributes) {
+        Ok(attrs) if struct_attrs_supported(&attrs) => attrs.merge_inherited(struct_inherited),
+        _ => return None,
+    };
+    let fields = classify_fixed_items(&inline.items, variant_inherited, writer_sizes)?;
+    if disc_values.is_none() && (fields.is_empty() || !wildcard_writable) {
+        return Some(());
+    }
+    variants.push(UnionVariantInfo {
+        name: format_ident!("{}", inline.name),
+        reader_variant: format_ident!("{}", inline.name),
+        fields,
+        disc_values,
+    });
+    Some(())
 }
 
 fn classify_union(
@@ -2221,7 +2370,7 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
     let body_field = format_ident!("{}", layout.field_name);
 
     let prefix_size = layout.prefix_size;
-    let disc_name = &layout.disc.name;
+    let discs = &layout.discs;
 
     let mut variant_entities = TokenStream::new();
     for variant in &layout.variants {
@@ -2229,17 +2378,16 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
         variant_entities.extend(tokens);
     }
 
-    let enum_variants = layout.variants.iter().map(|variant| {
-        let reader_variant = &variant.reader_variant;
-        let variant_content = format_ident!("{}Content", variant.name);
-        quote! { #reader_variant(#variant_content) }
-    });
+    let enum_variants = layout
+        .variants
+        .iter()
+        .map(|variant| union_variant_decl(variant, discs));
 
     let prefix_setters = layout
         .prefix_fields
         .iter()
         .filter(|field| {
-            field.name != *disc_name && !matches!(field.kind, FieldKind::Constant { .. })
+            !is_disc_field(discs, &field.name) && !matches!(field.kind, FieldKind::Constant { .. })
         })
         .map(|field| match &field.kind {
             FieldKind::ByteArray { len } => {
@@ -2279,7 +2427,7 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
     let prefix_write_calls = layout
         .prefix_fields
         .iter()
-        .filter(|field| field.name != *disc_name)
+        .filter(|field| !is_disc_field(discs, &field.name))
         .map(|field| {
             let field_name = &field.name;
             match &field.kind {
@@ -2304,7 +2452,7 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
         .prefix_fields
         .iter()
         .filter(|field| {
-            field.name != *disc_name && !matches!(field.kind, FieldKind::Constant { .. })
+            !is_disc_field(discs, &field.name) && !matches!(field.kind, FieldKind::Constant { .. })
         })
         .map(|field| {
             let field_name = &field.name;
@@ -2313,25 +2461,21 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
         });
 
     let encoded_len_arms = layout.variants.iter().map(|variant| {
-        let reader_variant = &variant.reader_variant;
         let variant_writer = format_ident!("{}Writer", variant.name);
-        quote! { #body_enum::#reader_variant(_) => #variant_writer::SIZE }
+        let pat = union_variant_size_pat(&body_enum, variant);
+        quote! { #pat => #variant_writer::SIZE }
     });
 
-    let disc_ty = field_type(&layout.disc);
     let disc_target = quote! { w.data };
-    let disc_body = setter_body_into(&layout.disc, &disc_target);
 
     let write_arms = layout.variants.iter().map(|variant| {
-        let reader_variant = &variant.reader_variant;
         let variant_writer = format_ident!("{}Writer", variant.name);
-        let disc_value = &variant.disc_value;
+        let (pat, c, disc_writes) = union_variant_write_pat(&body_enum, variant, discs, &disc_target);
         quote! {
-            #body_enum::#reader_variant(c) => {
-                let value: #disc_ty = #disc_value;
-                #disc_body
+            #pat => {
+                #disc_writes
                 let end = #prefix_size + #variant_writer::SIZE;
-                #variant_writer::write_into(&mut w.data[#prefix_size..end], c)?;
+                #variant_writer::write_into(&mut w.data[#prefix_size..end], #c)?;
             }
         }
     });
@@ -2396,7 +2540,7 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
 
     let prefix_size = union.prefix_size;
     let region_offset = layout.region_offset;
-    let disc_name = &union.disc.name;
+    let discs = &union.discs;
     let len_field_str = &layout.len_field_str;
     let len_ty = crate::match_primitive(&layout.len_primitive).1;
     let len_field_qualified = format!("{}.{}", name, len_field_str);
@@ -2407,17 +2551,16 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
         variant_entities.extend(tokens);
     }
 
-    let enum_variants = union.variants.iter().map(|variant| {
-        let reader_variant = &variant.reader_variant;
-        let variant_content = format_ident!("{}Content", variant.name);
-        quote! { #reader_variant(#variant_content) }
-    });
+    let enum_variants = union
+        .variants
+        .iter()
+        .map(|variant| union_variant_decl(variant, discs));
 
     let prefix_setters = union
         .prefix_fields
         .iter()
         .filter(|field| {
-            field.name != *disc_name
+            !is_disc_field(discs, &field.name)
                 && field.name != *len_field_str
                 && !matches!(field.kind, FieldKind::Constant { .. })
         })
@@ -2459,7 +2602,7 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
     let prefix_write_calls = union
         .prefix_fields
         .iter()
-        .filter(|field| field.name != *disc_name && field.name != *len_field_str)
+        .filter(|field| !is_disc_field(discs, &field.name) && field.name != *len_field_str)
         .map(|field| {
             let field_name = &field.name;
             match &field.kind {
@@ -2484,7 +2627,7 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
         .prefix_fields
         .iter()
         .filter(|field| {
-            field.name != *disc_name
+            !is_disc_field(discs, &field.name)
                 && field.name != *len_field_str
                 && !matches!(field.kind, FieldKind::Constant { .. })
         })
@@ -2495,14 +2638,12 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
         });
 
     let encoded_len_arms = union.variants.iter().map(|variant| {
-        let reader_variant = &variant.reader_variant;
         let variant_writer = format_ident!("{}Writer", variant.name);
-        quote! { #body_enum::#reader_variant(_) => #variant_writer::SIZE }
+        let pat = union_variant_size_pat(&body_enum, variant);
+        quote! { #pat => #variant_writer::SIZE }
     });
 
-    let disc_ty = field_type(&union.disc);
     let disc_target = quote! { w.data };
-    let disc_body = setter_body_into(&union.disc, &disc_target);
 
     let write_len = {
         let len_offset = layout.len_offset;
@@ -2539,17 +2680,15 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
     };
 
     let write_arms = union.variants.iter().map(|variant| {
-        let reader_variant = &variant.reader_variant;
         let variant_writer = format_ident!("{}Writer", variant.name);
-        let disc_value = &variant.disc_value;
+        let (pat, c, disc_writes) = union_variant_write_pat(&body_enum, variant, discs, &disc_target);
         quote! {
-            #body_enum::#reader_variant(c) => {
-                let value: #disc_ty = #disc_value;
-                #disc_body
+            #pat => {
+                #disc_writes
                 let region_len = #variant_writer::SIZE;
                 #write_len
                 let end = #region_offset + region_len;
-                #variant_writer::write_into(&mut w.data[#region_offset..end], c)?;
+                #variant_writer::write_into(&mut w.data[#region_offset..end], #c)?;
             }
         }
     });

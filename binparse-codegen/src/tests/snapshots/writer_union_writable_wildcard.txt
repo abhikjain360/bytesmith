@@ -1,0 +1,846 @@
+#[allow(non_camel_case_types)]
+pub enum Packet_body<'a> {
+    Connect(Packet_body_Connect<'a>),
+    Generic(Packet_body_Generic<'a>),
+}
+
+#[allow(non_camel_case_types)]
+pub struct Packet_body_Connect<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
+#[allow(non_camel_case_types)]
+pub struct Packet_body_Generic<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
+impl<'a> ::binparse::Dissect<'a> for Packet<'a> {
+    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        Packet::field_tree(self)
+    }
+    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        Packet::handoff(self)
+    }
+}
+
+impl<'a> ::binparse::Dissect<'a> for Packet_body_Connect<'a> {
+    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        Packet_body_Connect::field_tree(self)
+    }
+    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        Packet_body_Connect::handoff(self)
+    }
+}
+
+impl<'a> ::binparse::Dissect<'a> for Packet_body_Generic<'a> {
+    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        Packet_body_Generic::field_tree(self)
+    }
+    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        Packet_body_Generic::handoff(self)
+    }
+}
+
+impl<'a> ConnectWriter<'a> {
+    pub const SIZE: usize = 2usize;
+    pub fn new(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn set_keep_alive(&mut self, value: u16) -> &mut Self {
+        self.data[0usize..2usize].copy_from_slice(&value.to_be_bytes());
+        self
+    }
+    pub fn write_into(
+        data: &'a mut [u8],
+        content: &ConnectContent,
+    ) -> ::binparse::WriteResult<usize> {
+        let mut w = Self::new(data)?;
+        w.set_keep_alive(content.keep_alive);
+        Ok(Self::SIZE)
+    }
+    pub fn to_vec(content: &ConnectContent) -> ::std::vec::Vec<u8> {
+        let mut buf = ::std::vec![0u8; Self::SIZE];
+        let _ = ConnectWriter::write_into(&mut buf, content);
+        buf
+    }
+}
+
+impl<'a> GenericWriter<'a> {
+    pub const SIZE: usize = 2usize;
+    pub fn new(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn set_a(&mut self, value: u8) -> &mut Self {
+        self.data[0usize] = value;
+        self
+    }
+    pub fn set_b(&mut self, value: u8) -> &mut Self {
+        self.data[1usize] = value;
+        self
+    }
+    pub fn write_into(
+        data: &'a mut [u8],
+        content: &GenericContent,
+    ) -> ::binparse::WriteResult<usize> {
+        let mut w = Self::new(data)?;
+        w.set_a(content.a);
+        w.set_b(content.b);
+        Ok(Self::SIZE)
+    }
+    pub fn to_vec(content: &GenericContent) -> ::std::vec::Vec<u8> {
+        let mut buf = ::std::vec![0u8; Self::SIZE];
+        let _ = GenericWriter::write_into(&mut buf, content);
+        buf
+    }
+}
+
+impl<'a> Packet<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
+        let me = Self { data };
+        me.kind_fatal_check()?;
+        me.kind_recoverable_check()?;
+        me.body_fatal_check()?;
+        me.body_recoverable_check()?;
+        let len = me.body_end_offset();
+        if len.bit != 0 {
+            return Err(::binparse::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::binparse::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = self;
+            children.push(me.kind_present_node());
+        }
+        {
+            let me = self;
+            children.push(me.body_present_node());
+        }
+        let mut root = ::binparse::FieldNode::new(
+                "Packet",
+                "Packet",
+                0usize..self.body_end_offset().bits(),
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
+        let me = Self { data };
+        let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::binparse::ParseError> = None;
+        if fatal.is_none() {
+            match me.kind_fatal_check() {
+                Err(error) => {
+                    let start = me.kind_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "kind",
+                                    "u8",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.kind_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.kind_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "kind",
+                                            "u8",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.kind_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.body_fatal_check() {
+                Err(error) => {
+                    let start = me.body_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "body",
+                                    "union",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.body_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.body_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "body",
+                                            "union",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.body_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::binparse::FieldNode::new(
+                "Packet",
+                "Packet",
+                0usize..root_end,
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::binparse::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn kind_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.kind_bit_range();
+        ::binparse::FieldNode::new(
+            "kind",
+            "u8",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.kind())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn kind(&self) -> u8 {
+        self.data[0usize]
+    }
+    pub fn kind_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+    }
+    pub fn kind_start_offset(&self) -> binparse::Len {
+        binparse::Len::ZERO
+    }
+    pub fn kind_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.kind_start_offset().bits()..self.kind_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn kind_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.kind_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn kind_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn body_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.body_bit_range();
+        match self.body() {
+            Ok(Packet_body::Connect(value)) => {
+                let inner = value
+                    .field_tree()
+                    .renamed("Connect")
+                    .shifted(bit_range.start);
+                ::binparse::FieldNode::new(
+                        "body",
+                        "union",
+                        bit_range.clone(),
+                        ::binparse::Value::UnionVariant("Connect"),
+                    )
+                    .with_children(::std::vec![inner])
+            }
+            Ok(Packet_body::Generic(value)) => {
+                let inner = value
+                    .field_tree()
+                    .renamed("Generic")
+                    .shifted(bit_range.start);
+                ::binparse::FieldNode::new(
+                        "body",
+                        "union",
+                        bit_range.clone(),
+                        ::binparse::Value::UnionVariant("Generic"),
+                    )
+                    .with_children(::std::vec![inner])
+            }
+            Err(error) => {
+                ::binparse::FieldNode::new(
+                        "body",
+                        "union",
+                        bit_range.clone(),
+                        ::binparse::Value::Opaque,
+                    )
+                    .with_status(::binparse::Status::Error(error))
+            }
+        }
+    }
+    fn body_union_check(&self) -> Result<(), ::binparse::ParseError> {
+        match self.kind() as usize {
+            1 => {
+                Packet_body_Connect::parse(&self.data[(1usize).min(self.data.len())..])?;
+            }
+            _ => {
+                Packet_body_Generic::parse(&self.data[(1usize).min(self.data.len())..])?;
+            }
+        }
+        Ok(())
+    }
+    #[allow(clippy::identity_op)]
+    pub fn body(&self) -> ::binparse::ParseResult<Packet_body<'a>> {
+        match self.kind() as usize {
+            1 => {
+                Packet_body_Connect::parse(&self.data[1usize..])
+                    .map(|(value, _)| Packet_body::Connect(value))
+            }
+            _ => {
+                Packet_body_Generic::parse(&self.data[1usize..])
+                    .map(|(value, _)| Packet_body::Generic(value))
+            }
+        }
+    }
+    pub fn body_end_offset(&self) -> binparse::Len {
+        ::binparse::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+            + ({
+                match self.kind() as usize {
+                    1 => {
+                        ::binparse::Len {
+                            byte: 2usize,
+                            bit: 0usize,
+                        }
+                    }
+                    _ => {
+                        ::binparse::Len {
+                            byte: 2usize,
+                            bit: 0usize,
+                        }
+                    }
+                }
+            })
+    }
+    pub fn body_start_offset(&self) -> binparse::Len {
+        self.kind_end_offset()
+    }
+    pub fn body_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.body_start_offset().bits()..self.body_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn body_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        self.body_union_check()?;
+        {
+            let len = self.body_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn body_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+}
+
+impl<'a> PacketWriter<'a> {
+    pub fn encoded_len(content: &PacketContent) -> usize {
+        1usize
+            + match &content.body {
+                PacketBodyContent::Connect(_) => ConnectWriter::SIZE,
+                PacketBodyContent::Generic { .. } => GenericWriter::SIZE,
+            }
+    }
+    pub fn write_into(
+        data: &'a mut [u8],
+        content: &PacketContent,
+    ) -> ::binparse::WriteResult<usize> {
+        let need = Self::encoded_len(content);
+        if data.len() < need {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: need,
+                got: data.len(),
+            });
+        }
+        let mut w = Self { data };
+        match &content.body {
+            PacketBodyContent::Connect(c) => {
+                let value: u8 = 1;
+                w.data[0usize] = value;
+                let end = 1usize + ConnectWriter::SIZE;
+                ConnectWriter::write_into(&mut w.data[1usize..end], c)?;
+            }
+            PacketBodyContent::Generic { discriminant, content } => {
+                let value: u8 = *discriminant;
+                w.data[0usize] = value;
+                let end = 1usize + GenericWriter::SIZE;
+                GenericWriter::write_into(&mut w.data[1usize..end], content)?;
+            }
+        }
+        Ok(need)
+    }
+    pub fn to_vec(content: &PacketContent) -> ::std::vec::Vec<u8> {
+        let mut buf = ::std::vec![0u8; Self::encoded_len(content)];
+        let _ = PacketWriter::write_into(&mut buf, content);
+        buf
+    }
+}
+
+impl<'a> Packet_body_Connect<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
+        let me = Self { data };
+        me.keep_alive_fatal_check()?;
+        me.keep_alive_recoverable_check()?;
+        let len = me.keep_alive_end_offset();
+        if len.bit != 0 {
+            return Err(::binparse::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::binparse::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = self;
+            children.push(me.keep_alive_present_node());
+        }
+        let mut root = ::binparse::FieldNode::new(
+                "Packet_body_Connect",
+                "Packet_body_Connect",
+                0usize..self.keep_alive_end_offset().bits(),
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
+        let me = Self { data };
+        let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::binparse::ParseError> = None;
+        if fatal.is_none() {
+            match me.keep_alive_fatal_check() {
+                Err(error) => {
+                    let start = me.keep_alive_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "keep_alive",
+                                    "u16",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.keep_alive_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.keep_alive_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "keep_alive",
+                                            "u16",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.keep_alive_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::binparse::FieldNode::new(
+                "Packet_body_Connect",
+                "Packet_body_Connect",
+                0usize..root_end,
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::binparse::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn keep_alive_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.keep_alive_bit_range();
+        ::binparse::FieldNode::new(
+            "keep_alive",
+            "u16",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.keep_alive())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn keep_alive(&self) -> u16 {
+        u16::from_be_bytes(self.data[0usize..2usize].try_into().unwrap())
+    }
+    pub fn keep_alive_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+    }
+    pub fn keep_alive_start_offset(&self) -> binparse::Len {
+        binparse::Len::ZERO
+    }
+    pub fn keep_alive_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.keep_alive_start_offset().bits()..self.keep_alive_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn keep_alive_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.keep_alive_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn keep_alive_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+}
+
+impl<'a> Packet_body_Generic<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
+        let me = Self { data };
+        me.a_fatal_check()?;
+        me.a_recoverable_check()?;
+        me.b_fatal_check()?;
+        me.b_recoverable_check()?;
+        let len = me.b_end_offset();
+        if len.bit != 0 {
+            return Err(::binparse::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::binparse::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = self;
+            children.push(me.a_present_node());
+        }
+        {
+            let me = self;
+            children.push(me.b_present_node());
+        }
+        let mut root = ::binparse::FieldNode::new(
+                "Packet_body_Generic",
+                "Packet_body_Generic",
+                0usize..self.b_end_offset().bits(),
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
+        let me = Self { data };
+        let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::binparse::ParseError> = None;
+        if fatal.is_none() {
+            match me.a_fatal_check() {
+                Err(error) => {
+                    let start = me.a_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "a",
+                                    "u8",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.a_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.a_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "a",
+                                            "u8",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.a_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.b_fatal_check() {
+                Err(error) => {
+                    let start = me.b_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "b",
+                                    "u8",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.b_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.b_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "b",
+                                            "u8",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.b_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::binparse::FieldNode::new(
+                "Packet_body_Generic",
+                "Packet_body_Generic",
+                0usize..root_end,
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::binparse::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn a_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.a_bit_range();
+        ::binparse::FieldNode::new(
+            "a",
+            "u8",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.a())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn a(&self) -> u8 {
+        self.data[0usize]
+    }
+    pub fn a_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+    }
+    pub fn a_start_offset(&self) -> binparse::Len {
+        binparse::Len::ZERO
+    }
+    pub fn a_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.a_start_offset().bits()..self.a_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.a_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn b_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.b_bit_range();
+        ::binparse::FieldNode::new(
+            "b",
+            "u8",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.b())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn b(&self) -> u8 {
+        self.data[1usize]
+    }
+    pub fn b_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+    }
+    pub fn b_start_offset(&self) -> binparse::Len {
+        self.a_end_offset()
+    }
+    pub fn b_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.b_start_offset().bits()..self.b_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn b_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.b_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn b_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+}
+
+pub enum PacketBodyContent {
+    Connect(ConnectContent),
+    Generic { discriminant: u8, content: GenericContent },
+}
+
+pub struct ConnectContent {
+    pub keep_alive: u16,
+}
+
+pub struct ConnectWriter<'a> {
+    data: &'a mut [u8],
+}
+
+pub struct GenericContent {
+    pub a: u8,
+    pub b: u8,
+}
+
+pub struct GenericWriter<'a> {
+    data: &'a mut [u8],
+}
+
+pub struct Packet<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
+pub struct PacketContent {
+    pub body: PacketBodyContent,
+}
+
+pub struct PacketWriter<'a> {
+    data: &'a mut [u8],
+}
+

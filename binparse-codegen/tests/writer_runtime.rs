@@ -1366,3 +1366,167 @@ struct Opt {
     "#;
     run_round_trip("conditional-no-else", dsl, test_body);
 }
+
+#[test]
+fn generated_writer_union_multi_literal_discriminant_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Packet {
+    kind: u8,
+    body: union(kind) {
+        1 | 2 => Hello { v: u16 },
+        3 => Bye { code: u8 },
+        _ => Unknown { },
+    },
+}
+"#;
+    let test_body = r#"
+        let content = PacketContent {
+            body: PacketBodyContent::Hello(HelloContent { v: 0xABCD }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x01, 0xAB, 0xCD]);
+
+        let (packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.kind(), 1);
+        match packet.body().unwrap() {
+            Packet_body::Hello(hello) => assert_eq!(hello.v(), 0xABCD),
+            _ => panic!("expected Hello variant"),
+        }
+
+        let content = PacketContent {
+            body: PacketBodyContent::Bye(ByeContent { code: 0x09 }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x03, 0x09]);
+        let (packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.kind(), 3);
+        match packet.body().unwrap() {
+            Packet_body::Bye(bye) => assert_eq!(bye.code(), 0x09),
+            _ => panic!("expected Bye variant"),
+        }
+    "#;
+    run_round_trip("union-multi-literal", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_union_tuple_discriminant_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Packet {
+    a: u8,
+    b: u8,
+    body: union(a, b) {
+        (0, 0) => Both { v: u16 },
+        (1, 2) => OneTwo { code: u8 },
+        _ => Unknown { },
+    },
+}
+"#;
+    let test_body = r#"
+        let content = PacketContent {
+            body: PacketBodyContent::Both(BothContent { v: 0x1234 }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x00, 0x00, 0x12, 0x34]);
+        let (packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.a(), 0);
+        assert_eq!(packet.b(), 0);
+        match packet.body().unwrap() {
+            Packet_body::Both(both) => assert_eq!(both.v(), 0x1234),
+            _ => panic!("expected Both variant"),
+        }
+
+        let content = PacketContent {
+            body: PacketBodyContent::OneTwo(OneTwoContent { code: 0x77 }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x01, 0x02, 0x77]);
+        let (packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.a(), 1);
+        assert_eq!(packet.b(), 2);
+        match packet.body().unwrap() {
+            Packet_body::OneTwo(one_two) => assert_eq!(one_two.code(), 0x77),
+            _ => panic!("expected OneTwo variant"),
+        }
+    "#;
+    run_round_trip("union-tuple-disc", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_union_writable_wildcard_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Packet {
+    kind: u8,
+    body: union(kind) {
+        1 => Connect { keep_alive: u16 },
+        _ => Generic { a: u8, b: u8 },
+    },
+}
+"#;
+    let test_body = r#"
+        let content = PacketContent {
+            body: PacketBodyContent::Generic {
+                discriminant: 99,
+                content: GenericContent { a: 0xAA, b: 0xBB },
+            },
+        };
+        let mut buf = vec![0xFFu8; PacketWriter::encoded_len(&content)];
+        let n = PacketWriter::write_into(&mut buf, &content).unwrap();
+        assert_eq!(n, 3);
+        assert_eq!(buf, vec![99, 0xAA, 0xBB]);
+        let (packet, _) = Packet::parse(&buf).unwrap();
+        assert_eq!(packet.kind(), 99);
+        match packet.body().unwrap() {
+            Packet_body::Generic(generic) => {
+                assert_eq!(generic.a(), 0xAA);
+                assert_eq!(generic.b(), 0xBB);
+            }
+            _ => panic!("expected Generic variant"),
+        }
+
+        let content = PacketContent {
+            body: PacketBodyContent::Connect(ConnectContent { keep_alive: 60 }),
+        };
+        let mut buf = vec![0xFFu8; PacketWriter::encoded_len(&content)];
+        let _ = PacketWriter::write_into(&mut buf, &content).unwrap();
+        assert_eq!(buf, vec![0x01, 0x00, 0x3C]);
+        let (packet, _) = Packet::parse(&buf).unwrap();
+        assert_eq!(packet.kind(), 1);
+        match packet.body().unwrap() {
+            Packet_body::Connect(connect) => assert_eq!(connect.keep_alive(), 60),
+            _ => panic!("expected Connect variant"),
+        }
+    "#;
+    run_round_trip("union-writable-wildcard", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_union_error_arm_round_trips() {
+    let dsl = r#"
+error { BadKind { got: u8 }, }
+@endian(big)
+struct Packet {
+    kind: u8,
+    body: union(kind) {
+        1 => Connect { keep_alive: u16 },
+        _ => @error(BadKind { got: kind }),
+    },
+}
+"#;
+    let test_body = r#"
+        let content = PacketContent {
+            body: PacketBodyContent::Connect(ConnectContent { keep_alive: 90 }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x01, 0x00, 0x5A]);
+        let (packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.kind(), 1);
+        match packet.body().unwrap() {
+            Packet_body::Connect(connect) => assert_eq!(connect.keep_alive(), 90),
+            _ => panic!("expected Connect variant"),
+        }
+    "#;
+    run_round_trip("union-error-arm", dsl, test_body);
+}
