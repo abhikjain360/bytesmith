@@ -185,7 +185,10 @@ pub(crate) fn generate<'a>(
                                 #struct_name { data: &self.data[#clamped_start..], #variant_inits }
                             }
                         };
-                        quote! { #ctor.#last_offset_getter() }
+                        quote! {{
+                            let mut value = #ctor;
+                            value.#last_offset_getter()
+                        }}
                     }
                 };
                 len_match_arms.extend(quote! {
@@ -200,7 +203,7 @@ pub(crate) fn generate<'a>(
 
                 let variant_name = inline_struct.name.to_string();
                 tree_arms.extend(quote! {
-                    Ok(#enum_name::#variant_ident(value)) => {
+                    Ok(#enum_name::#variant_ident(mut value)) => {
                         let inner = value.field_tree().renamed(#variant_name).shifted(bit_range.start);
                         ::binparse::FieldNode::new(
                                 #field_name_str,
@@ -285,7 +288,7 @@ pub(crate) fn generate<'a>(
 
     let check_fn_name = format_ident!("{}_union_check", field_name);
     accum.helper_fns.extend(quote! {
-        fn #check_fn_name(&self) -> Result<(), ::binparse::ParseError> {
+        fn #check_fn_name(&mut self) -> Result<(), ::binparse::ParseError> {
             match #match_expr {
                 #check_match_arms
             }
@@ -314,7 +317,7 @@ pub(crate) fn generate<'a>(
             let (vis, dead_code) = getter_visibility(attrs);
             accum.helper_fns.extend(quote! {
                 #dead_code
-                #vis fn #rest_fn_name(&self) -> ::binparse::ParseResult<&'a [u8]> {
+                #vis fn #rest_fn_name(&mut self) -> ::binparse::ParseResult<&'a [u8]> {
                     match #match_expr {
                         #rest_match_arms
                     }

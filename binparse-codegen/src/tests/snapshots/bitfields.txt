@@ -1,15 +1,15 @@
 impl<'a> ::binparse::Dissect<'a> for IpFlags<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         IpFlags::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         IpFlags::handoff(self)
     }
 }
 
 impl<'a> IpFlags<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.version_fatal_check()?;
         me.version_recoverable_check()?;
         me.ihl_fatal_check()?;
@@ -30,22 +30,22 @@ impl<'a> IpFlags<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.version_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.ihl_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.dscp_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.ecn_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -59,7 +59,7 @@ impl<'a> IpFlags<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -228,11 +228,11 @@ impl<'a> IpFlags<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn version_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn version_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.version_bit_range();
         ::binparse::FieldNode::new(
             "version",
@@ -242,23 +242,23 @@ impl<'a> IpFlags<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn version(&self) -> u8 {
+    pub fn version(&mut self) -> u8 {
         (self.data[0usize] >> 4usize) & 15u8
     }
-    pub fn version_end_offset(&self) -> binparse::Len {
+    pub fn version_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 0usize,
             bit: 4usize,
         }
     }
-    pub fn version_start_offset(&self) -> binparse::Len {
+    pub fn version_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn version_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn version_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.version_start_offset().bits()..self.version_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn version_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn version_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.version_end_offset();
             let expected = len.byte_ceil();
@@ -272,11 +272,11 @@ impl<'a> IpFlags<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn version_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn version_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ihl_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn ihl_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.ihl_bit_range();
         ::binparse::FieldNode::new(
             "ihl",
@@ -286,23 +286,23 @@ impl<'a> IpFlags<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn ihl(&self) -> u8 {
+    pub fn ihl(&mut self) -> u8 {
         (self.data[0usize] >> 0usize) & 15u8
     }
-    pub fn ihl_end_offset(&self) -> binparse::Len {
+    pub fn ihl_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 0usize,
         }
     }
-    pub fn ihl_start_offset(&self) -> binparse::Len {
+    pub fn ihl_start_offset(&mut self) -> binparse::Len {
         self.version_end_offset()
     }
-    pub fn ihl_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn ihl_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.ihl_start_offset().bits()..self.ihl_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn ihl_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn ihl_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.ihl_end_offset();
             let expected = len.byte_ceil();
@@ -316,11 +316,11 @@ impl<'a> IpFlags<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ihl_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn ihl_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn dscp_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn dscp_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.dscp_bit_range();
         ::binparse::FieldNode::new(
             "dscp",
@@ -330,23 +330,23 @@ impl<'a> IpFlags<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn dscp(&self) -> u8 {
+    pub fn dscp(&mut self) -> u8 {
         (self.data[1usize] >> 2usize) & 63u8
     }
-    pub fn dscp_end_offset(&self) -> binparse::Len {
+    pub fn dscp_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 6usize,
         }
     }
-    pub fn dscp_start_offset(&self) -> binparse::Len {
+    pub fn dscp_start_offset(&mut self) -> binparse::Len {
         self.ihl_end_offset()
     }
-    pub fn dscp_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn dscp_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.dscp_start_offset().bits()..self.dscp_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn dscp_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn dscp_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.dscp_end_offset();
             let expected = len.byte_ceil();
@@ -360,11 +360,11 @@ impl<'a> IpFlags<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn dscp_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn dscp_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ecn_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn ecn_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.ecn_bit_range();
         ::binparse::FieldNode::new(
             "ecn",
@@ -374,23 +374,23 @@ impl<'a> IpFlags<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn ecn(&self) -> u8 {
+    pub fn ecn(&mut self) -> u8 {
         (self.data[1usize] >> 0usize) & 3u8
     }
-    pub fn ecn_end_offset(&self) -> binparse::Len {
+    pub fn ecn_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 2usize,
             bit: 0usize,
         }
     }
-    pub fn ecn_start_offset(&self) -> binparse::Len {
+    pub fn ecn_start_offset(&mut self) -> binparse::Len {
         self.dscp_end_offset()
     }
-    pub fn ecn_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn ecn_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.ecn_start_offset().bits()..self.ecn_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn ecn_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn ecn_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.ecn_end_offset();
             let expected = len.byte_ceil();
@@ -404,7 +404,7 @@ impl<'a> IpFlags<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ecn_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn ecn_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

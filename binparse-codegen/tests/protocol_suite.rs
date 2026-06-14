@@ -232,7 +232,7 @@ mod tests {{
     #[test]
     fn ethernet_frame_decodes() {{
         let frame = ethernet_arp_frame();
-        let (packet, rem) = EthernetII::parse(&frame).unwrap();
+        let (mut packet, rem) = EthernetII::parse(&frame).unwrap();
         assert!(rem.is_empty());
         let dst = packet
             .dst()
@@ -270,7 +270,7 @@ mod tests {{
     #[test]
     fn vlan_frame_decodes() {{
         let frame = vlan_frame();
-        let (packet, rem) = Vlan::parse(&frame).unwrap();
+        let (mut packet, rem) = Vlan::parse(&frame).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.pcp(), 0);
         assert_eq!(packet.dei(), 0);
@@ -304,7 +304,7 @@ mod tests {{
     #[test]
     fn arp_request_decodes() {{
         let packet_bytes = arp_request();
-        let (packet, rem) = Arp::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Arp::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.htype(), 1);
         assert_eq!(packet.ptype(), 0x0800);
@@ -365,7 +365,7 @@ mod tests {{
     #[test]
     fn ipv4_base_header_decodes() {{
         let packet_bytes = ipv4_ping_packet();
-        let (packet, rem) = Ipv4::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Ipv4::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.version(), 4);
         assert_eq!(packet.ihl(), 5);
@@ -404,7 +404,7 @@ mod tests {{
         );
         let mut padded = packet_bytes.clone();
         padded.extend([0xde, 0xad]);
-        let (packet, rem) = Ipv4::parse(&padded).unwrap();
+        let (mut packet, rem) = Ipv4::parse(&padded).unwrap();
         assert_eq!(rem, &[0xde, 0xad]);
         let payload = packet
             .payload()
@@ -420,7 +420,7 @@ mod tests {{
     #[test]
     fn ipv4_options_decode_when_ihl_exceeds_five() {{
         let packet_bytes = ipv4_igmp_packet();
-        let (packet, rem) = Ipv4::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Ipv4::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.version(), 4);
         assert_eq!(packet.ihl(), 6);
@@ -489,7 +489,7 @@ mod tests {{
     #[test]
     fn ipv6_header_decodes() {{
         let packet_bytes = ipv6_udp_packet();
-        let (packet, rem) = Ipv6::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Ipv6::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.version(), 6);
         assert_eq!(packet.tc_hi(), 0);
@@ -548,7 +548,7 @@ mod tests {{
     #[test]
     fn udp_datagram_decodes() {{
         let packet_bytes = udp_datagram();
-        let (packet, rem) = Udp::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Udp::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.src_port(), 50000);
         assert_eq!(packet.dst_port(), 53);
@@ -592,7 +592,7 @@ mod tests {{
     #[test]
     fn tcp_syn_with_options_decodes() {{
         let packet_bytes = tcp_syn();
-        let (packet, rem) = Tcp::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Tcp::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.src_port(), 49673);
         assert_eq!(packet.dst_port(), 80);
@@ -613,8 +613,8 @@ mod tests {{
         assert_eq!(packet.checksum(), 0xbeef);
         assert_eq!(packet.urgent_ptr(), 0);
 
-        let option_list = packet.options().unwrap();
-        let opts = option_list
+        let mut option_list = packet.options().unwrap();
+        let mut opts = option_list
             .opts()
             .unwrap()
             .collect::<binparse::ParseResult<Vec<_>>>()
@@ -622,7 +622,7 @@ mod tests {{
         assert_eq!(opts.len(), 4);
         assert_eq!(opts[0].kind(), 2);
         match opts[0].body().unwrap() {{
-            TcpOption_body::Generic(mss) => {{
+            TcpOption_body::Generic(mut mss) => {{
                 assert_eq!(mss.len(), 4);
                 let data = mss
                     .data()
@@ -643,7 +643,7 @@ mod tests {{
         }}
         assert_eq!(opts[3].kind(), 4);
         match opts[3].body().unwrap() {{
-            TcpOption_body::Generic(sack_ok) => {{
+            TcpOption_body::Generic(mut sack_ok) => {{
                 assert_eq!(sack_ok.len(), 2);
                 let data = sack_ok
                     .data()
@@ -669,13 +669,13 @@ mod tests {{
     #[test]
     fn tcp_without_options_decodes() {{
         let packet_bytes = tcp_ack_with_payload();
-        let (packet, rem) = Tcp::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Tcp::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.data_offset(), 5);
         assert_eq!(packet.ack(), 1);
         assert_eq!(packet.syn(), 0);
         assert_eq!(packet.ack_no(), 0x11223344);
-        let option_list = packet.options().unwrap();
+        let mut option_list = packet.options().unwrap();
         let opts = option_list
             .opts()
             .unwrap()
@@ -705,13 +705,13 @@ mod tests {{
     #[test]
     fn icmpv4_echo_decodes() {{
         let packet_bytes = icmp_echo_request();
-        let (packet, rem) = Icmpv4::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Icmpv4::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.icmp_type(), 8);
         assert_eq!(packet.code(), 0);
         assert_eq!(packet.checksum(), 0xf74b);
         match packet.body().unwrap() {{
-            Icmpv4_body::Echo(echo) => {{
+            Icmpv4_body::Echo(mut echo) => {{
                 assert_eq!(echo.id(), 1);
                 assert_eq!(echo.seq(), 9);
                 let data = echo
@@ -732,10 +732,10 @@ mod tests {{
     fn icmpv4_dest_unreach_decodes() {{
         let mut packet_bytes = vec![0x03, 0x03, 0xa2, 0xb1, 0x00, 0x00, 0x00, 0x00];
         packet_bytes.extend(&ipv4_ping_packet()[..28]);
-        let (packet, rem) = Icmpv4::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Icmpv4::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         match packet.body().unwrap() {{
-            Icmpv4_body::DestUnreach(unreach) => {{
+            Icmpv4_body::DestUnreach(mut unreach) => {{
                 assert_eq!(unreach.unused(), 0);
                 let original = unreach
                     .original()
@@ -754,15 +754,15 @@ mod tests {{
     #[test]
     fn icmpv4_time_exceeded_and_raw_decode() {{
         let exceeded = [0x0b, 0x00, 0x12, 0x34, 0x00, 0x00, 0x00, 0x00];
-        let (packet, rem) = Icmpv4::parse(&exceeded).unwrap();
+        let (mut packet, rem) = Icmpv4::parse(&exceeded).unwrap();
         assert!(rem.is_empty());
         match packet.body().unwrap() {{
-            Icmpv4_body::TimeExceeded(exceeded) => assert_eq!(exceeded.unused(), 0),
+            Icmpv4_body::TimeExceeded(mut exceeded) => assert_eq!(exceeded.unused(), 0),
             _ => panic!("expected TimeExceeded body"),
         }}
 
         let raw = [40, 0, 0xde, 0xad];
-        let (packet, rem) = Icmpv4::parse(&raw).unwrap();
+        let (mut packet, rem) = Icmpv4::parse(&raw).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.checksum(), 0xdead);
         match packet.body().unwrap() {{
@@ -783,7 +783,7 @@ mod tests {{
     #[test]
     fn dns_response_decodes_with_compression() {{
         let packet_bytes = dns_response();
-        let (packet, rem) = Dns::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Dns::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.id(), 0x1234);
         assert_eq!(packet.qr(), 1);
@@ -807,7 +807,7 @@ mod tests {{
         assert_eq!(packet.ttl(), 3600);
         assert_eq!(packet.rdlength(), 4);
         match packet.rdata().unwrap() {{
-            Dns_rdata::A(a) => {{
+            Dns_rdata::A(mut a) => {{
                 let addr = a
                     .addr()
                     .unwrap()
@@ -830,10 +830,10 @@ mod tests {{
         let rdlen = packet_bytes.len() - 41;
         packet_bytes[39] = (rdlen >> 8) as u8;
         packet_bytes[40] = rdlen as u8;
-        let (packet, rem) = Dns::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = Dns::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         match packet.rdata().unwrap() {{
-            Dns_rdata::A(a) => {{
+            Dns_rdata::A(mut a) => {{
                 let addr = a
                     .addr()
                     .unwrap()
@@ -916,7 +916,7 @@ mod tests {{
     #[test]
     fn tls_record_decodes() {{
         let packet_bytes = tls_client_hello_record();
-        let (packet, rem) = TlsRecord::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = TlsRecord::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.content_type(), 22);
         assert_eq!(packet.legacy_major(), 3);
@@ -931,7 +931,7 @@ mod tests {{
         assert_eq!(fragment.len(), usize::from(packet.length()));
         let mut padded = packet_bytes.clone();
         padded.extend([0x77, 0x88]);
-        let (packet, rem) = TlsRecord::parse(&padded).unwrap();
+        let (mut packet, rem) = TlsRecord::parse(&padded).unwrap();
         assert_eq!(rem, &[0x77, 0x88]);
         let fragment = packet
             .fragment()
@@ -947,9 +947,9 @@ mod tests {{
     #[test]
     fn tls_stream_decodes_multiple_records() {{
         let packet_bytes = tls_record_stream();
-        let (packet, rem) = TlsStream::parse(&packet_bytes).unwrap();
+        let (mut packet, rem) = TlsStream::parse(&packet_bytes).unwrap();
         assert!(rem.is_empty());
-        let records = packet
+        let mut records = packet
             .records()
             .unwrap()
             .collect::<binparse::ParseResult<Vec<_>>>()
@@ -1006,8 +1006,8 @@ mod tests {{
 
     fn parse_for_key(key: u128, payload: &[u8]) -> Option<binparse::Handoff<'_>> {{
         match key {{
-            0x0800 => Ipv4::parse(payload).ok().and_then(|(p, _)| p.handoff()),
-            17 => Udp::parse(payload).ok().and_then(|(p, _)| p.handoff()),
+            0x0800 => Ipv4::parse(payload).ok().and_then(|(mut p, _)| p.handoff()),
+            17 => Udp::parse(payload).ok().and_then(|(mut p, _)| p.handoff()),
             _ => None,
         }}
     }}
@@ -1015,7 +1015,7 @@ mod tests {{
     #[test]
     fn handoff_chains_ethernet_ipv4_udp() {{
         let frame = ethernet_ipv4_udp_frame();
-        let (eth, _) = EthernetII::parse(&frame).unwrap();
+        let (mut eth, _) = EthernetII::parse(&frame).unwrap();
         let first = eth.handoff().expect("ethernet declares a payload");
         assert_eq!(first.keys, vec![0x0800]);
 
@@ -1034,7 +1034,7 @@ mod tests {{
         assert_eq!(keys, vec![50000, 53]);
         assert_eq!(payload, vec![0xde, 0xad, 0xbe, 0xef]);
         assert_parse_no_panic("EthernetII handoff", &frame, |data| {{
-            if let Ok((eth, _)) = EthernetII::parse(data) {{
+            if let Ok((mut eth, _)) = EthernetII::parse(data) {{
                 let _ = eth.handoff();
             }}
         }});

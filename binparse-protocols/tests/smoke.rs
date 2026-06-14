@@ -10,10 +10,14 @@ fn ethernet_parses_arp_frame() {
     frame.extend([0x00, 0x0b, 0x82, 0x01, 0xfc, 0x42]);
     frame.extend([0x08, 0x06]);
     frame.extend([0xde, 0xad, 0xbe, 0xef]);
-    let (eth, rem) = EthernetII::parse(&frame).unwrap();
+    let (mut eth, rem) = EthernetII::parse(&frame).unwrap();
     assert!(rem.is_empty());
     assert_eq!(eth.ethertype(), 0x0806);
-    let payload = eth.payload().unwrap().collect::<ParseResult<Vec<_>>>().unwrap();
+    let payload = eth
+        .payload()
+        .unwrap()
+        .collect::<ParseResult<Vec<_>>>()
+        .unwrap();
     assert_eq!(payload, vec![0xde, 0xad, 0xbe, 0xef]);
 }
 
@@ -25,7 +29,7 @@ fn vlan_parses() {
     frame.extend([0x00, 0x19, 0x06, 0xea, 0xb8, 0xc1]);
     frame.extend([0x81, 0x00, 0x00, 0x64, 0x08, 0x00]);
     frame.extend([0xde, 0xad, 0xbe, 0xef]);
-    let (vlan, rem) = Vlan::parse(&frame).unwrap();
+    let (mut vlan, rem) = Vlan::parse(&frame).unwrap();
     assert!(rem.is_empty());
     assert_eq!(vlan.ethertype(), 0x0800);
 }
@@ -38,7 +42,7 @@ fn arp_parses() {
         0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01, 0x00, 0x0b, 0x82, 0x01, 0xfc, 0x42, 0xc0,
         0xa8, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0xa8, 0x00, 0x02,
     ];
-    let (arp, rem) = Arp::parse(&packet).unwrap();
+    let (mut arp, rem) = Arp::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(arp.oper(), 1);
     assert_eq!(arp.ptype(), 0x0800);
@@ -52,7 +56,7 @@ fn ipv4_parses() {
         0x45, 0x00, 0x00, 0x1c, 0x1c, 0x46, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 0xac, 0x10, 0x0a,
         0x63, 0xac, 0x10, 0x0a, 0x0c, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00,
     ];
-    let (ip, rem) = Ipv4::parse(&packet).unwrap();
+    let (mut ip, rem) = Ipv4::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(ip.version(), 4);
     assert_eq!(ip.ihl(), 5);
@@ -64,10 +68,14 @@ fn ipv4_parses() {
 fn ipv6_parses() {
     use binparse_protocols::ip::Ipv6;
     let mut packet = vec![0x60, 0x00, 0x00, 0x00, 0x00, 0x04, 0x11, 0x40];
-    packet.extend([0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01]);
-    packet.extend([0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02]);
+    packet.extend([
+        0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,
+    ]);
+    packet.extend([
+        0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02,
+    ]);
     packet.extend([0xde, 0xad, 0xbe, 0xef]);
-    let (ip, rem) = Ipv6::parse(&packet).unwrap();
+    let (mut ip, rem) = Ipv6::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(ip.version(), 6);
     assert_eq!(ip.next_header(), 17);
@@ -79,7 +87,7 @@ fn icmpv4_echo_parses() {
     use binparse_protocols::icmp::{Icmpv4, Icmpv4_body};
     let mut packet = vec![0x08, 0x00, 0xf7, 0x4b, 0x00, 0x01, 0x00, 0x09];
     packet.extend([b'a', b'b', b'c', b'd']);
-    let (icmp, rem) = Icmpv4::parse(&packet).unwrap();
+    let (mut icmp, rem) = Icmpv4::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(icmp.icmp_type(), 8);
     assert!(matches!(icmp.body().unwrap(), Icmpv4_body::Echo(_)));
@@ -91,11 +99,11 @@ fn icmpv6_echo_parses() {
     use binparse_protocols::icmpv6::{Icmpv6, Icmpv6_body};
     let mut packet = vec![0x80, 0x00, 0x12, 0x34, 0x00, 0x01, 0x00, 0x09];
     packet.extend([0xde, 0xad, 0xbe, 0xef]);
-    let (icmp, rem) = Icmpv6::parse(&packet).unwrap();
+    let (mut icmp, rem) = Icmpv6::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(icmp.icmp_type(), 128);
     match icmp.body().unwrap() {
-        Icmpv6_body::Echo(echo) => {
+        Icmpv6_body::Echo(mut echo) => {
             assert_eq!(echo.id(), 1);
             assert_eq!(echo.seq(), 9);
         }
@@ -107,8 +115,10 @@ fn icmpv6_echo_parses() {
 #[test]
 fn udp_parses() {
     use binparse_protocols::udp::Udp;
-    let packet = vec![0xc3, 0x50, 0x00, 0x35, 0x00, 0x0c, 0x1a, 0x2b, 0xde, 0xad, 0xbe, 0xef];
-    let (udp, rem) = Udp::parse(&packet).unwrap();
+    let packet = vec![
+        0xc3, 0x50, 0x00, 0x35, 0x00, 0x0c, 0x1a, 0x2b, 0xde, 0xad, 0xbe, 0xef,
+    ];
+    let (mut udp, rem) = Udp::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(udp.src_port(), 50000);
     assert_eq!(udp.dst_port(), 53);
@@ -123,7 +133,7 @@ fn tcp_parses() {
         0xc2, 0x09, 0x00, 0x50, 0x5e, 0x4a, 0x1b, 0x3d, 0x11, 0x22, 0x33, 0x44, 0x50, 0x10, 0xfa,
         0xf0, 0x12, 0x34, 0x00, 0x00, b'G', b'E', b'T', b' ',
     ];
-    let (tcp, rem) = Tcp::parse(&packet).unwrap();
+    let (mut tcp, rem) = Tcp::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(tcp.dst_port(), 80);
     assert_eq!(tcp.data_offset(), 5);
@@ -135,11 +145,11 @@ fn tcp_parses() {
 fn dns_parses_with_compression() {
     use binparse_protocols::dns::Dns;
     let packet = vec![
-        0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 7, b'e', b'x', b'a',
-        b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0, 0x00, 0x01, 0x00, 0x01, 0xc0, 0x0c, 0x00,
-        0x01, 0x00, 0x01, 0x00, 0x00, 0x0e, 0x10, 0x00, 0x04, 0x5d, 0xb8, 0xd8, 0x22,
+        0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 7, b'e', b'x',
+        b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0, 0x00, 0x01, 0x00, 0x01, 0xc0, 0x0c,
+        0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x0e, 0x10, 0x00, 0x04, 0x5d, 0xb8, 0xd8, 0x22,
     ];
-    let (dns, rem) = Dns::parse(&packet).unwrap();
+    let (mut dns, rem) = Dns::parse(&packet).unwrap();
     assert!(rem.is_empty());
     let qlabels: Vec<&[u8]> = dns.qname().unwrap().labels().collect();
     assert_eq!(qlabels, vec![b"example".as_slice(), b"com".as_slice()]);
@@ -154,7 +164,7 @@ fn dns_parses_with_compression() {
 fn tls_record_parses() {
     use binparse_protocols::tls::TlsRecord;
     let packet = vec![0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00];
-    let (rec, rem) = TlsRecord::parse(&packet).unwrap();
+    let (mut rec, rem) = TlsRecord::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(rec.content_type(), 22);
     assert_eq!(rec.length(), 5);
@@ -174,7 +184,7 @@ fn dhcp_discover_parses() {
     packet.extend([0u8; 128]);
     packet.extend([0x63, 0x82, 0x53, 0x63]);
     packet.extend([53, 1, 1, 255]);
-    let (dhcp, rem) = Dhcp::parse(&packet).unwrap();
+    let (mut dhcp, rem) = Dhcp::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(dhcp.op(), 1);
     assert_eq!(dhcp.xid(), 0x3903f326);
@@ -188,7 +198,7 @@ fn sctp_single_chunk_parses() {
         0x00, 0x50, 0x00, 0x50, 0x12, 0x34, 0x56, 0x78, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
         0x08, 0xaa, 0xbb, 0xcc, 0xdd,
     ];
-    let (sctp, rem) = Sctp::parse(&packet).unwrap();
+    let (mut sctp, rem) = Sctp::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(sctp.src_port(), 80);
     assert_eq!(sctp.dst_port(), 80);
@@ -201,7 +211,7 @@ fn bgp_keepalive_parses() {
     let mut packet = vec![0xff; 16];
     packet.extend([0x00, 0x13]);
     packet.push(4);
-    let (bgp, rem) = Bgp::parse(&packet).unwrap();
+    let (mut bgp, rem) = Bgp::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(bgp.length(), 19);
     assert_eq!(bgp.msg_type(), 4);
@@ -213,15 +223,21 @@ fn bgp_keepalive_parses() {
 fn mqtt_v3_connect_parses() {
     use binparse::ParseResult;
     use binparse_protocols::mqtt_v3::{MqttPacket, MqttPacket_body};
-    let packet = vec![0x10, 0x0a, 0x00, 0x04, b'M', b'Q', b'T', b'T', 0x04, 0x02, 0x00, 0x3c];
-    let (mqtt, rem) = MqttPacket::parse(&packet).unwrap();
+    let packet = vec![
+        0x10, 0x0a, 0x00, 0x04, b'M', b'Q', b'T', b'T', 0x04, 0x02, 0x00, 0x3c,
+    ];
+    let (mut mqtt, rem) = MqttPacket::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(mqtt.packet_type(), 1);
-    assert_eq!(mqtt.remaining_length().unwrap(), 10);
+    assert_eq!(*mqtt.remaining_length().unwrap(), 10);
     match mqtt.body().unwrap() {
-        MqttPacket_body::Connect(c) => {
+        MqttPacket_body::Connect(mut c) => {
             assert_eq!(c.keep_alive(), 60);
-            let name = c.proto_name().unwrap().collect::<ParseResult<Vec<_>>>().unwrap();
+            let name = c
+                .proto_name()
+                .unwrap()
+                .collect::<ParseResult<Vec<_>>>()
+                .unwrap();
             assert_eq!(name, b"MQTT");
         }
         _ => panic!("expected Connect"),
@@ -233,10 +249,10 @@ fn mqtt_v3_connect_parses() {
 fn mqtt_v3_pingreq_parses() {
     use binparse_protocols::mqtt_v3::{MqttPacket, MqttPacket_body};
     let packet = vec![0xc0, 0x00];
-    let (mqtt, rem) = MqttPacket::parse(&packet).unwrap();
+    let (mut mqtt, rem) = MqttPacket::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(mqtt.packet_type(), 12);
-    assert_eq!(mqtt.remaining_length().unwrap(), 0);
+    assert_eq!(*mqtt.remaining_length().unwrap(), 0);
     assert!(matches!(mqtt.body().unwrap(), MqttPacket_body::PingReq(_)));
 }
 
@@ -246,15 +262,19 @@ fn mqtt_v5_connack_properties_sized_by_hook_varint() {
     use binparse::ParseResult;
     use binparse_protocols::mqtt_v5::{MqttPacket, MqttPacket_body};
     let packet = vec![0x20, 0x06, 0x00, 0x00, 0x03, 0x21, 0x00, 0x14];
-    let (mqtt, rem) = MqttPacket::parse(&packet).unwrap();
+    let (mut mqtt, rem) = MqttPacket::parse(&packet).unwrap();
     assert!(rem.is_empty());
     assert_eq!(mqtt.packet_type(), 2);
-    assert_eq!(mqtt.remaining_length().unwrap(), 6);
+    assert_eq!(*mqtt.remaining_length().unwrap(), 6);
     match mqtt.body().unwrap() {
-        MqttPacket_body::Connack(c) => {
+        MqttPacket_body::Connack(mut c) => {
             assert_eq!(c.reason_code(), 0);
-            assert_eq!(c.prop_len().unwrap(), 3);
-            let props = c.properties().unwrap().collect::<ParseResult<Vec<_>>>().unwrap();
+            assert_eq!(*c.prop_len().unwrap(), 3);
+            let props = c
+                .properties()
+                .unwrap()
+                .collect::<ParseResult<Vec<_>>>()
+                .unwrap();
             assert_eq!(props, vec![0x21, 0x00, 0x14]);
         }
         _ => panic!("expected Connack"),

@@ -1,15 +1,15 @@
 impl<'a> ::binparse::Dissect<'a> for LittlePacket<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         LittlePacket::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         LittlePacket::handoff(self)
     }
 }
 
 impl<'a> LittlePacket<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.header_fatal_check()?;
         me.header_recoverable_check()?;
         me.mixed_fatal_check()?;
@@ -28,18 +28,18 @@ impl<'a> LittlePacket<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.header_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.mixed_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.data_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -53,7 +53,7 @@ impl<'a> LittlePacket<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -184,11 +184,11 @@ impl<'a> LittlePacket<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn header_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn header_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.header_bit_range();
         ::binparse::FieldNode::new(
             "header",
@@ -198,23 +198,23 @@ impl<'a> LittlePacket<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn header(&self) -> u32 {
+    pub fn header(&mut self) -> u32 {
         u32::from_le_bytes(self.data[0usize..4usize].try_into().unwrap())
     }
-    pub fn header_end_offset(&self) -> binparse::Len {
+    pub fn header_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 4usize,
             bit: 0usize,
         }
     }
-    pub fn header_start_offset(&self) -> binparse::Len {
+    pub fn header_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn header_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn header_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.header_start_offset().bits()..self.header_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn header_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn header_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.header_end_offset();
             let expected = len.byte_ceil();
@@ -228,11 +228,11 @@ impl<'a> LittlePacket<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn header_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn header_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn mixed_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn mixed_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.mixed_bit_range();
         ::binparse::FieldNode::new(
             "mixed",
@@ -242,23 +242,23 @@ impl<'a> LittlePacket<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn mixed(&self) -> u16 {
+    pub fn mixed(&mut self) -> u16 {
         u16::from_be_bytes(self.data[4usize..6usize].try_into().unwrap())
     }
-    pub fn mixed_end_offset(&self) -> binparse::Len {
+    pub fn mixed_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 6usize,
             bit: 0usize,
         }
     }
-    pub fn mixed_start_offset(&self) -> binparse::Len {
+    pub fn mixed_start_offset(&mut self) -> binparse::Len {
         self.header_end_offset()
     }
-    pub fn mixed_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn mixed_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.mixed_start_offset().bits()..self.mixed_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn mixed_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn mixed_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.mixed_end_offset();
             let expected = len.byte_ceil();
@@ -272,11 +272,11 @@ impl<'a> LittlePacket<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn mixed_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn mixed_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn data_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn data_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.data_bit_range();
         ::binparse::FieldNode::new(
             "data",
@@ -286,23 +286,23 @@ impl<'a> LittlePacket<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn data(&self) -> u8 {
+    pub fn data(&mut self) -> u8 {
         self.data[6usize]
     }
-    pub fn data_end_offset(&self) -> binparse::Len {
+    pub fn data_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 7usize,
             bit: 0usize,
         }
     }
-    pub fn data_start_offset(&self) -> binparse::Len {
+    pub fn data_start_offset(&mut self) -> binparse::Len {
         self.mixed_end_offset()
     }
-    pub fn data_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn data_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.data_start_offset().bits()..self.data_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn data_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn data_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.data_end_offset();
             let expected = len.byte_ceil();
@@ -316,7 +316,7 @@ impl<'a> LittlePacket<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn data_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn data_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

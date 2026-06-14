@@ -24,10 +24,10 @@ fn dns(c: &mut Criterion) {
     g.bench_function("binparse", |b| {
         use binparse_protocols::dns::{Dns, Dns_rdata};
         b.iter(|| {
-            let (dns, _) = Dns::parse(black_box(DNS_RESPONSE)).unwrap();
+            let (mut dns, _) = Dns::parse(black_box(DNS_RESPONSE)).unwrap();
             let qlen: u64 = dns.qname().unwrap().labels().map(|l| l.len() as u64).sum();
             let addr = match dns.rdata().unwrap() {
-                Dns_rdata::A(a) => a.addr().unwrap().map(|b| b.unwrap() as u64).sum(),
+                Dns_rdata::A(mut a) => a.addr().unwrap().map(|b| b.unwrap() as u64).sum(),
                 _ => 0u64,
             };
             black_box(dns.id() as u64 ^ qlen ^ addr)
@@ -38,7 +38,11 @@ fn dns(c: &mut Criterion) {
         use simple_dns::{Packet, rdata::RData};
         b.iter(|| {
             let pkt = Packet::parse(black_box(DNS_RESPONSE)).unwrap();
-            let qlen: u64 = pkt.questions[0].qname.as_bytes().map(|l| l.len() as u64).sum();
+            let qlen: u64 = pkt.questions[0]
+                .qname
+                .as_bytes()
+                .map(|l| l.len() as u64)
+                .sum();
             let addr = match &pkt.answers[0].rdata {
                 RData::A(a) => a.address as u64,
                 _ => 0,
@@ -50,7 +54,7 @@ fn dns(c: &mut Criterion) {
     g.bench_function("binparse-full", |b| {
         use binparse_protocols::dns::{Dns, Dns_rdata};
         b.iter(|| {
-            let (d, _) = Dns::parse(black_box(DNS_RESPONSE)).unwrap();
+            let (mut d, _) = Dns::parse(black_box(DNS_RESPONSE)).unwrap();
             let mut acc = d.id() as u64;
             acc ^= d.qr() as u64;
             acc ^= d.opcode() as u64;
@@ -64,16 +68,28 @@ fn dns(c: &mut Criterion) {
             acc ^= d.ancount() as u64;
             acc ^= d.nscount() as u64;
             acc ^= d.arcount() as u64;
-            acc ^= d.qname().unwrap().labels().flat_map(|l| l.iter().copied()).map(u64::from).sum::<u64>();
+            acc ^= d
+                .qname()
+                .unwrap()
+                .labels()
+                .flat_map(|l| l.iter().copied())
+                .map(u64::from)
+                .sum::<u64>();
             acc ^= d.qtype() as u64;
             acc ^= d.qclass() as u64;
-            acc ^= d.aname().unwrap().labels().flat_map(|l| l.iter().copied()).map(u64::from).sum::<u64>();
+            acc ^= d
+                .aname()
+                .unwrap()
+                .labels()
+                .flat_map(|l| l.iter().copied())
+                .map(u64::from)
+                .sum::<u64>();
             acc ^= d.atype() as u64;
             acc ^= d.aclass() as u64;
             acc ^= d.ttl() as u64;
             acc ^= d.rdlength() as u64;
             acc ^= match d.rdata().unwrap() {
-                Dns_rdata::A(a) => a.addr().unwrap().map(|b| b.unwrap() as u64).sum(),
+                Dns_rdata::A(mut a) => a.addr().unwrap().map(|b| b.unwrap() as u64).sum(),
                 _ => 0u64,
             };
             black_box(acc)
@@ -99,11 +115,21 @@ fn dns(c: &mut Criterion) {
             acc ^= pkt.name_servers.len() as u64;
             acc ^= pkt.additional_records.len() as u64;
             let q = &pkt.questions[0];
-            acc ^= q.qname.as_bytes().flat_map(|l| l.iter().copied()).map(u64::from).sum::<u64>();
+            acc ^= q
+                .qname
+                .as_bytes()
+                .flat_map(|l| l.iter().copied())
+                .map(u64::from)
+                .sum::<u64>();
             acc ^= u16::from(q.qtype) as u64;
             acc ^= u16::from(q.qclass) as u64;
             let a = &pkt.answers[0];
-            acc ^= a.name.as_bytes().flat_map(|l| l.iter().copied()).map(u64::from).sum::<u64>();
+            acc ^= a
+                .name
+                .as_bytes()
+                .flat_map(|l| l.iter().copied())
+                .map(u64::from)
+                .sum::<u64>();
             acc ^= u16::from(QCLASS::from(a.class)) as u64;
             acc ^= a.ttl as u64;
             acc ^= match &a.rdata {

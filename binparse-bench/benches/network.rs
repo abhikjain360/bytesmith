@@ -18,27 +18,39 @@ fn sum_bp(it: impl Iterator<Item = binparse::ParseResult<u8>>) -> u64 {
 }
 
 fn fold(bytes: impl IntoIterator<Item = u8>) -> u64 {
-    bytes.into_iter().fold(0u64, |a, b| a.wrapping_add(b as u64))
+    bytes
+        .into_iter()
+        .fold(0u64, |a, b| a.wrapping_add(b as u64))
 }
 
 fn ethernet(c: &mut Criterion) {
     let mut g = c.benchmark_group("ethernet");
     g.bench_function("binparse", |b| {
         b.iter(|| {
-            let (eth, _) = binparse_protocols::ethernet::EthernetII::parse(black_box(ETH_FRAME)).unwrap();
-            black_box(eth.ethertype() as u64 ^ sum_bp(eth.dst().unwrap()) ^ sum_bp(eth.src().unwrap()))
+            let (mut eth, _) =
+                binparse_protocols::ethernet::EthernetII::parse(black_box(ETH_FRAME)).unwrap();
+            black_box(
+                eth.ethertype() as u64 ^ sum_bp(eth.dst().unwrap()) ^ sum_bp(eth.src().unwrap()),
+            )
         })
     });
     g.bench_function("etherparse", |b| {
         b.iter(|| {
-            let eth = etherparse::Ethernet2Slice::from_slice_without_fcs(black_box(ETH_FRAME)).unwrap();
-            black_box(u16::from(eth.ether_type()) as u64 ^ fold(eth.destination()) ^ fold(eth.source()))
+            let eth =
+                etherparse::Ethernet2Slice::from_slice_without_fcs(black_box(ETH_FRAME)).unwrap();
+            black_box(
+                u16::from(eth.ether_type()) as u64 ^ fold(eth.destination()) ^ fold(eth.source()),
+            )
         })
     });
     g.bench_function("pnet", |b| {
         b.iter(|| {
             let eth = pnet_packet::ethernet::EthernetPacket::new(black_box(ETH_FRAME)).unwrap();
-            black_box(eth.get_ethertype().0 as u64 ^ fold(eth.get_destination().octets()) ^ fold(eth.get_source().octets()))
+            black_box(
+                eth.get_ethertype().0 as u64
+                    ^ fold(eth.get_destination().octets())
+                    ^ fold(eth.get_source().octets()),
+            )
         })
     });
     g.finish();
@@ -48,7 +60,7 @@ fn ipv4(c: &mut Criterion) {
     let mut g = c.benchmark_group("ipv4");
     g.bench_function("binparse", |b| {
         b.iter(|| {
-            let (ip, _) = binparse_protocols::ip::Ipv4::parse(black_box(IPV4_PACKET)).unwrap();
+            let (mut ip, _) = binparse_protocols::ip::Ipv4::parse(black_box(IPV4_PACKET)).unwrap();
             black_box(
                 ip.version() as u64
                     ^ ip.ihl() as u64
@@ -93,7 +105,7 @@ fn ipv6(c: &mut Criterion) {
     let mut g = c.benchmark_group("ipv6");
     g.bench_function("binparse", |b| {
         b.iter(|| {
-            let (ip, _) = binparse_protocols::ip::Ipv6::parse(black_box(IPV6_PACKET)).unwrap();
+            let (mut ip, _) = binparse_protocols::ip::Ipv6::parse(black_box(IPV6_PACKET)).unwrap();
             black_box(
                 ip.version() as u64
                     ^ ip.next_header() as u64
@@ -135,20 +147,24 @@ fn udp(c: &mut Criterion) {
     let mut g = c.benchmark_group("udp");
     g.bench_function("binparse", |b| {
         b.iter(|| {
-            let (udp, _) = binparse_protocols::udp::Udp::parse(black_box(UDP_PACKET)).unwrap();
+            let (mut udp, _) = binparse_protocols::udp::Udp::parse(black_box(UDP_PACKET)).unwrap();
             black_box(udp.src_port() as u64 ^ udp.dst_port() as u64 ^ udp.length() as u64)
         })
     });
     g.bench_function("etherparse", |b| {
         b.iter(|| {
             let udp = etherparse::UdpHeaderSlice::from_slice(black_box(UDP_PACKET)).unwrap();
-            black_box(udp.source_port() as u64 ^ udp.destination_port() as u64 ^ udp.length() as u64)
+            black_box(
+                udp.source_port() as u64 ^ udp.destination_port() as u64 ^ udp.length() as u64,
+            )
         })
     });
     g.bench_function("pnet", |b| {
         b.iter(|| {
             let udp = pnet_packet::udp::UdpPacket::new(black_box(UDP_PACKET)).unwrap();
-            black_box(udp.get_source() as u64 ^ udp.get_destination() as u64 ^ udp.get_length() as u64)
+            black_box(
+                udp.get_source() as u64 ^ udp.get_destination() as u64 ^ udp.get_length() as u64,
+            )
         })
     });
     g.finish();
@@ -158,7 +174,7 @@ fn tcp(c: &mut Criterion) {
     let mut g = c.benchmark_group("tcp");
     g.bench_function("binparse", |b| {
         b.iter(|| {
-            let (tcp, _) = binparse_protocols::tcp::Tcp::parse(black_box(TCP_PACKET)).unwrap();
+            let (mut tcp, _) = binparse_protocols::tcp::Tcp::parse(black_box(TCP_PACKET)).unwrap();
             black_box(
                 tcp.src_port() as u64
                     ^ tcp.dst_port() as u64

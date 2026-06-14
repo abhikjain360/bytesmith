@@ -254,7 +254,7 @@ fn ethernet_writer_round_trips_and_pins_wire_bytes() {
         let lens = EthernetIILens { payload: content.payload.len() };
         assert_eq!(EthernetIIWriter::encoded_len(&lens), 18);
 
-        let (eth, rem) = EthernetII::parse(&bytes).unwrap();
+        let (mut eth, rem) = EthernetII::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(
             eth.dst().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
@@ -302,7 +302,7 @@ fn vlan_writer_round_trips_and_derives_constant() {
         let bytes = VlanWriter::to_vec(&content);
         assert_eq!(&bytes[12..14], &[0x81, 0x00]);
 
-        let (vlan, rem) = Vlan::parse(&bytes).unwrap();
+        let (mut vlan, rem) = Vlan::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(
             vlan.dst().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
@@ -338,7 +338,7 @@ fn tcp_option_writer_round_trips_and_pins_wire_bytes() {
         let nop = TcpOptionContent { body: TcpOptionBodyContent::Nop(NopContent {}) };
         let bytes = TcpOptionWriter::to_vec(&nop);
         assert_eq!(bytes, vec![0x01]);
-        let (opt, rem) = TcpOption::parse(&bytes).unwrap();
+        let (mut opt, rem) = TcpOption::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(opt.kind(), 1);
         assert!(matches!(opt.body().unwrap(), TcpOption_body::Nop(_)));
@@ -346,7 +346,7 @@ fn tcp_option_writer_round_trips_and_pins_wire_bytes() {
         let eol = TcpOptionContent { body: TcpOptionBodyContent::Eol(EolContent {}) };
         let bytes = TcpOptionWriter::to_vec(&eol);
         assert_eq!(bytes, vec![0x00]);
-        let (opt, rem) = TcpOption::parse(&bytes).unwrap();
+        let (mut opt, rem) = TcpOption::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(opt.kind(), 0);
         assert!(matches!(opt.body().unwrap(), TcpOption_body::Eol(_)));
@@ -382,7 +382,7 @@ fn ipv6_writer_round_trips_and_derives_payload_len() {
         assert_eq!(bytes[0] >> 4, 6);
         assert_eq!(&bytes[4..6], &[0x00, 0x0c]);
 
-        let (ip, rem) = Ipv6::parse(&bytes).unwrap();
+        let (mut ip, rem) = Ipv6::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(ip.version(), 6);
         assert_eq!(ip.payload_len(), 12);
@@ -435,7 +435,7 @@ fn sctp_chunk_writer_round_trips() {
         let bytes = SctpChunkWriter::to_vec(&content);
         assert_eq!(&bytes[0..4], &[0x01, 0x00, 0x00, 0x0a]);
 
-        let (chunk, rem) = SctpChunk::parse(&bytes).unwrap();
+        let (mut chunk, rem) = SctpChunk::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(chunk.chunk_type(), 0x01);
         assert_eq!(chunk.flags(), 0x00);
@@ -459,7 +459,7 @@ fn dhcp_option_writer_round_trips() {
         let pad = DhcpOptionContent { body: DhcpOptionBodyContent::Pad(PadContent {}) };
         let bytes = DhcpOptionWriter::to_vec(&pad);
         assert_eq!(bytes, vec![0x00]);
-        let (opt, rem) = DhcpOption::parse(&bytes).unwrap();
+        let (mut opt, rem) = DhcpOption::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(opt.code(), 0);
         assert!(matches!(opt.body().unwrap(), DhcpOption_body::Pad(_)));
@@ -467,7 +467,7 @@ fn dhcp_option_writer_round_trips() {
         let end = DhcpOptionContent { body: DhcpOptionBodyContent::End(EndContent {}) };
         let bytes = DhcpOptionWriter::to_vec(&end);
         assert_eq!(bytes, vec![0xff]);
-        let (opt, rem) = DhcpOption::parse(&bytes).unwrap();
+        let (mut opt, rem) = DhcpOption::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(opt.code(), 255);
         assert!(matches!(opt.body().unwrap(), DhcpOption_body::End(_)));

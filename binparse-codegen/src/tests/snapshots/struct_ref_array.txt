@@ -6,19 +6,19 @@ pub struct StructArray_items_Iterator<'a> {
 }
 
 impl<'a> ::binparse::Dissect<'a> for Inner<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         Inner::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         Inner::handoff(self)
     }
 }
 
 impl<'a> ::binparse::Dissect<'a> for StructArray<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         StructArray::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         StructArray::handoff(self)
     }
 }
@@ -42,7 +42,7 @@ impl<'a> ::std::iter::Iterator for StructArray_items_Iterator<'a> {
 
 impl<'a> Inner<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.a_fatal_check()?;
         me.a_recoverable_check()?;
         let len = me.a_end_offset();
@@ -57,10 +57,10 @@ impl<'a> Inner<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.a_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -74,7 +74,7 @@ impl<'a> Inner<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -129,11 +129,11 @@ impl<'a> Inner<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn a_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn a_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.a_bit_range();
         ::binparse::FieldNode::new(
             "a",
@@ -143,23 +143,23 @@ impl<'a> Inner<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn a(&self) -> u8 {
+    pub fn a(&mut self) -> u8 {
         self.data[0usize]
     }
-    pub fn a_end_offset(&self) -> binparse::Len {
+    pub fn a_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 0usize,
         }
     }
-    pub fn a_start_offset(&self) -> binparse::Len {
+    pub fn a_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn a_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn a_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.a_start_offset().bits()..self.a_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn a_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.a_end_offset();
             let expected = len.byte_ceil();
@@ -173,14 +173,14 @@ impl<'a> Inner<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn a_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
 
 impl<'a> StructArray<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.count_fatal_check()?;
         me.count_recoverable_check()?;
         me.items_fatal_check()?;
@@ -197,14 +197,14 @@ impl<'a> StructArray<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.count_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.items_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -218,7 +218,7 @@ impl<'a> StructArray<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -311,11 +311,11 @@ impl<'a> StructArray<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn count_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn count_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.count_bit_range();
         ::binparse::FieldNode::new(
             "count",
@@ -325,23 +325,23 @@ impl<'a> StructArray<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn count(&self) -> u8 {
+    pub fn count(&mut self) -> u8 {
         self.data[0usize]
     }
-    pub fn count_end_offset(&self) -> binparse::Len {
+    pub fn count_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 0usize,
         }
     }
-    pub fn count_start_offset(&self) -> binparse::Len {
+    pub fn count_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn count_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn count_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.count_start_offset().bits()..self.count_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn count_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn count_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.count_end_offset();
             let expected = len.byte_ceil();
@@ -355,11 +355,11 @@ impl<'a> StructArray<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn count_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn count_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn items_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn items_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.items_bit_range();
         {
             let mut elem_nodes = ::std::vec::Vec::new();
@@ -367,7 +367,7 @@ impl<'a> StructArray<'a> {
                 let mut start = bit_range.start;
                 for (i, elem) in iter.enumerate() {
                     match elem {
-                        Ok(value) => {
+                        Ok(mut value) => {
                             let end = start.saturating_add(value.a_end_offset().bits());
                             elem_nodes
                                 .push(
@@ -400,14 +400,14 @@ impl<'a> StructArray<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn items(&self) -> ::binparse::ParseResult<StructArray_items_Iterator<'a>> {
+    pub fn items(&mut self) -> ::binparse::ParseResult<StructArray_items_Iterator<'a>> {
         Ok(StructArray_items_Iterator {
             idx: 0,
             count: self.count() as usize,
             data: &self.data[1usize..],
         })
     }
-    pub fn items_end_offset(&self) -> binparse::Len {
+    pub fn items_end_offset(&mut self) -> binparse::Len {
         ::binparse::Len {
             byte: 1usize,
             bit: 0usize,
@@ -419,14 +419,14 @@ impl<'a> StructArray<'a> {
                 } * (self.count() as usize)
             })
     }
-    pub fn items_start_offset(&self) -> binparse::Len {
+    pub fn items_start_offset(&mut self) -> binparse::Len {
         self.count_end_offset()
     }
-    pub fn items_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn items_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.items_start_offset().bits()..self.items_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn items_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn items_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.items_end_offset();
             let expected = len.byte_ceil();
@@ -440,7 +440,7 @@ impl<'a> StructArray<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn items_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn items_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

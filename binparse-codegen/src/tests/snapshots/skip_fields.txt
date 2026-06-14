@@ -1,15 +1,15 @@
 impl<'a> ::binparse::Dissect<'a> for Skipped<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         Skipped::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         Skipped::handoff(self)
     }
 }
 
 impl<'a> Skipped<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.reserved_fatal_check()?;
         me.reserved_recoverable_check()?;
         me.flags_fatal_check()?;
@@ -28,18 +28,18 @@ impl<'a> Skipped<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.reserved_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.flags_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.pair_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -53,7 +53,7 @@ impl<'a> Skipped<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -184,11 +184,11 @@ impl<'a> Skipped<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn reserved_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn reserved_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.reserved_bit_range();
         ::binparse::FieldNode::new(
                 "reserved",
@@ -200,26 +200,26 @@ impl<'a> Skipped<'a> {
     }
     #[allow(dead_code)]
     #[allow(clippy::identity_op)]
-    fn reserved(&self) -> u8 {
+    fn reserved(&mut self) -> u8 {
         (self.data[0usize] >> 5usize) & 7u8
     }
     #[allow(dead_code)]
-    fn reserved_end_offset(&self) -> binparse::Len {
+    fn reserved_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 0usize,
             bit: 3usize,
         }
     }
     #[allow(dead_code)]
-    fn reserved_start_offset(&self) -> binparse::Len {
+    fn reserved_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
     #[allow(dead_code)]
-    fn reserved_bit_range(&self) -> ::core::ops::Range<usize> {
+    fn reserved_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.reserved_start_offset().bits()..self.reserved_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn reserved_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn reserved_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.reserved_end_offset();
             let expected = len.byte_ceil();
@@ -233,11 +233,11 @@ impl<'a> Skipped<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn reserved_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn reserved_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn flags_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn flags_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.flags_bit_range();
         ::binparse::FieldNode::new(
             "flags",
@@ -247,23 +247,23 @@ impl<'a> Skipped<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn flags(&self) -> u8 {
+    pub fn flags(&mut self) -> u8 {
         (self.data[0usize] >> 0usize) & 31u8
     }
-    pub fn flags_end_offset(&self) -> binparse::Len {
+    pub fn flags_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 0usize,
         }
     }
-    pub fn flags_start_offset(&self) -> binparse::Len {
+    pub fn flags_start_offset(&mut self) -> binparse::Len {
         self.reserved_end_offset()
     }
-    pub fn flags_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn flags_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.flags_start_offset().bits()..self.flags_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn flags_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn flags_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.flags_end_offset();
             let expected = len.byte_ceil();
@@ -277,11 +277,11 @@ impl<'a> Skipped<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn flags_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn flags_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn pair_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn pair_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.pair_bit_range();
         {
             let mut item_nodes = ::std::vec::Vec::new();
@@ -320,32 +320,32 @@ impl<'a> Skipped<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn pair_0(&self) -> u8 {
+    pub fn pair_0(&mut self) -> u8 {
         (self.data[1usize] >> 4usize) & 15u8
     }
     #[allow(dead_code)]
     #[allow(clippy::identity_op)]
-    fn pair_1(&self) -> u8 {
+    fn pair_1(&mut self) -> u8 {
         (self.data[1usize] >> 0usize) & 15u8
     }
     #[allow(clippy::identity_op)]
-    pub fn pair(&self) -> (u8,) {
+    pub fn pair(&mut self) -> (u8,) {
         (self.pair_0(),)
     }
-    pub fn pair_end_offset(&self) -> binparse::Len {
+    pub fn pair_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 2usize,
             bit: 0usize,
         }
     }
-    pub fn pair_start_offset(&self) -> binparse::Len {
+    pub fn pair_start_offset(&mut self) -> binparse::Len {
         self.flags_end_offset()
     }
-    pub fn pair_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn pair_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.pair_start_offset().bits()..self.pair_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn pair_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn pair_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.pair_end_offset();
             let expected = len.byte_ceil();
@@ -359,7 +359,7 @@ impl<'a> Skipped<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn pair_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn pair_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

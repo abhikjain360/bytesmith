@@ -1,15 +1,15 @@
 impl<'a> ::binparse::Dissect<'a> for SignedPrim<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         SignedPrim::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         SignedPrim::handoff(self)
     }
 }
 
 impl<'a> SignedPrim<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.a_fatal_check()?;
         me.a_recoverable_check()?;
         me.b_fatal_check()?;
@@ -28,18 +28,18 @@ impl<'a> SignedPrim<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.a_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.b_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.c_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -53,7 +53,7 @@ impl<'a> SignedPrim<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -184,11 +184,11 @@ impl<'a> SignedPrim<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn a_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn a_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.a_bit_range();
         ::binparse::FieldNode::new(
             "a",
@@ -198,23 +198,23 @@ impl<'a> SignedPrim<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn a(&self) -> i8 {
+    pub fn a(&mut self) -> i8 {
         self.data[0usize] as i8
     }
-    pub fn a_end_offset(&self) -> binparse::Len {
+    pub fn a_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 0usize,
         }
     }
-    pub fn a_start_offset(&self) -> binparse::Len {
+    pub fn a_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn a_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn a_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.a_start_offset().bits()..self.a_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn a_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.a_end_offset();
             let expected = len.byte_ceil();
@@ -228,11 +228,11 @@ impl<'a> SignedPrim<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn a_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn b_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn b_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.b_bit_range();
         ::binparse::FieldNode::new(
             "b",
@@ -242,23 +242,23 @@ impl<'a> SignedPrim<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn b(&self) -> i16 {
+    pub fn b(&mut self) -> i16 {
         i16::from_le_bytes(self.data[1usize..3usize].try_into().unwrap())
     }
-    pub fn b_end_offset(&self) -> binparse::Len {
+    pub fn b_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 3usize,
             bit: 0usize,
         }
     }
-    pub fn b_start_offset(&self) -> binparse::Len {
+    pub fn b_start_offset(&mut self) -> binparse::Len {
         self.a_end_offset()
     }
-    pub fn b_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn b_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.b_start_offset().bits()..self.b_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn b_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn b_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.b_end_offset();
             let expected = len.byte_ceil();
@@ -272,11 +272,11 @@ impl<'a> SignedPrim<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn b_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn b_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn c_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn c_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.c_bit_range();
         ::binparse::FieldNode::new(
             "c",
@@ -286,23 +286,23 @@ impl<'a> SignedPrim<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn c(&self) -> i32 {
+    pub fn c(&mut self) -> i32 {
         i32::from_be_bytes(self.data[3usize..7usize].try_into().unwrap())
     }
-    pub fn c_end_offset(&self) -> binparse::Len {
+    pub fn c_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 7usize,
             bit: 0usize,
         }
     }
-    pub fn c_start_offset(&self) -> binparse::Len {
+    pub fn c_start_offset(&mut self) -> binparse::Len {
         self.b_end_offset()
     }
-    pub fn c_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn c_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.c_start_offset().bits()..self.c_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn c_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn c_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.c_end_offset();
             let expected = len.byte_ceil();
@@ -316,7 +316,7 @@ impl<'a> SignedPrim<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn c_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn c_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

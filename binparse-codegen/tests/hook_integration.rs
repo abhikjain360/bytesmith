@@ -41,7 +41,7 @@ struct Test {
     let code = generate_code(dsl);
 
     assert!(
-        code.contains("pub fn field(&self) -> ::binparse::ParseResult<MyType>"),
+        code.contains("pub fn field(&mut self) -> ::binparse::ParseResult<MyType>"),
         "should have fallible getter returning hook's return type"
     );
     assert!(code.contains("my_hook("), "should call the hook function");
@@ -68,11 +68,11 @@ struct Test {
     let code = generate_code(dsl);
 
     assert!(
-        code.contains("fn data_raw(&self) -> ::binparse::ParseResult<(MyResult, usize)>"),
+        code.contains("fn data_raw(&mut self) -> ::binparse::ParseResult<(MyResult, usize)>"),
         "should have fallible raw helper"
     );
     assert!(
-        code.contains("pub fn data(&self) -> ::binparse::ParseResult<MyResult>"),
+        code.contains("pub fn data(&mut self) -> ::binparse::ParseResult<MyResult>"),
         "should have fallible public getter"
     );
     assert!(

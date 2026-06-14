@@ -1,15 +1,15 @@
 impl<'a> ::binparse::Dissect<'a> for Nib<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         Nib::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         Nib::handoff(self)
     }
 }
 
 impl<'a> Nib<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.combo_fatal_check()?;
         me.combo_recoverable_check()?;
         me.tail_fatal_check()?;
@@ -26,14 +26,14 @@ impl<'a> Nib<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.combo_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.tail_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -47,7 +47,7 @@ impl<'a> Nib<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -140,11 +140,11 @@ impl<'a> Nib<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn combo_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn combo_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.combo_bit_range();
         {
             let mut item_nodes = ::std::vec::Vec::new();
@@ -182,31 +182,31 @@ impl<'a> Nib<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn combo_0(&self) -> u8 {
+    pub fn combo_0(&mut self) -> u8 {
         (self.data[0usize] >> 4usize) & 15u8
     }
     #[allow(clippy::identity_op)]
-    pub fn combo_1(&self) -> u8 {
+    pub fn combo_1(&mut self) -> u8 {
         (self.data[0usize] >> 0usize) & 15u8
     }
     #[allow(clippy::identity_op)]
-    pub fn combo(&self) -> (u8, u8) {
+    pub fn combo(&mut self) -> (u8, u8) {
         (self.combo_0(), self.combo_1())
     }
-    pub fn combo_end_offset(&self) -> binparse::Len {
+    pub fn combo_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 0usize,
         }
     }
-    pub fn combo_start_offset(&self) -> binparse::Len {
+    pub fn combo_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn combo_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn combo_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.combo_start_offset().bits()..self.combo_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn combo_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn combo_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.combo_end_offset();
             let expected = len.byte_ceil();
@@ -220,11 +220,11 @@ impl<'a> Nib<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn combo_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn combo_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tail_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn tail_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.tail_bit_range();
         ::binparse::FieldNode::new(
             "tail",
@@ -234,23 +234,23 @@ impl<'a> Nib<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn tail(&self) -> u8 {
+    pub fn tail(&mut self) -> u8 {
         self.data[1usize]
     }
-    pub fn tail_end_offset(&self) -> binparse::Len {
+    pub fn tail_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 2usize,
             bit: 0usize,
         }
     }
-    pub fn tail_start_offset(&self) -> binparse::Len {
+    pub fn tail_start_offset(&mut self) -> binparse::Len {
         self.combo_end_offset()
     }
-    pub fn tail_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn tail_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.tail_start_offset().bits()..self.tail_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn tail_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn tail_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.tail_end_offset();
             let expected = len.byte_ceil();
@@ -264,7 +264,7 @@ impl<'a> Nib<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tail_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn tail_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

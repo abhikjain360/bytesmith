@@ -25,10 +25,10 @@ pub struct VlanLens {
 }
 
 impl<'a> ::binparse::Dissect<'a> for Vlan<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         Vlan::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         Vlan::handoff(self)
     }
 }
@@ -74,7 +74,7 @@ impl<'a> ::std::iter::Iterator for Vlan_src_Iterator<'a> {
 
 impl<'a> Vlan<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.dst_fatal_check()?;
         me.dst_recoverable_check()?;
         me.src_fatal_check()?;
@@ -105,42 +105,42 @@ impl<'a> Vlan<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.dst_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.src_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.tpid_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.pcp_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.dei_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.vid_hi_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.vid_lo_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.ethertype_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.payload_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -154,7 +154,7 @@ impl<'a> Vlan<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -513,11 +513,11 @@ impl<'a> Vlan<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn dst_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn dst_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.dst_bit_range();
         {
             let mut elem_nodes = ::std::vec::Vec::new();
@@ -563,27 +563,27 @@ impl<'a> Vlan<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn dst(&self) -> ::binparse::ParseResult<Vlan_dst_Iterator<'a>> {
+    pub fn dst(&mut self) -> ::binparse::ParseResult<Vlan_dst_Iterator<'a>> {
         Ok(Vlan_dst_Iterator {
             idx: 0,
             count: 6usize,
             data: &self.data[0usize..],
         })
     }
-    pub fn dst_end_offset(&self) -> binparse::Len {
+    pub fn dst_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 6usize,
             bit: 0usize,
         }
     }
-    pub fn dst_start_offset(&self) -> binparse::Len {
+    pub fn dst_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn dst_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn dst_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.dst_start_offset().bits()..self.dst_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn dst_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn dst_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.dst_end_offset();
             let expected = len.byte_ceil();
@@ -597,11 +597,11 @@ impl<'a> Vlan<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn dst_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn dst_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn src_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn src_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.src_bit_range();
         {
             let mut elem_nodes = ::std::vec::Vec::new();
@@ -647,27 +647,27 @@ impl<'a> Vlan<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn src(&self) -> ::binparse::ParseResult<Vlan_src_Iterator<'a>> {
+    pub fn src(&mut self) -> ::binparse::ParseResult<Vlan_src_Iterator<'a>> {
         Ok(Vlan_src_Iterator {
             idx: 0,
             count: 6usize,
             data: &self.data[6usize..],
         })
     }
-    pub fn src_end_offset(&self) -> binparse::Len {
+    pub fn src_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 12usize,
             bit: 0usize,
         }
     }
-    pub fn src_start_offset(&self) -> binparse::Len {
+    pub fn src_start_offset(&mut self) -> binparse::Len {
         self.dst_end_offset()
     }
-    pub fn src_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn src_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.src_start_offset().bits()..self.src_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn src_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn src_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.src_end_offset();
             let expected = len.byte_ceil();
@@ -681,11 +681,11 @@ impl<'a> Vlan<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn src_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn src_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tpid_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn tpid_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.tpid_bit_range();
         ::binparse::FieldNode::new(
             "tpid",
@@ -695,23 +695,23 @@ impl<'a> Vlan<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn tpid(&self) -> u16 {
+    pub fn tpid(&mut self) -> u16 {
         u16::from_be_bytes(self.data[12usize..14usize].try_into().unwrap())
     }
-    pub fn tpid_end_offset(&self) -> binparse::Len {
+    pub fn tpid_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 14usize,
             bit: 0usize,
         }
     }
-    pub fn tpid_start_offset(&self) -> binparse::Len {
+    pub fn tpid_start_offset(&mut self) -> binparse::Len {
         self.src_end_offset()
     }
-    pub fn tpid_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn tpid_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.tpid_start_offset().bits()..self.tpid_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn tpid_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn tpid_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.tpid_end_offset();
             let expected = len.byte_ceil();
@@ -725,8 +725,8 @@ impl<'a> Vlan<'a> {
         Ok(())
     }
     #[allow(clippy::unnecessary_cast)]
-    fn tpid_validate(&self) -> Result<(), ::binparse::ParseError> {
-        if self.tpid() != 33024 {
+    fn tpid_validate(&mut self) -> Result<(), ::binparse::ParseError> {
+        if self.tpid() as usize != 33024 {
             return Err(::binparse::ParseError::ValidationFailed {
                 field: "Vlan.tpid",
                 actual: self.tpid() as u128,
@@ -735,12 +735,12 @@ impl<'a> Vlan<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tpid_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn tpid_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         self.tpid_validate()?;
         Ok(())
     }
     #[allow(dead_code)]
-    fn pcp_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn pcp_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.pcp_bit_range();
         ::binparse::FieldNode::new(
             "pcp",
@@ -750,23 +750,23 @@ impl<'a> Vlan<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn pcp(&self) -> u8 {
+    pub fn pcp(&mut self) -> u8 {
         (self.data[14usize] >> 5usize) & 7u8
     }
-    pub fn pcp_end_offset(&self) -> binparse::Len {
+    pub fn pcp_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 14usize,
             bit: 3usize,
         }
     }
-    pub fn pcp_start_offset(&self) -> binparse::Len {
+    pub fn pcp_start_offset(&mut self) -> binparse::Len {
         self.tpid_end_offset()
     }
-    pub fn pcp_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn pcp_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.pcp_start_offset().bits()..self.pcp_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn pcp_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn pcp_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.pcp_end_offset();
             let expected = len.byte_ceil();
@@ -780,11 +780,11 @@ impl<'a> Vlan<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn pcp_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn pcp_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn dei_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn dei_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.dei_bit_range();
         ::binparse::FieldNode::new(
             "dei",
@@ -794,23 +794,23 @@ impl<'a> Vlan<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn dei(&self) -> u8 {
+    pub fn dei(&mut self) -> u8 {
         (self.data[14usize] >> 4usize) & 1u8
     }
-    pub fn dei_end_offset(&self) -> binparse::Len {
+    pub fn dei_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 14usize,
             bit: 4usize,
         }
     }
-    pub fn dei_start_offset(&self) -> binparse::Len {
+    pub fn dei_start_offset(&mut self) -> binparse::Len {
         self.pcp_end_offset()
     }
-    pub fn dei_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn dei_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.dei_start_offset().bits()..self.dei_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn dei_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn dei_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.dei_end_offset();
             let expected = len.byte_ceil();
@@ -824,11 +824,11 @@ impl<'a> Vlan<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn dei_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn dei_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn vid_hi_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn vid_hi_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.vid_hi_bit_range();
         ::binparse::FieldNode::new(
             "vid_hi",
@@ -838,23 +838,23 @@ impl<'a> Vlan<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn vid_hi(&self) -> u8 {
+    pub fn vid_hi(&mut self) -> u8 {
         (self.data[14usize] >> 0usize) & 15u8
     }
-    pub fn vid_hi_end_offset(&self) -> binparse::Len {
+    pub fn vid_hi_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 15usize,
             bit: 0usize,
         }
     }
-    pub fn vid_hi_start_offset(&self) -> binparse::Len {
+    pub fn vid_hi_start_offset(&mut self) -> binparse::Len {
         self.dei_end_offset()
     }
-    pub fn vid_hi_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn vid_hi_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.vid_hi_start_offset().bits()..self.vid_hi_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn vid_hi_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn vid_hi_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.vid_hi_end_offset();
             let expected = len.byte_ceil();
@@ -868,11 +868,11 @@ impl<'a> Vlan<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn vid_hi_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn vid_hi_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn vid_lo_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn vid_lo_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.vid_lo_bit_range();
         ::binparse::FieldNode::new(
             "vid_lo",
@@ -882,23 +882,23 @@ impl<'a> Vlan<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn vid_lo(&self) -> u8 {
+    pub fn vid_lo(&mut self) -> u8 {
         self.data[15usize]
     }
-    pub fn vid_lo_end_offset(&self) -> binparse::Len {
+    pub fn vid_lo_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 16usize,
             bit: 0usize,
         }
     }
-    pub fn vid_lo_start_offset(&self) -> binparse::Len {
+    pub fn vid_lo_start_offset(&mut self) -> binparse::Len {
         self.vid_hi_end_offset()
     }
-    pub fn vid_lo_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn vid_lo_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.vid_lo_start_offset().bits()..self.vid_lo_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn vid_lo_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn vid_lo_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.vid_lo_end_offset();
             let expected = len.byte_ceil();
@@ -912,11 +912,11 @@ impl<'a> Vlan<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn vid_lo_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn vid_lo_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ethertype_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn ethertype_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.ethertype_bit_range();
         ::binparse::FieldNode::new(
             "ethertype",
@@ -926,23 +926,23 @@ impl<'a> Vlan<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn ethertype(&self) -> u16 {
+    pub fn ethertype(&mut self) -> u16 {
         u16::from_be_bytes(self.data[16usize..18usize].try_into().unwrap())
     }
-    pub fn ethertype_end_offset(&self) -> binparse::Len {
+    pub fn ethertype_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 18usize,
             bit: 0usize,
         }
     }
-    pub fn ethertype_start_offset(&self) -> binparse::Len {
+    pub fn ethertype_start_offset(&mut self) -> binparse::Len {
         self.vid_lo_end_offset()
     }
-    pub fn ethertype_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn ethertype_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.ethertype_start_offset().bits()..self.ethertype_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn ethertype_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn ethertype_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.ethertype_end_offset();
             let expected = len.byte_ceil();
@@ -956,11 +956,11 @@ impl<'a> Vlan<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ethertype_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn ethertype_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn payload_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn payload_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.payload_bit_range();
         {
             let mut elem_nodes = ::std::vec::Vec::new();
@@ -1006,14 +1006,14 @@ impl<'a> Vlan<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn payload(&self) -> ::binparse::ParseResult<Vlan_payload_Iterator<'a>> {
+    pub fn payload(&mut self) -> ::binparse::ParseResult<Vlan_payload_Iterator<'a>> {
         Ok(Vlan_payload_Iterator {
             idx: 0,
             count: self.data.len().saturating_sub(18usize),
             data: &self.data[18usize..],
         })
     }
-    pub fn payload_end_offset(&self) -> binparse::Len {
+    pub fn payload_end_offset(&mut self) -> binparse::Len {
         ::binparse::Len {
             byte: 18usize,
             bit: 0usize,
@@ -1028,14 +1028,14 @@ impl<'a> Vlan<'a> {
                 }
             })
     }
-    pub fn payload_start_offset(&self) -> binparse::Len {
+    pub fn payload_start_offset(&mut self) -> binparse::Len {
         self.ethertype_end_offset()
     }
-    pub fn payload_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn payload_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.payload_start_offset().bits()..self.payload_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn payload_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn payload_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.payload_end_offset();
             let expected = len.byte_ceil();
@@ -1049,7 +1049,7 @@ impl<'a> Vlan<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn payload_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn payload_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
@@ -1070,7 +1070,7 @@ impl<'a> VlanWriter<'a> {
     }
     pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
         let lens = {
-            let (view, _) = Vlan::parse(data)
+            let (mut view, _) = Vlan::parse(data)
                 .map_err(|_| ::binparse::WriteError::InvalidContent)?;
             let region_bytes = view.payload_end_offset().byte
                 - view.payload_start_offset().byte;

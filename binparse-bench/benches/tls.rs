@@ -23,7 +23,8 @@ fn tls_record(c: &mut Criterion) {
     let mut g = c.benchmark_group("tls_record");
     g.bench_function("binparse", |b| {
         b.iter(|| {
-            let (rec, _) = binparse_protocols::tls::TlsRecord::parse(black_box(TLS_RECORD)).unwrap();
+            let (mut rec, _) =
+                binparse_protocols::tls::TlsRecord::parse(black_box(TLS_RECORD)).unwrap();
             black_box(
                 rec.content_type() as u64
                     ^ rec.legacy_major() as u64

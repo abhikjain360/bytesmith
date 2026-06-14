@@ -35,10 +35,10 @@ fn v3_connect(c: &mut Criterion) {
     let mut g = c.benchmark_group("mqtt_v3_connect");
     g.bench_function("binparse", |b| {
         b.iter(|| {
-            let (pkt, _) = MqttPacket::parse(black_box(MQTT_V3_CONNECT)).unwrap();
+            let (mut pkt, _) = MqttPacket::parse(black_box(MQTT_V3_CONNECT)).unwrap();
             let pt = pkt.packet_type() as u64;
             match pkt.body().unwrap() {
-                MqttPacket_body::Connect(c) => {
+                MqttPacket_body::Connect(mut c) => {
                     black_box(pt ^ c.keep_alive() as u64 ^ sum_bp(c.proto_name().unwrap()))
                 }
                 _ => unreachable!(),
@@ -87,10 +87,12 @@ fn v3_publish(c: &mut Criterion) {
     let mut g = c.benchmark_group("mqtt_v3_publish");
     g.bench_function("binparse", |b| {
         b.iter(|| {
-            let (pkt, _) = MqttPacket::parse(black_box(MQTT_V3_PUBLISH)).unwrap();
+            let (mut pkt, _) = MqttPacket::parse(black_box(MQTT_V3_PUBLISH)).unwrap();
             match pkt.body().unwrap() {
-                MqttPacket_body::Publish(p) => black_box(
-                    p.topic_len() as u64 ^ sum_bp(p.topic().unwrap()) ^ sum_bp(p.payload().unwrap()),
+                MqttPacket_body::Publish(mut p) => black_box(
+                    p.topic_len() as u64
+                        ^ sum_bp(p.topic().unwrap())
+                        ^ sum_bp(p.payload().unwrap()),
                 ),
                 _ => unreachable!(),
             }
@@ -126,9 +128,7 @@ fn v3_publish(c: &mut Criterion) {
         b.iter_batched(
             || buf(MQTT_V3_PUBLISH),
             |mut buf| match V4.read_mut(&mut buf, MAX).unwrap() {
-                Packet::Publish(p, _) => {
-                    black_box(p.topic.len() as u64 ^ p.payload.len() as u64)
-                }
+                Packet::Publish(p, _) => black_box(p.topic.len() as u64 ^ p.payload.len() as u64),
                 _ => unreachable!(),
             },
             BatchSize::SmallInput,
@@ -142,10 +142,12 @@ fn v5_connack(c: &mut Criterion) {
     let mut g = c.benchmark_group("mqtt_v5_connack");
     g.bench_function("binparse", |b| {
         b.iter(|| {
-            let (pkt, _) = MqttPacket::parse(black_box(MQTT_V5_CONNACK)).unwrap();
+            let (mut pkt, _) = MqttPacket::parse(black_box(MQTT_V5_CONNACK)).unwrap();
             match pkt.body().unwrap() {
-                MqttPacket_body::Connack(c) => black_box(
-                    c.reason_code() as u64 ^ c.prop_len().unwrap() ^ sum_bp(c.properties().unwrap()),
+                MqttPacket_body::Connack(mut c) => black_box(
+                    c.reason_code() as u64
+                        ^ *c.prop_len().unwrap()
+                        ^ sum_bp(c.properties().unwrap()),
                 ),
                 _ => unreachable!(),
             }
@@ -155,9 +157,9 @@ fn v5_connack(c: &mut Criterion) {
         b.iter_batched(
             || buf(MQTT_V5_CONNACK),
             |mut buf| match mqttbytes::v5::read(&mut buf, MAX).unwrap() {
-                mqttbytes::v5::Packet::ConnAck(c) => {
-                    black_box(c.session_present as u64 ^ c.code as u64 ^ c.properties.is_some() as u64)
-                }
+                mqttbytes::v5::Packet::ConnAck(c) => black_box(
+                    c.session_present as u64 ^ c.code as u64 ^ c.properties.is_some() as u64,
+                ),
                 _ => unreachable!(),
             },
             BatchSize::SmallInput,
@@ -168,9 +170,9 @@ fn v5_connack(c: &mut Criterion) {
         b.iter_batched(
             || buf(MQTT_V5_CONNACK),
             |mut buf| match v5::Packet::read(&mut buf, None).unwrap() {
-                v5::Packet::ConnAck(c) => {
-                    black_box(c.session_present as u64 ^ c.code as u64 ^ c.properties.is_some() as u64)
-                }
+                v5::Packet::ConnAck(c) => black_box(
+                    c.session_present as u64 ^ c.code as u64 ^ c.properties.is_some() as u64,
+                ),
                 _ => unreachable!(),
             },
             BatchSize::SmallInput,

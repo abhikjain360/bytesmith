@@ -67,14 +67,14 @@ fn golden_check_and_range() {
 #[test]
 fn constant_decimal_infers_smallest_type() {
     let code = generate("struct Foo { small = 10, medium = 65536 }");
-    assert!(code.contains("pub fn small(&self) -> u8"));
-    assert!(code.contains("pub fn medium(&self) -> u32"));
+    assert!(code.contains("pub fn small(&mut self) -> u8"));
+    assert!(code.contains("pub fn medium(&mut self) -> u32"));
 }
 #[test]
 fn constant_hex_infers_type_from_width() {
     let code = generate("struct Foo { a = x0f, b = x0102030405060708 }");
-    assert!(code.contains("pub fn a(&self) -> u8"));
-    assert!(code.contains("pub fn b(&self) -> u64"));
+    assert!(code.contains("pub fn a(&mut self) -> u8"));
+    assert!(code.contains("pub fn b(&mut self) -> u64"));
 }
 #[test]
 fn validate_attribute_is_an_alias_for_check() {

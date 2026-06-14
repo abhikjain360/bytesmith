@@ -1,15 +1,15 @@
 impl<'a> ::binparse::Dissect<'a> for Msg<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         Msg::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         Msg::handoff(self)
     }
 }
 
 impl<'a> Msg<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.count_fatal_check()?;
         me.count_recoverable_check()?;
         me.name_fatal_check()?;
@@ -26,14 +26,14 @@ impl<'a> Msg<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.count_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.name_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -47,7 +47,7 @@ impl<'a> Msg<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -140,11 +140,11 @@ impl<'a> Msg<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn count_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn count_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.count_bit_range();
         ::binparse::FieldNode::new(
             "count",
@@ -154,23 +154,23 @@ impl<'a> Msg<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn count(&self) -> u8 {
+    pub fn count(&mut self) -> u8 {
         self.data[0usize]
     }
-    pub fn count_end_offset(&self) -> binparse::Len {
+    pub fn count_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 0usize,
         }
     }
-    pub fn count_start_offset(&self) -> binparse::Len {
+    pub fn count_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn count_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn count_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.count_start_offset().bits()..self.count_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn count_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn count_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.count_end_offset();
             let expected = len.byte_ceil();
@@ -184,11 +184,11 @@ impl<'a> Msg<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn count_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn count_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn name_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn name_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.name_bit_range();
         match self.name_raw() {
             Ok((_, _)) => {
@@ -210,7 +210,7 @@ impl<'a> Msg<'a> {
             }
         }
     }
-    fn name_raw(&self) -> ::binparse::ParseResult<(&'a [u8], usize)> {
+    fn name_raw(&mut self) -> ::binparse::ParseResult<(&'a [u8], usize)> {
         let start = 1usize;
         let (value, consumed) = binparse::hooks::backref_blob(
             &self.data[start..],
@@ -229,10 +229,10 @@ impl<'a> Msg<'a> {
         }
         Ok((value, consumed))
     }
-    pub fn name(&self) -> ::binparse::ParseResult<&'a [u8]> {
+    pub fn name(&mut self) -> ::binparse::ParseResult<&'a [u8]> {
         self.name_raw().map(|(value, _)| value)
     }
-    pub fn name_end_offset(&self) -> binparse::Len {
+    pub fn name_end_offset(&mut self) -> binparse::Len {
         ::binparse::Len {
             byte: 1usize,
             bit: 0usize,
@@ -249,14 +249,14 @@ impl<'a> Msg<'a> {
                 }
             })
     }
-    pub fn name_start_offset(&self) -> binparse::Len {
+    pub fn name_start_offset(&mut self) -> binparse::Len {
         self.count_end_offset()
     }
-    pub fn name_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn name_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.name_start_offset().bits()..self.name_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn name_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn name_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         self.name_raw()?;
         {
             let len = self.name_end_offset();
@@ -271,7 +271,7 @@ impl<'a> Msg<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn name_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn name_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

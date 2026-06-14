@@ -53,6 +53,13 @@ fn double_it(value: u16, _ctx: binparse::HookContext<'_>) -> binparse::ParseResu
     Ok(u32::from(value) * 2)
 }}
 
+static COUNTING_TRANSFORM_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn counting_double_it(value: u16, _ctx: binparse::HookContext<'_>) -> binparse::ParseResult<u32> {{
+    COUNTING_TRANSFORM_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Ok(u32::from(value) * 2)
+}}
+
 fn failing_transform(_value: u16, ctx: binparse::HookContext<'_>) -> binparse::ParseResult<u32> {{
     Err(binparse::ParseError::HookFailed {{
         field: ctx.field,
@@ -69,9 +76,21 @@ fn read_leb128(data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseRe
 }}
 
 static COUNTING_HOOK_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static COUNTING_VALUE_HOOK_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static COUNTING_LEN_VALUE_HOOK_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn counting_cstring(data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseResult<(String, usize)> {{
     COUNTING_HOOK_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    binparse::hooks::cstring(data, ctx)
+}}
+
+fn counting_value_cstring(data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseResult<(String, usize)> {{
+    COUNTING_VALUE_HOOK_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    binparse::hooks::cstring(data, ctx)
+}}
+
+fn counting_len_value_cstring(data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseResult<(String, usize)> {{
+    COUNTING_LEN_VALUE_HOOK_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     binparse::hooks::cstring(data, ctx)
 }}
 
@@ -284,7 +303,7 @@ mod tests {{
             1, 0x34, 0x12, 0x01, 0x02, 0x03, 0x04, 0b1010_1101, 9, 8, 7, 0xaa, 0x01, 0x02,
             0x78, 0x56, 0x55, 0xcd, 0xab, 0xfe,
         ];
-        let (packet, rem) = Baseline::parse(&data).unwrap();
+        let (mut packet, rem) = Baseline::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.n(), 1);
         assert_eq!(packet.word(), 0x1234);
@@ -299,7 +318,7 @@ mod tests {{
             .unwrap();
         assert_eq!(fixed, vec![9, 8, 7]);
 
-        let inner = packet.inner().unwrap();
+        let mut inner = packet.inner().unwrap();
         assert_eq!(inner.a(), 0xaa);
         assert_eq!(inner.b(), 0x0102);
 
@@ -312,7 +331,7 @@ mod tests {{
         assert_eq!(packet.pair(), (0x55, 0xabcd));
 
         match packet.payload().unwrap() {{
-            Baseline_payload::One(one) => assert_eq!(one.x(), 0xfe),
+            Baseline_payload::One(mut one) => assert_eq!(one.x(), 0xfe),
             Baseline_payload::Unknown(_) => panic!("expected One payload"),
         }}
     }}
@@ -323,7 +342,7 @@ mod tests {{
             1, 0x34, 0x12, 0x01, 0x02, 0x03, 0x04, 0b1010_1101, 9, 8, 7, 0xaa, 0x01, 0x02,
             0x78, 0x56, 0x55, 0xcd, 0xab, 0xfe,
         ];
-        let (packet, _) = Baseline::parse(&data).unwrap();
+        let (mut packet, _) = Baseline::parse(&data).unwrap();
         assert_eq!(packet.n_start_offset(), binparse::Len::ZERO);
         assert_eq!(packet.n_bit_range(), 0..8);
         assert_eq!(packet.word_bit_range(), 8..24);
@@ -337,7 +356,7 @@ mod tests {{
         assert_eq!(packet.payload_bit_range(), 152..160);
         assert_eq!(packet.payload_end_offset(), binparse::Len {{ byte: 20, bit: 0 }});
 
-        let inner = packet.inner().unwrap();
+        let mut inner = packet.inner().unwrap();
         assert_eq!(inner.a_bit_range(), 0..8);
         assert_eq!(inner.b_bit_range(), 8..24);
         let inner_base = packet.inner_start_offset().bits();
@@ -348,7 +367,7 @@ mod tests {{
     #[test]
     fn cross_byte_bitfield_offsets_and_values() {{
         let data = [0xad, 0xad];
-        let (packet, rem) = CrossByte::parse(&data).unwrap();
+        let (mut packet, rem) = CrossByte::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.high(), 21);
         assert_eq!(packet.mid(), 45);
@@ -359,7 +378,7 @@ mod tests {{
         assert_eq!(packet.mid_start_offset(), binparse::Len {{ byte: 0, bit: 5 }});
         assert_eq!(packet.mid_end_offset(), binparse::Len {{ byte: 1, bit: 3 }});
         assert_parse_no_panic("CrossByte", &data, |data| {{
-            if let Ok((packet, _)) = CrossByte::parse(data) {{
+            if let Ok((mut packet, _)) = CrossByte::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -368,7 +387,7 @@ mod tests {{
     #[test]
     fn size_expression_valid_packet_decodes() {{
         let data = [0, 0, 0, 0, 0, 0, 0, 2, 1, 2, 3, 4];
-        let (packet, rem) = SizeExpr::parse(&data).unwrap();
+        let (mut packet, rem) = SizeExpr::parse(&data).unwrap();
         assert!(rem.is_empty());
         let xs = packet
             .xs()
@@ -391,7 +410,7 @@ mod tests {{
             }}
         );
         assert_parse_no_panic("SizeExpr", &data, |data| {{
-            if let Ok((packet, _)) = SizeExpr::parse(data) {{
+            if let Ok((mut packet, _)) = SizeExpr::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -409,7 +428,7 @@ mod tests {{
             }}
         );
         assert_parse_no_panic("Huge", &data, |data| {{
-            if let Ok((packet, _)) = Huge::parse(data) {{
+            if let Ok((mut packet, _)) = Huge::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -422,7 +441,7 @@ mod tests {{
             0x78, 0x56, 0x55, 0xcd, 0xab, 0xfe,
         ];
         assert_parse_no_panic("Baseline", &data, |data| {{
-            if let Ok((packet, _)) = Baseline::parse(data) {{
+            if let Ok((mut packet, _)) = Baseline::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -431,7 +450,7 @@ mod tests {{
     #[test]
     fn hooks_decode_and_do_not_panic_on_truncation() {{
         let data = [3, 0, 2, b'h', b'i', 0];
-        let (packet, rem) = Hooked::parse(&data).unwrap();
+        let (mut packet, rem) = Hooked::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.prefix(), 3);
         assert_eq!(packet.value().unwrap(), 4);
@@ -443,7 +462,7 @@ mod tests {{
             Err(binparse::ParseError::NotEnoughData {{ .. }})
         ));
         assert_parse_no_panic("Hooked", &data, |data| {{
-            if let Ok((packet, _)) = Hooked::parse(data) {{
+            if let Ok((mut packet, _)) = Hooked::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -452,7 +471,7 @@ mod tests {{
     #[test]
     fn leb128_hook_decodes_and_errors_propagate() {{
         let data = [7, 0xE5, 0x8E, 0x26, 9];
-        let (packet, rem) = Varint::parse(&data).unwrap();
+        let (mut packet, rem) = Varint::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.tag(), 7);
         assert_eq!(packet.value().unwrap(), 624485);
@@ -475,7 +494,7 @@ mod tests {{
         ));
 
         assert_parse_no_panic("Varint", &data, |data| {{
-            if let Ok((packet, _)) = Varint::parse(data) {{
+            if let Ok((mut packet, _)) = Varint::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -489,7 +508,7 @@ mod tests {{
             Err(binparse::ParseError::NotEnoughData {{ .. }})
         ));
         assert_parse_no_panic("Lying", &data, |data| {{
-            if let Ok((packet, _)) = Lying::parse(data) {{
+            if let Ok((mut packet, _)) = Lying::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -504,7 +523,7 @@ mod tests {{
             0xC0, 0x02,
             0x00, 0x1C,
         ];
-        let (packet, rem) = DnsMsg::parse(&data).unwrap();
+        let (mut packet, rem) = DnsMsg::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.id(), 0xABCD);
         assert_eq!(packet.qname().unwrap(), "abc.de");
@@ -534,7 +553,7 @@ mod tests {{
         ));
 
         assert_parse_no_panic("DnsMsg", &data, |data| {{
-            if let Ok((packet, _)) = DnsMsg::parse(data) {{
+            if let Ok((mut packet, _)) = DnsMsg::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -544,7 +563,7 @@ mod tests {{
     fn cache_len_memoizes_hook_end_offset() {{
         // count=7, body="hi\0" (cstring hook consumes 3), then a/b/c are u16 each.
         let data = [7, b'h', b'i', 0, 0x00, 0x0a, 0x00, 0x0b, 0x00, 0x0c];
-        let (packet, rem) = Cached::parse(&data).unwrap();
+        let (mut packet, rem) = Cached::parse(&data).unwrap();
         assert!(rem.is_empty());
 
         // Reset after parse: isolate the downstream offset re-walk, which is the
@@ -576,9 +595,55 @@ mod tests {{
     }}
 
     #[test]
+    fn cache_value_memoizes_hook_value_and_consumed_len() {{
+        let data = [7, b'h', b'i', 0, 0x00, 0x0a];
+        COUNTING_VALUE_HOOK_CALLS.store(0, std::sync::atomic::Ordering::Relaxed);
+        let (mut packet, rem) = CachedValue::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(COUNTING_VALUE_HOOK_CALLS.load(std::sync::atomic::Ordering::Relaxed), 1);
+
+        assert_eq!(packet.body().unwrap().as_str(), "hi");
+        assert_eq!(packet.body().unwrap().as_str(), "hi");
+        assert_eq!(packet.a(), 0x000a);
+        let _ = packet.a_bit_range();
+        assert_eq!(COUNTING_VALUE_HOOK_CALLS.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }}
+
+    #[test]
+    fn bare_cache_memoizes_value_and_end_offset() {{
+        let data = [7, b'h', b'i', 0, 0x00, 0x0a];
+        COUNTING_LEN_VALUE_HOOK_CALLS.store(0, std::sync::atomic::Ordering::Relaxed);
+        let (mut packet, rem) = CachedLenValue::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(COUNTING_LEN_VALUE_HOOK_CALLS.load(std::sync::atomic::Ordering::Relaxed), 1);
+
+        assert_eq!(packet.body().unwrap().as_str(), "hi");
+        let _ = packet.body_bit_range();
+        let _ = packet.a_end_offset();
+        assert_eq!(packet.a(), 0x000a);
+        assert_eq!(COUNTING_LEN_VALUE_HOOK_CALLS.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }}
+
+    #[test]
+    fn cache_value_memoizes_fixed_hook_value() {{
+        let data = [3, 0, 2, 9];
+        COUNTING_TRANSFORM_CALLS.store(0, std::sync::atomic::Ordering::Relaxed);
+        let (mut packet, rem) = CachedFixedHook::parse(&data).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(COUNTING_TRANSFORM_CALLS.load(std::sync::atomic::Ordering::Relaxed), 1);
+
+        assert_eq!(*packet.value().unwrap(), 4);
+        assert_eq!(*packet.value().unwrap(), 4);
+        let tree = packet.field_tree();
+        let value_node = tree.children.iter().find(|c| c.name == "value").unwrap();
+        assert_eq!(value_node.value, binparse::Value::UInt(4));
+        assert_eq!(COUNTING_TRANSFORM_CALLS.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }}
+
+    #[test]
     fn fixed_hook_ok_decodes_transformed_value() {{
         let data = [3, 0, 2, b'h', b'i', 0];
-        let (packet, _) = Hooked::parse(&data).unwrap();
+        let (mut packet, _) = Hooked::parse(&data).unwrap();
         assert_eq!(packet.value().unwrap(), 4);
         let tree = packet.field_tree();
         let value_node = tree.children.iter().find(|c| c.name == "value").unwrap();
@@ -616,7 +681,7 @@ mod tests {{
     fn len_hook_consuming_less_than_window_exposes_rest() {{
         // window=4: leb128 value 0x05 consumes 1 byte, 3 trailing window bytes are rest.
         let data = [4, 0x05, 0xAA, 0xBB, 0xCC, 0x99];
-        let (packet, rem) = LenVarint::parse(&data).unwrap();
+        let (mut packet, rem) = LenVarint::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.len(), 4);
         assert_eq!(packet.value().unwrap(), 5);
@@ -640,7 +705,7 @@ mod tests {{
     fn len_hook_consuming_exactly_window_has_no_rest() {{
         // value 0xE5 0x8E 0x26 = 624485 consumes all 3 window bytes.
         let data = [3, 0xE5, 0x8E, 0x26, 0x77];
-        let (packet, rem) = LenVarint::parse(&data).unwrap();
+        let (mut packet, rem) = LenVarint::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.value().unwrap(), 624485);
         assert!(packet.value_rest().unwrap().is_empty());
@@ -660,7 +725,7 @@ mod tests {{
             Err(binparse::ParseError::NotEnoughData {{ .. }})
         ));
         assert_parse_no_panic("LenVarint", &data, |data| {{
-            if let Ok((packet, _)) = LenVarint::parse(data) {{
+            if let Ok((mut packet, _)) = LenVarint::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -676,7 +741,7 @@ mod tests {{
             0xC0, 0x02,
             0x00, 0x1C,
         ];
-        let (packet, rem) = LenDns::parse(&data).unwrap();
+        let (mut packet, rem) = LenDns::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.id(), 0xABCD);
         assert_eq!(packet.qname().unwrap(), "abc.de");
@@ -692,7 +757,7 @@ mod tests {{
     fn len_hook_truncation_and_dissect_never_panic() {{
         let data = [4, 0x05, 0xAA, 0xBB, 0xCC, 0x99];
         assert_parse_no_panic("LenVarint", &data, |data| {{
-            if let Ok((packet, _)) = LenVarint::parse(data) {{
+            if let Ok((mut packet, _)) = LenVarint::parse(data) {{
                 let _ = packet.value();
                 let _ = packet.value_rest();
                 let _ = packet.field_tree();
@@ -704,7 +769,7 @@ mod tests {{
     #[test]
     fn hook_in_conditional_present_path_decodes() {{
         let data = [1, 0, 5, b'h', b'i', 0, 0x42];
-        let (packet, rem) = CondHook::parse(&data).unwrap();
+        let (mut packet, rem) = CondHook::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.kind(), 1);
         assert_eq!(packet.doubled().unwrap().unwrap(), 10);
@@ -719,7 +784,7 @@ mod tests {{
     #[test]
     fn hook_in_conditional_absent_path_skips() {{
         let data = [0, 0x42];
-        let (packet, rem) = CondHook::parse(&data).unwrap();
+        let (mut packet, rem) = CondHook::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.kind(), 0);
         assert!(packet.doubled().is_none());
@@ -731,7 +796,7 @@ mod tests {{
         assert_eq!(doubled.value, binparse::Value::Absent);
 
         assert_parse_no_panic("CondHook", &[1, 0, 5, b'h', b'i', 0, 0x42], |data| {{
-            if let Ok((packet, _)) = CondHook::parse(data) {{
+            if let Ok((mut packet, _)) = CondHook::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -741,9 +806,9 @@ mod tests {{
     #[test]
     fn struct_array_decodes_and_does_not_panic_on_truncation() {{
         let data = [2, 1, 0x02, 0x03, 4, 0x05, 0x06];
-        let (packet, rem) = StructArray::parse(&data).unwrap();
+        let (mut packet, rem) = StructArray::parse(&data).unwrap();
         assert!(rem.is_empty());
-        let items = packet
+        let mut items = packet
             .items()
             .unwrap()
             .collect::<binparse::ParseResult<Vec<_>>>()
@@ -755,14 +820,14 @@ mod tests {{
         assert_eq!(items[1].b(), 0x0506);
         assert_eq!(packet.items_bit_range(), 8..56);
         assert_parse_no_panic("StructArray", &data, |data| {{
-            if let Ok((packet, _)) = StructArray::parse(data) {{
+            if let Ok((mut packet, _)) = StructArray::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
 
         let short = [10, 1, 0x02];
         assert_parse_no_panic("StructArray short", &short, |data| {{
-            if let Ok((packet, _)) = StructArray::parse(data) {{
+            if let Ok((mut packet, _)) = StructArray::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -777,7 +842,7 @@ mod tests {{
         data.extend(5i16.to_le_bytes());
         data.extend((-5i16).to_le_bytes());
         data.extend([0x7f, 0x80]);
-        let (packet, rem) = Signed::parse(&data).unwrap();
+        let (mut packet, rem) = Signed::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.a(), -1i8);
         assert_eq!(packet.b(), -2i16);
@@ -799,7 +864,7 @@ mod tests {{
         assert_eq!(packet.a_bit_range(), 0..8);
         assert_eq!(packet.b_bit_range(), 8..24);
         assert_parse_no_panic("Signed", &data, |data| {{
-            if let Ok((packet, _)) = Signed::parse(data) {{
+            if let Ok((mut packet, _)) = Signed::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -808,14 +873,14 @@ mod tests {{
     #[test]
     fn ipv4_version_and_ihl_decode_msb_first() {{
         let data = [0x45];
-        let (packet, rem) = Ipv4Start::parse(&data).unwrap();
+        let (mut packet, rem) = Ipv4Start::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.version(), 4);
         assert_eq!(packet.ihl(), 5);
         assert_eq!(packet.version_bit_range(), 0..4);
         assert_eq!(packet.ihl_bit_range(), 4..8);
         assert_parse_no_panic("Ipv4Start", &data, |data| {{
-            if let Ok((packet, _)) = Ipv4Start::parse(data) {{
+            if let Ok((mut packet, _)) = Ipv4Start::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -824,7 +889,7 @@ mod tests {{
     #[test]
     fn tcp_flags_decode_without_hooks() {{
         let data = [0x50, 0b0001_1000];
-        let (packet, rem) = TcpFlags::parse(&data).unwrap();
+        let (mut packet, rem) = TcpFlags::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.data_offset(), 5);
         assert_eq!(packet.reserved(), 0);
@@ -839,7 +904,7 @@ mod tests {{
         assert_eq!(packet.fin(), 0);
         assert_eq!(packet.ack_bit_range(), 11..12);
         assert_parse_no_panic("TcpFlags", &data, |data| {{
-            if let Ok((packet, _)) = TcpFlags::parse(data) {{
+            if let Ok((mut packet, _)) = TcpFlags::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -848,7 +913,7 @@ mod tests {{
     #[test]
     fn validated_packet_decodes() {{
         let data = [0x89, 0x50, 0x4e, 0x47, 0x45, 0x00, 0x14, 0b00_000011];
-        let (packet, rem) = Validated::parse(&data).unwrap();
+        let (mut packet, rem) = Validated::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.magic(), 0x89504e47);
         assert_eq!(packet.version(), 4);
@@ -857,7 +922,7 @@ mod tests {{
         assert_eq!(packet.reserved(), 0);
         assert_eq!(packet.flags(), 3);
         assert_parse_no_panic("Validated", &data, |data| {{
-            if let Ok((packet, _)) = Validated::parse(data) {{
+            if let Ok((mut packet, _)) = Validated::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -933,7 +998,7 @@ mod tests {{
     #[test]
     fn ipv4_options_decode_when_ihl_exceeds_five() {{
         let data = [0x46, 0xaa, 0xbb, 0xcc, 0xdd, 0x11];
-        let (packet, rem) = Ipv4WithOptions::parse(&data).unwrap();
+        let (mut packet, rem) = Ipv4WithOptions::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.version(), 4);
         assert_eq!(packet.ihl(), 6);
@@ -948,7 +1013,7 @@ mod tests {{
         assert_eq!(packet.options_bit_range(), 8..40);
         assert_eq!(packet.proto_bit_range(), 40..48);
         assert_parse_no_panic("Ipv4WithOptions", &data, |data| {{
-            if let Ok((packet, _)) = Ipv4WithOptions::parse(data) {{
+            if let Ok((mut packet, _)) = Ipv4WithOptions::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -957,13 +1022,13 @@ mod tests {{
     #[test]
     fn ipv4_options_absent_when_ihl_is_five() {{
         let data = [0x45, 0x11];
-        let (packet, rem) = Ipv4WithOptions::parse(&data).unwrap();
+        let (mut packet, rem) = Ipv4WithOptions::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert!(packet.options().is_none());
         assert_eq!(packet.proto(), 0x11);
         assert_eq!(packet.proto_bit_range(), 8..16);
         assert_parse_no_panic("Ipv4WithOptions absent", &data, |data| {{
-            if let Ok((packet, _)) = Ipv4WithOptions::parse(data) {{
+            if let Ok((mut packet, _)) = Ipv4WithOptions::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -984,7 +1049,7 @@ mod tests {{
     #[test]
     fn tcp_options_decode_based_on_data_offset() {{
         let data = [0x60, 0x01, 0x02, 0x03, 0x04];
-        let (packet, rem) = TcpStart::parse(&data).unwrap();
+        let (mut packet, rem) = TcpStart::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.data_offset(), 6);
         let options = packet
@@ -996,11 +1061,11 @@ mod tests {{
         assert_eq!(options, vec![1, 2, 3, 4]);
 
         let no_options = [0x50];
-        let (packet, rem) = TcpStart::parse(&no_options).unwrap();
+        let (mut packet, rem) = TcpStart::parse(&no_options).unwrap();
         assert!(rem.is_empty());
         assert!(packet.options().is_none());
         assert_parse_no_panic("TcpStart", &data, |data| {{
-            if let Ok((packet, _)) = TcpStart::parse(data) {{
+            if let Ok((mut packet, _)) = TcpStart::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1009,7 +1074,7 @@ mod tests {{
     #[test]
     fn conditional_else_branch_updates_offsets() {{
         let then_data = [1, 7, 9];
-        let (packet, rem) = CondElse::parse(&then_data).unwrap();
+        let (mut packet, rem) = CondElse::parse(&then_data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.small(), Some(7));
         assert_eq!(packet.big(), None);
@@ -1017,7 +1082,7 @@ mod tests {{
         assert_eq!(packet.tail_bit_range(), 16..24);
 
         let else_data = [0, 0x12, 0x34, 9];
-        let (packet, rem) = CondElse::parse(&else_data).unwrap();
+        let (mut packet, rem) = CondElse::parse(&else_data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.small(), None);
         assert_eq!(packet.big(), Some(0x1234));
@@ -1025,12 +1090,12 @@ mod tests {{
         assert_eq!(packet.tail_bit_range(), 24..32);
 
         assert_parse_no_panic("CondElse then", &then_data, |data| {{
-            if let Ok((packet, _)) = CondElse::parse(data) {{
+            if let Ok((mut packet, _)) = CondElse::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
         assert_parse_no_panic("CondElse else", &else_data, |data| {{
-            if let Ok((packet, _)) = CondElse::parse(data) {{
+            if let Ok((mut packet, _)) = CondElse::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1039,7 +1104,7 @@ mod tests {{
     #[test]
     fn greedy_rest_consumes_remaining_bytes() {{
         let data = [5, 1, 2, 3];
-        let (packet, rem) = Rest::parse(&data).unwrap();
+        let (mut packet, rem) = Rest::parse(&data).unwrap();
         assert!(rem.is_empty());
         let tail = packet
             .tail()
@@ -1049,7 +1114,7 @@ mod tests {{
         assert_eq!(tail, vec![1, 2, 3]);
         assert_eq!(packet.tail_bit_range(), 8..32);
 
-        let (packet, rem) = Rest::parse(&[7]).unwrap();
+        let (mut packet, rem) = Rest::parse(&[7]).unwrap();
         assert!(rem.is_empty());
         let tail = packet
             .tail()
@@ -1059,7 +1124,7 @@ mod tests {{
         assert!(tail.is_empty());
 
         assert_parse_no_panic("Rest", &data, |data| {{
-            if let Ok((packet, _)) = Rest::parse(data) {{
+            if let Ok((mut packet, _)) = Rest::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1068,7 +1133,7 @@ mod tests {{
     #[test]
     fn greedy_rest_multibyte_requires_whole_elements() {{
         let data = [9, 0x12, 0x34, 0x56, 0x78];
-        let (packet, rem) = RestWide::parse(&data).unwrap();
+        let (mut packet, rem) = RestWide::parse(&data).unwrap();
         assert!(rem.is_empty());
         let words = packet
             .words()
@@ -1086,7 +1151,7 @@ mod tests {{
             }}
         );
         assert_parse_no_panic("RestWide", &data, |data| {{
-            if let Ok((packet, _)) = RestWide::parse(data) {{
+            if let Ok((mut packet, _)) = RestWide::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1095,7 +1160,7 @@ mod tests {{
     #[test]
     fn until_array_stops_at_sentinel() {{
         let data = [b'h', b'i', 0, 7];
-        let (packet, rem) = CStr::parse(&data).unwrap();
+        let (mut packet, rem) = CStr::parse(&data).unwrap();
         assert!(rem.is_empty());
         let name = packet
             .name()
@@ -1107,7 +1172,7 @@ mod tests {{
         assert_eq!(packet.name_bit_range(), 0..24);
         assert_eq!(packet.after_bit_range(), 24..32);
 
-        let (packet, rem) = CStr::parse(&[0, 7]).unwrap();
+        let (mut packet, rem) = CStr::parse(&[0, 7]).unwrap();
         assert!(rem.is_empty());
         let name = packet
             .name()
@@ -1125,7 +1190,7 @@ mod tests {{
             }}
         );
         assert_parse_no_panic("CStr", &data, |data| {{
-            if let Ok((packet, _)) = CStr::parse(data) {{
+            if let Ok((mut packet, _)) = CStr::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1134,9 +1199,9 @@ mod tests {{
     #[test]
     fn greedy_struct_array_decodes_fixed_elements() {{
         let data = [1, 0x02, 0x03, 4, 0x05, 0x06];
-        let (packet, rem) = GreedyStructs::parse(&data).unwrap();
+        let (mut packet, rem) = GreedyStructs::parse(&data).unwrap();
         assert!(rem.is_empty());
-        let items = packet
+        let mut items = packet
             .items()
             .unwrap()
             .collect::<binparse::ParseResult<Vec<_>>>()
@@ -1156,7 +1221,7 @@ mod tests {{
             }}
         );
         assert_parse_no_panic("GreedyStructs", &data, |data| {{
-            if let Ok((packet, _)) = GreedyStructs::parse(data) {{
+            if let Ok((mut packet, _)) = GreedyStructs::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1165,7 +1230,7 @@ mod tests {{
     #[test]
     fn max_iter_bounds_sized_array() {{
         let data = [3, 1, 2, 3];
-        let (packet, rem) = Capped::parse(&data).unwrap();
+        let (mut packet, rem) = Capped::parse(&data).unwrap();
         assert!(rem.is_empty());
         let vals = packet
             .vals()
@@ -1191,7 +1256,7 @@ mod tests {{
             }}
         );
         assert_parse_no_panic("Capped", &exceeded, |data| {{
-            if let Ok((packet, _)) = Capped::parse(data) {{
+            if let Ok((mut packet, _)) = Capped::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1200,9 +1265,9 @@ mod tests {{
     #[test]
     fn greedy_dynamic_struct_array_parses_until_exhausted() {{
         let data = [2, 9, 0];
-        let (packet, rem) = Opts::parse(&data).unwrap();
+        let (mut packet, rem) = Opts::parse(&data).unwrap();
         assert!(rem.is_empty());
-        let opts = packet
+        let mut opts = packet
             .opts()
             .unwrap()
             .collect::<binparse::ParseResult<Vec<_>>>()
@@ -1215,7 +1280,7 @@ mod tests {{
         assert_eq!(packet.opts_bit_range(), 0..24);
 
         let too_many = [0u8; 9];
-        let (packet, _) = Opts::parse(&too_many).unwrap();
+        let (mut packet, _) = Opts::parse(&too_many).unwrap();
         assert_eq!(
             packet
                 .opts()
@@ -1229,7 +1294,7 @@ mod tests {{
             }}
         );
 
-        let (packet, _) = Opts::parse(&[1]).unwrap();
+        let (mut packet, _) = Opts::parse(&[1]).unwrap();
         assert_eq!(
             packet
                 .opts()
@@ -1244,13 +1309,13 @@ mod tests {{
         );
 
         assert_parse_no_panic("Opts", &too_many, |data| {{
-            if let Ok((packet, _)) = Opts::parse(data) {{
+            if let Ok((mut packet, _)) = Opts::parse(data) {{
                 let _ = packet.field_tree();
             }}
-            if let Ok((packet, _)) = Opts::parse(data)
+            if let Ok((mut packet, _)) = Opts::parse(data)
                 && let Ok(opts) = packet.opts()
             {{
-                for opt in opts.flatten() {{
+                for mut opt in opts.flatten() {{
                     let _ = opt.kind();
                     let _ = opt.body();
                 }}
@@ -1261,7 +1326,7 @@ mod tests {{
     #[test]
     fn padded_fields_decode_and_report_offsets() {{
         let data = [1, 0, 0, 2, 0x12, 0x34, 0x56, 0x78];
-        let (packet, rem) = Padded::parse(&data).unwrap();
+        let (mut packet, rem) = Padded::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.a(), 1);
         assert_eq!(packet.b(), 2);
@@ -1281,7 +1346,7 @@ mod tests {{
             }}
         );
         assert_parse_no_panic("Padded", &data, |data| {{
-            if let Ok((packet, _)) = Padded::parse(data) {{
+            if let Ok((mut packet, _)) = Padded::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1290,19 +1355,19 @@ mod tests {{
     #[test]
     fn dynamic_pad_to_skips_to_boundary() {{
         let data = [1, 9, 0, 0, 7];
-        let (packet, rem) = DynPadded::parse(&data).unwrap();
+        let (mut packet, rem) = DynPadded::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.tail(), 7);
         assert_eq!(packet.tail_bit_range(), 32..40);
 
         let aligned = [3, 9, 9, 9, 7];
-        let (packet, rem) = DynPadded::parse(&aligned).unwrap();
+        let (mut packet, rem) = DynPadded::parse(&aligned).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.tail(), 7);
         assert_eq!(packet.tail_bit_range(), 32..40);
 
         assert_parse_no_panic("DynPadded", &data, |data| {{
-            if let Ok((packet, _)) = DynPadded::parse(data) {{
+            if let Ok((mut packet, _)) = DynPadded::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1311,7 +1376,7 @@ mod tests {{
     #[test]
     fn dynamic_align_errors_on_misaligned_offset() {{
         let data = [1, 9, 0xab, 0xcd];
-        let (packet, rem) = DynAligned::parse(&data).unwrap();
+        let (mut packet, rem) = DynAligned::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.word(), 0xabcd);
         assert_eq!(packet.word_bit_range(), 16..32);
@@ -1327,12 +1392,12 @@ mod tests {{
         );
 
         assert_parse_no_panic("DynAligned", &data, |data| {{
-            if let Ok((packet, _)) = DynAligned::parse(data) {{
+            if let Ok((mut packet, _)) = DynAligned::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
         assert_parse_no_panic("DynAligned misaligned", &misaligned, |data| {{
-            if let Ok((packet, _)) = DynAligned::parse(data) {{
+            if let Ok((mut packet, _)) = DynAligned::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1341,7 +1406,7 @@ mod tests {{
     #[test]
     fn skipped_fields_consume_bytes_and_stay_usable_in_expressions() {{
         let data = [0xad, 2, 0xaa, 0xbb, 0x5f];
-        let (packet, rem) = SkipReserved::parse(&data).unwrap();
+        let (mut packet, rem) = SkipReserved::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.flags(), 13);
         assert_eq!(packet.flags_bit_range(), 3..8);
@@ -1355,7 +1420,7 @@ mod tests {{
         assert_eq!(packet.pair(), (5,));
         assert_eq!(packet.pair_bit_range(), 32..40);
         assert_parse_no_panic("SkipReserved", &data, |data| {{
-            if let Ok((packet, _)) = SkipReserved::parse(data) {{
+            if let Ok((mut packet, _)) = SkipReserved::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1364,14 +1429,14 @@ mod tests {{
     #[test]
     fn lsb_bit_order_decodes_with_field_override() {{
         let data = [0b1010_1101, 0b0100_0011];
-        let (packet, rem) = LsbFlags::parse(&data).unwrap();
+        let (mut packet, rem) = LsbFlags::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.low(), 5);
         assert_eq!(packet.high(), 21);
         assert_eq!(packet.top(), 4);
         assert_eq!(packet.bottom(), 3);
         assert_parse_no_panic("LsbFlags", &data, |data| {{
-            if let Ok((packet, _)) = LsbFlags::parse(data) {{
+            if let Ok((mut packet, _)) = LsbFlags::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1380,10 +1445,10 @@ mod tests {{
     #[test]
     fn icmp_tuple_dispatch_decodes() {{
         let echo = [8, 0, 0x12, 0x34, 0x00, 0x01];
-        let (packet, rem) = Icmp::parse(&echo).unwrap();
+        let (mut packet, rem) = Icmp::parse(&echo).unwrap();
         assert!(rem.is_empty());
         match packet.body().unwrap() {{
-            Icmp_body::Echo(echo) => {{
+            Icmp_body::Echo(mut echo) => {{
                 assert_eq!(echo.id(), 0x1234);
                 assert_eq!(echo.seq(), 1);
             }}
@@ -1391,15 +1456,15 @@ mod tests {{
         }}
 
         let unreach = [3, 1, 0xde, 0xad, 0xbe, 0xef];
-        let (packet, _) = Icmp::parse(&unreach).unwrap();
+        let (mut packet, _) = Icmp::parse(&unreach).unwrap();
         match packet.body().unwrap() {{
-            Icmp_body::DestUnreach(unreach) => assert_eq!(unreach.unused(), 0xdead_beef),
+            Icmp_body::DestUnreach(mut unreach) => assert_eq!(unreach.unused(), 0xdead_beef),
             _ => panic!("expected DestUnreach body"),
         }}
         assert_eq!(packet.body_bit_range(), 16..48);
 
         let raw = [42, 7, 0xff];
-        let (packet, rem) = Icmp::parse(&raw).unwrap();
+        let (mut packet, rem) = Icmp::parse(&raw).unwrap();
         assert_eq!(rem, &[0xff]);
         match packet.body().unwrap() {{
             Icmp_body::Raw(_) => {{}}
@@ -1407,7 +1472,7 @@ mod tests {{
         }}
 
         assert_parse_no_panic("Icmp", &echo, |data| {{
-            if let Ok((packet, _)) = Icmp::parse(data) {{
+            if let Ok((mut packet, _)) = Icmp::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1416,10 +1481,10 @@ mod tests {{
     #[test]
     fn union_dynamic_variant_decodes() {{
         let data = [1, 3, 0xaa, 0xbb, 0xcc, 0x99];
-        let (packet, rem) = Dispatch::parse(&data).unwrap();
+        let (mut packet, rem) = Dispatch::parse(&data).unwrap();
         assert_eq!(rem, &[0x99]);
         match packet.body().unwrap() {{
-            Dispatch_body::Msg(msg) => {{
+            Dispatch_body::Msg(mut msg) => {{
                 assert_eq!(msg.len(), 3);
                 let bytes = msg
                     .data()
@@ -1441,7 +1506,7 @@ mod tests {{
             binparse::ParseError::NotEnoughData {{ expected: 4, got: 2 }}
         );
         assert_parse_no_panic("Dispatch", &[1, 3, 0xaa, 0xbb, 0xcc, 0x99], |data| {{
-            if let Ok((packet, _)) = Dispatch::parse(data) {{
+            if let Ok((mut packet, _)) = Dispatch::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1459,10 +1524,10 @@ mod tests {{
         );
 
         let good = [2, 4];
-        let (packet, rem) = Dispatch::parse(&good).unwrap();
+        let (mut packet, rem) = Dispatch::parse(&good).unwrap();
         assert!(rem.is_empty());
         match packet.body().unwrap() {{
-            Dispatch_body::Checked(checked) => assert_eq!(checked.version(), 4),
+            Dispatch_body::Checked(mut checked) => assert_eq!(checked.version(), 4),
             _ => panic!("expected Checked body"),
         }}
     }}
@@ -1470,7 +1535,7 @@ mod tests {{
     #[test]
     fn union_error_variant_surfaces_declared_error() {{
         let data = [9, 0xaa];
-        let (packet, rem) = Dispatch::parse(&data).unwrap();
+        let (mut packet, rem) = Dispatch::parse(&data).unwrap();
         assert_eq!(rem, &[0xaa]);
         assert_eq!(packet.body_bit_range(), 8..8);
         match packet.body() {{
@@ -1478,7 +1543,7 @@ mod tests {{
             _ => panic!("expected UNKNOWN_KIND error"),
         }}
         assert_parse_no_panic("Dispatch", &data, |data| {{
-            if let Ok((packet, _)) = Dispatch::parse(data) {{
+            if let Ok((mut packet, _)) = Dispatch::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1487,16 +1552,16 @@ mod tests {{
     #[test]
     fn unions_in_concat_decode_independently() {{
         let data = [1, 2, 0x42, 0x12, 0x34, 2, 0xaa, 0xbb, 0x99];
-        let (packet, rem) = ConcatUnion::parse(&data).unwrap();
+        let (mut packet, rem) = ConcatUnion::parse(&data).unwrap();
         assert!(rem.is_empty());
         let (first, second, third) = packet.pair();
         assert_eq!(first, 0x42);
         match second.unwrap() {{
-            ConcatUnion_pair_1::Word(word) => assert_eq!(word.w(), 0x1234),
+            ConcatUnion_pair_1::Word(mut word) => assert_eq!(word.w(), 0x1234),
             _ => panic!("expected Word"),
         }}
         match third.unwrap() {{
-            ConcatUnion_pair_2::Bytes(bytes) => {{
+            ConcatUnion_pair_2::Bytes(mut bytes) => {{
                 assert_eq!(bytes.n(), 2);
                 let collected = bytes
                     .data()
@@ -1511,7 +1576,7 @@ mod tests {{
         assert_eq!(packet.pair_bit_range(), 16..64);
 
         let empty = [0, 0, 0x42, 0x99];
-        let (packet, rem) = ConcatUnion::parse(&empty).unwrap();
+        let (mut packet, rem) = ConcatUnion::parse(&empty).unwrap();
         assert!(rem.is_empty());
         match packet.pair().1.unwrap() {{
             ConcatUnion_pair_1::Empty(_) => {{}}
@@ -1524,7 +1589,7 @@ mod tests {{
             binparse::ParseError::NotEnoughData {{ expected: 3, got: 2 }}
         );
         assert_parse_no_panic("ConcatUnion", &data, |data| {{
-            if let Ok((packet, _)) = ConcatUnion::parse(data) {{
+            if let Ok((mut packet, _)) = ConcatUnion::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1533,11 +1598,11 @@ mod tests {{
     #[test]
     fn len_bounded_struct_ref_decodes_within_bound() {{
         let data = [7, 5, 0x01, 0x02, 0x03, 0xaa, 0xbb, 0x99];
-        let (packet, rem) = Bounded::parse(&data).unwrap();
+        let (mut packet, rem) = Bounded::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.tag(), 7);
         assert_eq!(packet.len(), 5);
-        let inner = packet.value().unwrap();
+        let mut inner = packet.value().unwrap();
         assert_eq!(inner.a(), 0x01);
         assert_eq!(inner.b(), 0x0203);
         assert_eq!(packet.value_rest().unwrap(), &[0xaa, 0xbb]);
@@ -1545,7 +1610,7 @@ mod tests {{
         assert_eq!(packet.value_bit_range(), 16..56);
 
         let exact = [7, 3, 0x01, 0x02, 0x03, 0x99];
-        let (packet, rem) = Bounded::parse(&exact).unwrap();
+        let (mut packet, rem) = Bounded::parse(&exact).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.value().unwrap().b(), 0x0203);
         assert!(packet.value_rest().unwrap().is_empty());
@@ -1555,7 +1620,7 @@ mod tests {{
     #[test]
     fn len_bounded_struct_ref_rejects_inner_overrun() {{
         let data = [7, 2, 0x01, 0x02, 0x99];
-        let (packet, rem) = Bounded::parse(&data).unwrap();
+        let (mut packet, rem) = Bounded::parse(&data).unwrap();
         assert!(rem.is_empty());
         match packet.value() {{
             Err(err) => assert_eq!(
@@ -1579,7 +1644,7 @@ mod tests {{
             binparse::ParseError::NotEnoughData {{ expected: 7, got: 6 }}
         );
         assert_parse_no_panic("Bounded", &data, |data| {{
-            if let Ok((packet, _)) = Bounded::parse(data) {{
+            if let Ok((mut packet, _)) = Bounded::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -1588,13 +1653,13 @@ mod tests {{
     #[test]
     fn len_bounded_union_decodes_within_bound_and_exposes_rest() {{
         let data = [1, 5, 0xaa, 0x00, 0x10, 0xcc, 0xdd, 0x99];
-        let (packet, rem) = BoundedUnion::parse(&data).unwrap();
+        let (mut packet, rem) = BoundedUnion::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.tag(), 1);
         assert_eq!(packet.len(), 5);
         match packet.value().unwrap() {{
-            BoundedUnion_value::Pair(p) => {{
-                let inner = p.inner().unwrap();
+            BoundedUnion_value::Pair(mut p) => {{
+                let mut inner = p.inner().unwrap();
                 assert_eq!(inner.a(), 0xaa);
                 assert_eq!(inner.b(), 0x0010);
             }}
@@ -1617,7 +1682,7 @@ mod tests {{
     #[test]
     fn len_bounded_union_exact_fit_has_empty_rest() {{
         let data = [1, 3, 0xaa, 0x00, 0x10, 0x99];
-        let (packet, rem) = BoundedUnion::parse(&data).unwrap();
+        let (mut packet, rem) = BoundedUnion::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert!(packet.value_rest().unwrap().is_empty());
         assert_eq!(packet.after(), 0x99);
@@ -1626,10 +1691,10 @@ mod tests {{
     #[test]
     fn len_bounded_union_greedy_variant_consumes_window() {{
         let data = [2, 4, 0x01, 0x02, 0x03, 0x04, 0x99];
-        let (packet, rem) = BoundedUnion::parse(&data).unwrap();
+        let (mut packet, rem) = BoundedUnion::parse(&data).unwrap();
         assert!(rem.is_empty());
         match packet.value().unwrap() {{
-            BoundedUnion_value::Blob(b) => {{
+            BoundedUnion_value::Blob(mut b) => {{
                 let bytes = b
                     .bytes()
                     .unwrap()
@@ -1668,7 +1733,7 @@ mod tests {{
     #[test]
     fn len_bounded_greedy_array_consumes_window() {{
         let data = [3, 0x11, 0x22, 0x33, 0x77];
-        let (packet, rem) = BoundedGreedy::parse(&data).unwrap();
+        let (mut packet, rem) = BoundedGreedy::parse(&data).unwrap();
         assert!(rem.is_empty());
         let body = packet
             .body()
@@ -1688,7 +1753,7 @@ mod tests {{
     #[test]
     fn len_bounded_until_array_sentinel_in_window_exposes_rest() {{
         let data = [4, 0x11, 0x22, 0x00, 0x44, 0x77];
-        let (packet, rem) = BoundedUntil::parse(&data).unwrap();
+        let (mut packet, rem) = BoundedUntil::parse(&data).unwrap();
         assert!(rem.is_empty());
         let body = packet
             .body()
@@ -1719,7 +1784,7 @@ mod tests {{
             1, 0x34, 0x12, 0x01, 0x02, 0x03, 0x04, 0b1010_1101, 9, 8, 7, 0xaa, 0x01, 0x02,
             0x78, 0x56, 0x55, 0xcd, 0xab, 0xfe,
         ];
-        let (packet, _) = Baseline::parse(&data).unwrap();
+        let (mut packet, _) = Baseline::parse(&data).unwrap();
         let tree = packet.field_tree();
         assert_eq!(tree.name, "Baseline");
         assert_eq!(tree.path, "Baseline");
@@ -1758,7 +1823,7 @@ mod tests {{
         assert_eq!(fixed.children[2].path, "Baseline.fixed.2");
         assert_eq!(fixed.children[2].bit_range, 80..88);
 
-        let inner = &tree.children[6];
+        let mut inner = &tree.children[6];
         assert_eq!(inner.name, "inner");
         assert_eq!(inner.type_name, "Inner");
         assert_eq!(inner.value, binparse::Value::Struct);
@@ -1789,7 +1854,7 @@ mod tests {{
         assert_eq!(payload.bit_range, 152..160);
         assert_eq!(payload.status, binparse::Status::Ok);
         assert_eq!(payload.children.len(), 1);
-        let one = &payload.children[0];
+        let mut one = &payload.children[0];
         assert_eq!(one.name, "One");
         assert_eq!(one.path, "Baseline.payload.One");
         assert_eq!(one.children[0].value, binparse::Value::UInt(0xfe));
@@ -1805,7 +1870,7 @@ mod tests {{
         data.extend(5i16.to_le_bytes());
         data.extend((-5i16).to_le_bytes());
         data.extend([0x7f, 0x80]);
-        let (packet, _) = Signed::parse(&data).unwrap();
+        let (mut packet, _) = Signed::parse(&data).unwrap();
         let tree = packet.field_tree();
         assert_eq!(tree.children[0].value, binparse::Value::Int(-1));
         assert_eq!(tree.children[0].type_name, "i8");
@@ -1823,7 +1888,7 @@ mod tests {{
     #[test]
     fn field_tree_marks_skip_and_padding_hidden() {{
         let data = [0xad, 2, 0xaa, 0xbb, 0x5f];
-        let (packet, _) = SkipReserved::parse(&data).unwrap();
+        let (mut packet, _) = SkipReserved::parse(&data).unwrap();
         let tree = packet.field_tree();
         let names: Vec<_> = tree.children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["reserved", "flags", "skipped_len", "payload", "pair"]);
@@ -1840,7 +1905,7 @@ mod tests {{
         assert_eq!(pair.children[1].bit_range, 36..40);
 
         let data = [1, 0, 0, 2, 0x12, 0x34, 0x56, 0x78];
-        let (packet, _) = Padded::parse(&data).unwrap();
+        let (mut packet, _) = Padded::parse(&data).unwrap();
         let tree = packet.field_tree();
         let names: Vec<_> = tree.children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["a", "b_pad", "b", "c", "d"]);
@@ -1853,7 +1918,7 @@ mod tests {{
     #[test]
     fn field_tree_len_bounded_includes_rest_and_error_status() {{
         let data = [7, 5, 0x01, 0x02, 0x03, 0xaa, 0xbb, 0x99];
-        let (packet, _) = Bounded::parse(&data).unwrap();
+        let (mut packet, _) = Bounded::parse(&data).unwrap();
         let tree = packet.field_tree();
         let value = &tree.children[2];
         assert_eq!(value.name, "value");
@@ -1868,7 +1933,7 @@ mod tests {{
         assert_eq!(rest.path, "Bounded.value.rest");
 
         let data = [7, 2, 0x01, 0x02, 0x99];
-        let (packet, _) = Bounded::parse(&data).unwrap();
+        let (mut packet, _) = Bounded::parse(&data).unwrap();
         let tree = packet.field_tree();
         let value = &tree.children[2];
         assert_eq!(value.value, binparse::Value::Opaque);
@@ -1886,7 +1951,7 @@ mod tests {{
     #[test]
     fn field_tree_conditional_present_emits_real_node() {{
         let data = [0x46, 0xaa, 0xbb, 0xcc, 0xdd, 0x11];
-        let (packet, _) = Ipv4WithOptions::parse(&data).unwrap();
+        let (mut packet, _) = Ipv4WithOptions::parse(&data).unwrap();
         let tree = packet.field_tree();
         let names: Vec<_> = tree.children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["version", "ihl", "options", "proto"]);
@@ -1912,7 +1977,7 @@ mod tests {{
     #[test]
     fn field_tree_conditional_absent_emits_hidden_absent_node() {{
         let data = [0x45, 0x11];
-        let (packet, _) = Ipv4WithOptions::parse(&data).unwrap();
+        let (mut packet, _) = Ipv4WithOptions::parse(&data).unwrap();
         let tree = packet.field_tree();
         let names: Vec<_> = tree.children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["version", "ihl", "options", "proto"]);
@@ -1928,7 +1993,7 @@ mod tests {{
     #[test]
     fn field_tree_conditional_with_else_picks_branch() {{
         let then_data = [1, 7, 9];
-        let (packet, _) = CondElse::parse(&then_data).unwrap();
+        let (mut packet, _) = CondElse::parse(&then_data).unwrap();
         let tree = packet.field_tree();
         let names: Vec<_> = tree.children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["kind", "small", "big", "tail"]);
@@ -1939,7 +2004,7 @@ mod tests {{
         assert_eq!(tree.children[3].value, binparse::Value::UInt(9));
 
         let else_data = [0, 0x12, 0x34, 9];
-        let (packet, _) = CondElse::parse(&else_data).unwrap();
+        let (mut packet, _) = CondElse::parse(&else_data).unwrap();
         let tree = packet.field_tree();
         assert_eq!(tree.children[1].value, binparse::Value::Absent);
         assert!(tree.children[1].hidden);
@@ -1951,7 +2016,7 @@ mod tests {{
     #[test]
     fn field_tree_nested_conditional_struct_ref() {{
         let too_many = [0u8; 9];
-        let (packet, _) = Opts::parse(&too_many).unwrap();
+        let (mut packet, _) = Opts::parse(&too_many).unwrap();
         let tree = packet.field_tree();
         let opts = &tree.children[0];
         let first = &opts.children[0];
@@ -1965,7 +2030,7 @@ mod tests {{
     #[test]
     fn field_tree_hooks_emit_value_and_error_nodes() {{
         let data = [3, 0, 2, b'h', b'i', 0];
-        let (packet, _) = Hooked::parse(&data).unwrap();
+        let (mut packet, _) = Hooked::parse(&data).unwrap();
         let tree = packet.field_tree();
         let names: Vec<_> = tree.children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["prefix", "value", "name"]);
@@ -1981,7 +2046,7 @@ mod tests {{
     #[test]
     fn field_tree_vla_hook_reports_uint_and_range() {{
         let data = [7, 0xE5, 0x8E, 0x26, 9];
-        let (packet, _) = Varint::parse(&data).unwrap();
+        let (mut packet, _) = Varint::parse(&data).unwrap();
         let tree = packet.field_tree();
         let value = &tree.children[1];
         assert_eq!(value.name, "value");
@@ -2000,7 +2065,7 @@ mod tests {{
             0xC0, 0x02,
             0x00, 0x1C,
         ];
-        let (packet, _) = DnsMsg::parse(&data).unwrap();
+        let (mut packet, _) = DnsMsg::parse(&data).unwrap();
         let tree = packet.field_tree();
         let qname = &tree.children[1];
         assert_eq!(qname.type_name, "String");
@@ -2015,7 +2080,7 @@ mod tests {{
     #[test]
     fn field_tree_union_dynamic_variant() {{
         let data = [1, 3, 0xaa, 0xbb, 0xcc, 0x99];
-        let (packet, _) = Dispatch::parse(&data).unwrap();
+        let (mut packet, _) = Dispatch::parse(&data).unwrap();
         let tree = packet.field_tree();
         let body = &tree.children[1];
         assert_eq!(body.name, "body");
@@ -2028,7 +2093,7 @@ mod tests {{
         assert_eq!(msg.name, "Msg");
         assert_eq!(msg.path, "Dispatch.body.Msg");
         assert_eq!(msg.children[0].value, binparse::Value::UInt(3));
-        let inner = &msg.children[1];
+        let mut inner = &msg.children[1];
         assert_eq!(inner.value, binparse::Value::Array);
         let elems: Vec<_> = inner.children.iter().map(|c| c.value.clone()).collect();
         assert_eq!(
@@ -2044,7 +2109,7 @@ mod tests {{
     #[test]
     fn field_tree_union_error_arm_surfaces_failed_status() {{
         let data = [9, 0xaa];
-        let (packet, _) = Dispatch::parse(&data).unwrap();
+        let (mut packet, _) = Dispatch::parse(&data).unwrap();
         let tree = packet.field_tree();
         let body = &tree.children[1];
         assert_eq!(body.value, binparse::Value::Opaque);
@@ -2057,7 +2122,7 @@ mod tests {{
     #[test]
     fn field_tree_union_tuple_dispatch() {{
         let echo = [8, 0, 0x12, 0x34, 0x00, 0x01];
-        let (packet, _) = Icmp::parse(&echo).unwrap();
+        let (mut packet, _) = Icmp::parse(&echo).unwrap();
         let tree = packet.field_tree();
         let body = &tree.children[2];
         assert_eq!(body.value, binparse::Value::UnionVariant("Echo"));
@@ -2068,7 +2133,7 @@ mod tests {{
         assert_eq!(echo_node.children[1].value, binparse::Value::UInt(1));
 
         let raw = [42, 7, 0xff];
-        let (packet, _) = Icmp::parse(&raw).unwrap();
+        let (mut packet, _) = Icmp::parse(&raw).unwrap();
         let tree = packet.field_tree();
         let body = &tree.children[2];
         assert_eq!(body.value, binparse::Value::UnionVariant("Raw"));
@@ -2078,7 +2143,7 @@ mod tests {{
     #[test]
     fn field_tree_union_inside_concat() {{
         let data = [1, 2, 0x42, 0x12, 0x34, 2, 0xaa, 0xbb, 0x99];
-        let (packet, _) = ConcatUnion::parse(&data).unwrap();
+        let (mut packet, _) = ConcatUnion::parse(&data).unwrap();
         let tree = packet.field_tree();
         let pair = &tree.children[2];
         assert_eq!(pair.type_name, "concat");
@@ -2098,7 +2163,7 @@ mod tests {{
     #[test]
     fn field_tree_until_greedy_and_struct_arrays() {{
         let data = [b'h', b'i', 0, 7];
-        let (packet, _) = CStr::parse(&data).unwrap();
+        let (mut packet, _) = CStr::parse(&data).unwrap();
         let tree = packet.field_tree();
         let name = &tree.children[0];
         assert_eq!(name.bit_range, 0..24);
@@ -2106,7 +2171,7 @@ mod tests {{
         assert_eq!(name.children[1].value, binparse::Value::UInt(b'i' as u128));
 
         let data = [9, 0x12, 0x34, 0x56, 0x78];
-        let (packet, _) = RestWide::parse(&data).unwrap();
+        let (mut packet, _) = RestWide::parse(&data).unwrap();
         let tree = packet.field_tree();
         let words = &tree.children[1];
         assert_eq!(words.bit_range, 8..40);
@@ -2114,7 +2179,7 @@ mod tests {{
         assert_eq!(elems, [binparse::Value::UInt(0x1234), binparse::Value::UInt(0x5678)]);
 
         let data = [1, 0x02, 0x03, 4, 0x05, 0x06];
-        let (packet, _) = GreedyStructs::parse(&data).unwrap();
+        let (mut packet, _) = GreedyStructs::parse(&data).unwrap();
         let tree = packet.field_tree();
         let items = &tree.children[0];
         assert_eq!(items.children.len(), 2);
@@ -2126,7 +2191,7 @@ mod tests {{
     #[test]
     fn field_tree_reports_element_errors_without_panicking() {{
         let too_many = [0u8; 9];
-        let (packet, _) = Opts::parse(&too_many).unwrap();
+        let (mut packet, _) = Opts::parse(&too_many).unwrap();
         let tree = packet.field_tree();
         let opts = &tree.children[0];
         assert_eq!(opts.children.len(), 9);
@@ -2161,13 +2226,13 @@ mod tests {{
     #[test]
     fn ethernet_handoff_exposes_ethertype_and_payload() {{
         let frame = eth_ip_udp_frame();
-        let (eth, _) = Eth::parse(&frame).unwrap();
+        let (mut eth, _) = Eth::parse(&frame).unwrap();
         let handoff = eth.handoff().expect("ethernet declares a payload");
         assert_eq!(handoff.keys, vec![0x0800]);
         assert_eq!(handoff.payload_byte_range, 14..frame.len());
         assert_eq!(handoff.payload, &frame[14..]);
         assert_parse_no_panic("Eth handoff", &frame, |data| {{
-            if let Ok((eth, _)) = Eth::parse(data) {{
+            if let Ok((mut eth, _)) = Eth::parse(data) {{
                 let _ = eth.handoff();
             }}
         }});
@@ -2183,14 +2248,14 @@ mod tests {{
         packet.extend([
             0xc3, 0x50, 0x00, 0x35, 0x00, 0x0c, 0x1a, 0x2b, 0xde, 0xad, 0xbe, 0xef,
         ]);
-        let (ip, _) = Ip4::parse(&packet).unwrap();
+        let (mut ip, _) = Ip4::parse(&packet).unwrap();
         assert_eq!(ip.ihl(), 6);
         let handoff = ip.handoff().expect("ipv4 declares a payload");
         assert_eq!(handoff.keys, vec![17]);
         assert_eq!(handoff.payload_byte_range, 24..packet.len());
         assert_eq!(handoff.payload, &packet[24..]);
         assert_parse_no_panic("Ip4 handoff", &packet, |data| {{
-            if let Ok((ip, _)) = Ip4::parse(data) {{
+            if let Ok((mut ip, _)) = Ip4::parse(data) {{
                 let _ = ip.handoff();
             }}
         }});
@@ -2201,7 +2266,7 @@ mod tests {{
         let datagram = vec![
             0xc3, 0x50, 0x00, 0x35, 0x00, 0x0c, 0x1a, 0x2b, 0xde, 0xad, 0xbe, 0xef,
         ];
-        let (udp, _) = Udp4::parse(&datagram).unwrap();
+        let (mut udp, _) = Udp4::parse(&datagram).unwrap();
         let handoff = udp.handoff().expect("udp declares a payload");
         assert_eq!(handoff.keys, vec![50000, 53]);
         assert_eq!(handoff.payload_byte_range, 8..12);
@@ -2211,16 +2276,16 @@ mod tests {{
     #[test]
     fn struct_without_payload_has_no_handoff() {{
         let data = [0x01, 0x02, 0x03];
-        let (packet, _) = NoHandoff::parse(&data).unwrap();
+        let (mut packet, _) = NoHandoff::parse(&data).unwrap();
         assert!(packet.handoff().is_none());
-        let dissect: &dyn binparse::Dissect = &packet;
+        let dissect: &mut dyn binparse::Dissect = &mut packet;
         assert!(dissect.handoff().is_none());
     }}
 
     fn parse_for_key(key: u128, payload: &[u8]) -> Option<binparse::Handoff<'_>> {{
         match key {{
-            0x0800 => Ip4::parse(payload).ok().and_then(|(p, _)| p.handoff()),
-            17 => Udp4::parse(payload).ok().and_then(|(p, _)| p.handoff()),
+            0x0800 => Ip4::parse(payload).ok().and_then(|(mut p, _)| p.handoff()),
+            17 => Udp4::parse(payload).ok().and_then(|(mut p, _)| p.handoff()),
             _ => None,
         }}
     }}
@@ -2228,7 +2293,7 @@ mod tests {{
     #[test]
     fn chain_eth_ipv4_udp_via_handoff_only() {{
         let frame = eth_ip_udp_frame();
-        let (eth, _) = Eth::parse(&frame).unwrap();
+        let (mut eth, _) = Eth::parse(&frame).unwrap();
         let first = eth.handoff().expect("ethernet payload");
 
         let mut keys = first.keys;
@@ -2250,7 +2315,7 @@ mod tests {{
     #[test]
     fn struct_level_len_exact_fit() {{
         let data = [0x00, 0x05, 0xaa, 0xbb, 0xcc];
-        let (packet, rem) = BoundedFill::parse(&data).unwrap();
+        let (mut packet, rem) = BoundedFill::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.total_len(), 5);
         let payload = packet
@@ -2260,7 +2325,7 @@ mod tests {{
             .unwrap();
         assert_eq!(payload, vec![0xaa, 0xbb, 0xcc]);
         assert_parse_no_panic("BoundedFill", &data, |data| {{
-            if let Ok((packet, _)) = BoundedFill::parse(data) {{
+            if let Ok((mut packet, _)) = BoundedFill::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -2269,7 +2334,7 @@ mod tests {{
     #[test]
     fn struct_level_len_bound_greater_than_fields_leaves_trailing_and_advances_parent() {{
         let data = [0x00, 0x06, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
-        let (packet, rem) = BoundedFill::parse(&data).unwrap();
+        let (mut packet, rem) = BoundedFill::parse(&data).unwrap();
         assert_eq!(packet.total_len(), 6);
         let payload = packet
             .payload()
@@ -2300,7 +2365,7 @@ mod tests {{
     #[test]
     fn struct_level_len_trailing_inside_bound_exposed_and_advances() {{
         let data = [0x06, 0x12, 0x34, 0xaa, 0xbb, 0xcc, 0xff];
-        let (packet, rem) = BoundedGap::parse(&data).unwrap();
+        let (mut packet, rem) = BoundedGap::parse(&data).unwrap();
         assert_eq!(packet.cap(), 6);
         assert_eq!(packet.value(), 0x1234);
         assert_eq!(rem, &[0xff]);
@@ -2318,7 +2383,7 @@ mod tests {{
     #[test]
     fn struct_level_len_u16_fill_divisible() {{
         let data = [0x00, 0x06, 0x12, 0x34, 0x56, 0x78];
-        let (packet, rem) = BoundedU16Fill::parse(&data).unwrap();
+        let (mut packet, rem) = BoundedU16Fill::parse(&data).unwrap();
         assert!(rem.is_empty());
         let words = packet
             .words()
@@ -2343,9 +2408,9 @@ mod tests {{
     #[test]
     fn struct_level_len_nested_offsets_advance_by_bound() {{
         let data = [0x03, 0xaa, 0xbb, 0x42];
-        let (packet, rem) = BoundedNested::parse(&data).unwrap();
+        let (mut packet, rem) = BoundedNested::parse(&data).unwrap();
         assert!(rem.is_empty());
-        let inner = packet.inner().unwrap();
+        let mut inner = packet.inner().unwrap();
         assert_eq!(inner.n(), 3);
         let body = inner
             .body()
@@ -2355,7 +2420,7 @@ mod tests {{
         assert_eq!(body, vec![0xaa, 0xbb]);
         assert_eq!(packet.after(), 0x42);
         assert_parse_no_panic("BoundedNested", &data, |data| {{
-            if let Ok((packet, _)) = BoundedNested::parse(data) {{
+            if let Ok((mut packet, _)) = BoundedNested::parse(data) {{
                 let _ = packet.field_tree();
             }}
         }});
@@ -2364,12 +2429,12 @@ mod tests {{
     #[test]
     fn struct_level_len_inside_union_variant() {{
         let data = [0x01, 0x02, 0xaa, 0x99];
-        let (packet, rem) = StructLenUnion::parse(&data).unwrap();
+        let (mut packet, rem) = StructLenUnion::parse(&data).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.tag(), 1);
         match packet.body().unwrap() {{
-            StructLenUnion_body::Sized(sized) => {{
-                let inner = sized.inner().unwrap();
+            StructLenUnion_body::Sized(mut sized) => {{
+                let mut inner = sized.inner().unwrap();
                 assert_eq!(inner.n(), 2);
             }}
             _ => panic!("expected Sized variant"),
@@ -2691,6 +2756,24 @@ struct Cached {
     a: u16,
     b: u16,
     c: u16,
+}
+
+struct CachedValue {
+    count: u8,
+    @hook(counting_value_cstring, String) @cache(value) body: [u8],
+    a: u16,
+}
+
+struct CachedLenValue {
+    count: u8,
+    @hook(counting_len_value_cstring, String) @cache body: [u8],
+    a: u16,
+}
+
+struct CachedFixedHook {
+    prefix: u8,
+    @hook(counting_double_it, u32) @cache(value) value: u16,
+    suffix: u8,
 }
 
 struct Eth {

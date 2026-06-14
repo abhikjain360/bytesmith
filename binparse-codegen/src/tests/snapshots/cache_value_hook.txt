@@ -1,20 +1,25 @@
-impl<'a> ::binparse::Dissect<'a> for Msg<'a> {
+impl<'a> ::binparse::Dissect<'a> for Foo<'a> {
     fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
-        Msg::field_tree(self)
+        Foo::field_tree(self)
     }
     fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
-        Msg::handoff(self)
+        Foo::handoff(self)
     }
 }
 
-impl<'a> Msg<'a> {
+impl<'a> Foo<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let mut me = Self { data };
+        let mut me = Self {
+            data,
+            body_value_cache: None,
+        };
         me.count_fatal_check()?;
         me.count_recoverable_check()?;
         me.body_fatal_check()?;
         me.body_recoverable_check()?;
-        let len = me.body_end_offset();
+        me.trailer_fatal_check()?;
+        me.trailer_recoverable_check()?;
+        let len = me.trailer_end_offset();
         if len.bit != 0 {
             return Err(::binparse::ParseError::UnalignedLength(len));
         }
@@ -36,10 +41,14 @@ impl<'a> Msg<'a> {
             let me = &mut *self;
             children.push(me.body_present_node());
         }
+        {
+            let me = &mut *self;
+            children.push(me.trailer_present_node());
+        }
         let mut root = ::binparse::FieldNode::new(
-                "Msg",
-                "Msg",
-                0usize..self.body_end_offset().bits(),
+                "Foo",
+                "Foo",
+                0usize..self.trailer_end_offset().bits(),
                 ::binparse::Value::Struct,
             )
             .with_children(children);
@@ -47,7 +56,10 @@ impl<'a> Msg<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let mut me = Self { data };
+        let mut me = Self {
+            data,
+            body_value_cache: None,
+        };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -126,10 +138,48 @@ impl<'a> Msg<'a> {
                 }
             }
         }
+        if fatal.is_none() {
+            match me.trailer_fatal_check() {
+                Err(error) => {
+                    let start = me.trailer_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "trailer",
+                                    "u16",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.trailer_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.trailer_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "trailer",
+                                            "u16",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.trailer_present_node());
+                        }
+                    }
+                }
+            }
+        }
         let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
         let mut root = ::binparse::FieldNode::new(
-                "Msg",
-                "Msg",
+                "Foo",
+                "Foo",
                 0usize..root_end,
                 ::binparse::Value::Struct,
             )
@@ -194,7 +244,7 @@ impl<'a> Msg<'a> {
             Ok((_, _)) => {
                 ::binparse::FieldNode::new(
                     "body",
-                    "&'a [u8]",
+                    "String",
                     bit_range.clone(),
                     ::binparse::Value::Opaque,
                 )
@@ -202,7 +252,7 @@ impl<'a> Msg<'a> {
             Err(error) => {
                 ::binparse::FieldNode::new(
                         "body",
-                        "&'a [u8]",
+                        "String",
                         bit_range.clone(),
                         ::binparse::Value::Opaque,
                     )
@@ -210,26 +260,30 @@ impl<'a> Msg<'a> {
             }
         }
     }
-    fn body_raw(&mut self) -> ::binparse::ParseResult<(&'a [u8], usize)> {
-        let start = 1usize;
-        let (value, consumed) = binparse::hooks::length_prefixed_bytes(
-            &self.data[start..],
-            ::binparse::HookContext {
-                field: "Msg.body",
-                offset: start,
-                enclosing: self.data,
-            },
-        )?;
-        let end = start.saturating_add(consumed);
-        if end > self.data.len() {
-            return Err(::binparse::ParseError::NotEnoughData {
-                expected: end,
-                got: self.data.len(),
-            });
+    fn body_raw(&mut self) -> ::binparse::ParseResult<(&String, usize)> {
+        if self.body_value_cache.is_none() {
+            let start = 1usize;
+            let (value, consumed) = parse_cstring(
+                &self.data[start..],
+                ::binparse::HookContext {
+                    field: "Foo.body",
+                    offset: start,
+                    enclosing: self.data,
+                },
+            )?;
+            let end = start.saturating_add(consumed);
+            if end > self.data.len() {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected: end,
+                    got: self.data.len(),
+                });
+            }
+            self.body_value_cache = Some((value, consumed));
         }
-        Ok((value, consumed))
+        let (value, consumed) = self.body_value_cache.as_ref().unwrap();
+        Ok((value, *consumed))
     }
-    pub fn body(&mut self) -> ::binparse::ParseResult<&'a [u8]> {
+    pub fn body(&mut self) -> ::binparse::ParseResult<&String> {
         self.body_raw().map(|(value, _)| value)
     }
     pub fn body_end_offset(&mut self) -> binparse::Len {
@@ -274,59 +328,92 @@ impl<'a> Msg<'a> {
     fn body_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
-}
-
-impl<'a> MsgWriter<'a> {
-    pub fn encoded_len(content: &MsgContent) -> usize {
-        1usize + binparse::hooks::length_prefixed_bytes_len(content.body)
+    #[allow(dead_code)]
+    fn trailer_present_node(&mut self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.trailer_bit_range();
+        ::binparse::FieldNode::new(
+            "trailer",
+            "u16",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.trailer())),
+        )
     }
-    pub fn set_count(&mut self, value: u8) -> &mut Self {
-        self.data[0usize] = value;
-        self
-    }
-    pub fn write_into(
-        data: &'a mut [u8],
-        content: &MsgContent,
-    ) -> ::binparse::WriteResult<usize> {
-        let need = Self::encoded_len(content);
-        if data.len() < need {
-            return Err(::binparse::WriteError::NotEnoughSpace {
-                expected: need,
-                got: data.len(),
-            });
+    #[allow(clippy::identity_op)]
+    pub fn trailer(&mut self) -> u16 {
+        {
+            let offset = ::binparse::Len {
+                byte: 1usize,
+                bit: 0usize,
+            }
+                + ({
+                    match self.body_raw() {
+                        Ok((_, consumed)) => {
+                            binparse::Len {
+                                byte: consumed,
+                                bit: 0,
+                            }
+                        }
+                        Err(_) => binparse::Len::ZERO,
+                    }
+                });
+            debug_assert!(offset.bit == 0, "primitive requires byte alignment");
+            let start = offset.byte;
+            let end = start + 2usize;
+            u16::from_be_bytes(self.data[start..end].try_into().unwrap())
         }
-        let mut w = Self { data };
-        w.set_count(content.count);
-        let (head, tail) = w.data.split_at_mut(1usize);
-        let written = binparse::hooks::write_length_prefixed_bytes(
-            content.body,
-            tail,
-            ::binparse::WriteHookContext {
-                offset: 1usize,
-                written: &*head,
-            },
-        )?;
-        Ok(1usize + written)
     }
-    pub fn to_vec(content: &MsgContent) -> ::std::vec::Vec<u8> {
-        let mut buf = ::std::vec![0u8; Self::encoded_len(content)];
-        let written = MsgWriter::write_into(&mut buf, content).unwrap_or(0);
-        buf.truncate(written);
-        buf
+    pub fn trailer_end_offset(&mut self) -> binparse::Len {
+        ::binparse::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+            + ({
+                ::binparse::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+                    + ({
+                        match self.body_raw() {
+                            Ok((_, consumed)) => {
+                                binparse::Len {
+                                    byte: consumed,
+                                    bit: 0,
+                                }
+                            }
+                            Err(_) => binparse::Len::ZERO,
+                        }
+                    })
+            })
+    }
+    pub fn trailer_start_offset(&mut self) -> binparse::Len {
+        self.body_end_offset()
+    }
+    pub fn trailer_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.trailer_start_offset().bits()..self.trailer_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn trailer_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.trailer_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn trailer_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
     }
 }
 
-pub struct Msg<'a> {
+pub struct Foo<'a> {
     #[allow(dead_code)]
     data: &'a [u8],
-}
-
-pub struct MsgContent<'a> {
-    pub count: u8,
-    pub body: &'a [u8],
-}
-
-pub struct MsgWriter<'a> {
-    data: &'a mut [u8],
+    body_value_cache: Option<(String, usize)>,
 }
 

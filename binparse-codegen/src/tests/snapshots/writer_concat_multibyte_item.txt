@@ -6,10 +6,10 @@ pub struct Mix_combo_0_Iterator<'a> {
 }
 
 impl<'a> ::binparse::Dissect<'a> for Mix<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         Mix::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         Mix::handoff(self)
     }
 }
@@ -29,7 +29,7 @@ impl<'a> ::std::iter::Iterator for Mix_combo_0_Iterator<'a> {
 
 impl<'a> Mix<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.tag_fatal_check()?;
         me.tag_recoverable_check()?;
         me.combo_fatal_check()?;
@@ -48,18 +48,18 @@ impl<'a> Mix<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.tag_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.combo_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.trailer_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -73,7 +73,7 @@ impl<'a> Mix<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -204,11 +204,11 @@ impl<'a> Mix<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn tag_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn tag_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.tag_bit_range();
         ::binparse::FieldNode::new(
             "tag",
@@ -218,23 +218,23 @@ impl<'a> Mix<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn tag(&self) -> u8 {
+    pub fn tag(&mut self) -> u8 {
         self.data[0usize]
     }
-    pub fn tag_end_offset(&self) -> binparse::Len {
+    pub fn tag_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 0usize,
         }
     }
-    pub fn tag_start_offset(&self) -> binparse::Len {
+    pub fn tag_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn tag_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn tag_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.tag_start_offset().bits()..self.tag_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn tag_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn tag_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.tag_end_offset();
             let expected = len.byte_ceil();
@@ -248,11 +248,11 @@ impl<'a> Mix<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn tag_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn tag_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn combo_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn combo_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.combo_bit_range();
         {
             let mut item_nodes = ::std::vec::Vec::new();
@@ -324,7 +324,7 @@ impl<'a> Mix<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn combo_0(&self) -> ::binparse::ParseResult<Mix_combo_0_Iterator<'a>> {
+    pub fn combo_0(&mut self) -> ::binparse::ParseResult<Mix_combo_0_Iterator<'a>> {
         Ok(Mix_combo_0_Iterator {
             idx: 0,
             count: 2usize,
@@ -332,27 +332,27 @@ impl<'a> Mix<'a> {
         })
     }
     #[allow(clippy::identity_op)]
-    pub fn combo_1(&self) -> u16 {
+    pub fn combo_1(&mut self) -> u16 {
         u16::from_be_bytes(self.data[3usize..5usize].try_into().unwrap())
     }
     #[allow(clippy::identity_op)]
-    pub fn combo(&self) -> (::binparse::ParseResult<Mix_combo_0_Iterator<'a>>, u16) {
+    pub fn combo(&mut self) -> (::binparse::ParseResult<Mix_combo_0_Iterator<'a>>, u16) {
         (self.combo_0(), self.combo_1())
     }
-    pub fn combo_end_offset(&self) -> binparse::Len {
+    pub fn combo_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 5usize,
             bit: 0usize,
         }
     }
-    pub fn combo_start_offset(&self) -> binparse::Len {
+    pub fn combo_start_offset(&mut self) -> binparse::Len {
         self.tag_end_offset()
     }
-    pub fn combo_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn combo_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.combo_start_offset().bits()..self.combo_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn combo_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn combo_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.combo_end_offset();
             let expected = len.byte_ceil();
@@ -366,11 +366,11 @@ impl<'a> Mix<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn combo_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn combo_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn trailer_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn trailer_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.trailer_bit_range();
         ::binparse::FieldNode::new(
             "trailer",
@@ -380,23 +380,23 @@ impl<'a> Mix<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn trailer(&self) -> u8 {
+    pub fn trailer(&mut self) -> u8 {
         self.data[5usize]
     }
-    pub fn trailer_end_offset(&self) -> binparse::Len {
+    pub fn trailer_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 6usize,
             bit: 0usize,
         }
     }
-    pub fn trailer_start_offset(&self) -> binparse::Len {
+    pub fn trailer_start_offset(&mut self) -> binparse::Len {
         self.combo_end_offset()
     }
-    pub fn trailer_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn trailer_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.trailer_start_offset().bits()..self.trailer_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn trailer_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn trailer_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.trailer_end_offset();
             let expected = len.byte_ceil();
@@ -410,7 +410,7 @@ impl<'a> Mix<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn trailer_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn trailer_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

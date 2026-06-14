@@ -1,15 +1,15 @@
 impl<'a> ::binparse::Dissect<'a> for LsbBits<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         LsbBits::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         LsbBits::handoff(self)
     }
 }
 
 impl<'a> LsbBits<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.low_fatal_check()?;
         me.low_recoverable_check()?;
         me.high_fatal_check()?;
@@ -26,14 +26,14 @@ impl<'a> LsbBits<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.low_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.high_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -47,7 +47,7 @@ impl<'a> LsbBits<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -140,11 +140,11 @@ impl<'a> LsbBits<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn low_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn low_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.low_bit_range();
         ::binparse::FieldNode::new(
             "low",
@@ -154,23 +154,23 @@ impl<'a> LsbBits<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn low(&self) -> u8 {
+    pub fn low(&mut self) -> u8 {
         (self.data[0usize] >> 0usize) & 7u8
     }
-    pub fn low_end_offset(&self) -> binparse::Len {
+    pub fn low_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 0usize,
             bit: 3usize,
         }
     }
-    pub fn low_start_offset(&self) -> binparse::Len {
+    pub fn low_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn low_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn low_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.low_start_offset().bits()..self.low_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn low_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn low_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.low_end_offset();
             let expected = len.byte_ceil();
@@ -184,11 +184,11 @@ impl<'a> LsbBits<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn low_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn low_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn high_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn high_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.high_bit_range();
         ::binparse::FieldNode::new(
             "high",
@@ -198,23 +198,23 @@ impl<'a> LsbBits<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn high(&self) -> u8 {
+    pub fn high(&mut self) -> u8 {
         (self.data[0usize] >> 3usize) & 31u8
     }
-    pub fn high_end_offset(&self) -> binparse::Len {
+    pub fn high_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 0usize,
         }
     }
-    pub fn high_start_offset(&self) -> binparse::Len {
+    pub fn high_start_offset(&mut self) -> binparse::Len {
         self.low_end_offset()
     }
-    pub fn high_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn high_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.high_start_offset().bits()..self.high_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn high_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn high_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.high_end_offset();
             let expected = len.byte_ceil();
@@ -228,7 +228,7 @@ impl<'a> LsbBits<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn high_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn high_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

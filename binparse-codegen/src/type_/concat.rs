@@ -68,14 +68,14 @@ pub(crate) fn generate<'a>(
             field_accum.helper_fns.extend(quote! {
                 #[allow(dead_code)]
                 #[allow(clippy::identity_op)]
-                fn #item_name(&self) -> #return_ty {
+                fn #item_name(&mut self) -> #return_ty {
                     #field_getter_body
                 }
             });
         } else {
             field_accum.helper_fns.extend(quote! {
                 #[allow(clippy::identity_op)]
-                pub fn #item_name(&self) -> #return_ty {
+                pub fn #item_name(&mut self) -> #return_ty {
                     #field_getter_body
                 }
             });

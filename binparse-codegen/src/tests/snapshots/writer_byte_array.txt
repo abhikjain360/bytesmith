@@ -13,10 +13,10 @@ pub struct Eth_src_Iterator<'a> {
 }
 
 impl<'a> ::binparse::Dissect<'a> for Eth<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         Eth::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         Eth::handoff(self)
     }
 }
@@ -49,7 +49,7 @@ impl<'a> ::std::iter::Iterator for Eth_src_Iterator<'a> {
 
 impl<'a> Eth<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.dst_fatal_check()?;
         me.dst_recoverable_check()?;
         me.src_fatal_check()?;
@@ -68,18 +68,18 @@ impl<'a> Eth<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.dst_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.src_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.ethertype_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -93,7 +93,7 @@ impl<'a> Eth<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -224,11 +224,11 @@ impl<'a> Eth<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn dst_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn dst_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.dst_bit_range();
         {
             let mut elem_nodes = ::std::vec::Vec::new();
@@ -274,27 +274,27 @@ impl<'a> Eth<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn dst(&self) -> ::binparse::ParseResult<Eth_dst_Iterator<'a>> {
+    pub fn dst(&mut self) -> ::binparse::ParseResult<Eth_dst_Iterator<'a>> {
         Ok(Eth_dst_Iterator {
             idx: 0,
             count: 6usize,
             data: &self.data[0usize..],
         })
     }
-    pub fn dst_end_offset(&self) -> binparse::Len {
+    pub fn dst_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 6usize,
             bit: 0usize,
         }
     }
-    pub fn dst_start_offset(&self) -> binparse::Len {
+    pub fn dst_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn dst_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn dst_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.dst_start_offset().bits()..self.dst_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn dst_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn dst_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.dst_end_offset();
             let expected = len.byte_ceil();
@@ -308,11 +308,11 @@ impl<'a> Eth<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn dst_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn dst_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn src_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn src_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.src_bit_range();
         {
             let mut elem_nodes = ::std::vec::Vec::new();
@@ -358,27 +358,27 @@ impl<'a> Eth<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn src(&self) -> ::binparse::ParseResult<Eth_src_Iterator<'a>> {
+    pub fn src(&mut self) -> ::binparse::ParseResult<Eth_src_Iterator<'a>> {
         Ok(Eth_src_Iterator {
             idx: 0,
             count: 6usize,
             data: &self.data[6usize..],
         })
     }
-    pub fn src_end_offset(&self) -> binparse::Len {
+    pub fn src_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 12usize,
             bit: 0usize,
         }
     }
-    pub fn src_start_offset(&self) -> binparse::Len {
+    pub fn src_start_offset(&mut self) -> binparse::Len {
         self.dst_end_offset()
     }
-    pub fn src_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn src_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.src_start_offset().bits()..self.src_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn src_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn src_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.src_end_offset();
             let expected = len.byte_ceil();
@@ -392,11 +392,11 @@ impl<'a> Eth<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn src_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn src_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ethertype_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn ethertype_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.ethertype_bit_range();
         ::binparse::FieldNode::new(
             "ethertype",
@@ -406,23 +406,23 @@ impl<'a> Eth<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn ethertype(&self) -> u16 {
+    pub fn ethertype(&mut self) -> u16 {
         u16::from_be_bytes(self.data[12usize..14usize].try_into().unwrap())
     }
-    pub fn ethertype_end_offset(&self) -> binparse::Len {
+    pub fn ethertype_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 14usize,
             bit: 0usize,
         }
     }
-    pub fn ethertype_start_offset(&self) -> binparse::Len {
+    pub fn ethertype_start_offset(&mut self) -> binparse::Len {
         self.src_end_offset()
     }
-    pub fn ethertype_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn ethertype_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.ethertype_start_offset().bits()..self.ethertype_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn ethertype_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn ethertype_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.ethertype_end_offset();
             let expected = len.byte_ceil();
@@ -436,7 +436,7 @@ impl<'a> Eth<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn ethertype_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn ethertype_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

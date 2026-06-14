@@ -14,7 +14,7 @@ const DNS_RESPONSE: &[u8] = &[
 ];
 
 fn work() -> u64 {
-    let (d, _) = Dns::parse(black_box(DNS_RESPONSE)).unwrap();
+    let (mut d, _) = Dns::parse(black_box(DNS_RESPONSE)).unwrap();
     let mut acc = d.id() as u64;
     acc ^= d.qr() as u64;
     acc ^= d.opcode() as u64;
@@ -28,23 +28,42 @@ fn work() -> u64 {
     acc ^= d.ancount() as u64;
     acc ^= d.nscount() as u64;
     acc ^= d.arcount() as u64;
-    acc ^= d.qname().unwrap().labels().flat_map(|l| l.iter().copied()).map(u64::from).sum::<u64>();
+    acc ^= d
+        .qname()
+        .unwrap()
+        .labels()
+        .flat_map(|l| l.iter().copied())
+        .map(u64::from)
+        .sum::<u64>();
     acc ^= d.qtype() as u64;
     acc ^= d.qclass() as u64;
-    acc ^= d.aname().unwrap().labels().flat_map(|l| l.iter().copied()).map(u64::from).sum::<u64>();
+    acc ^= d
+        .aname()
+        .unwrap()
+        .labels()
+        .flat_map(|l| l.iter().copied())
+        .map(u64::from)
+        .sum::<u64>();
     acc ^= d.atype() as u64;
     acc ^= d.aclass() as u64;
     acc ^= d.ttl() as u64;
     acc ^= d.rdlength() as u64;
     acc ^= match d.rdata().unwrap() {
-        Dns_rdata::A(a) => a.addr().unwrap().map(|b| b.unwrap() as u64).fold(0, u64::wrapping_add),
+        Dns_rdata::A(mut a) => a
+            .addr()
+            .unwrap()
+            .map(|b| b.unwrap() as u64)
+            .fold(0, u64::wrapping_add),
         _ => 0,
     };
     acc
 }
 
 fn main() {
-    let iters: u64 = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(2_000_000);
+    let iters: u64 = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2_000_000);
     let mut acc = 0u64;
     let t = std::time::Instant::now();
     for _ in 0..iters {

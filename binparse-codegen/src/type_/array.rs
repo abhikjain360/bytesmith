@@ -393,7 +393,7 @@ pub(crate) fn generate<'a>(
         let validate_fn_name = format_ident!("{}_max_iter_validate", field_name);
         let field_path = format!("{}.{}", struct_accum.name, field_name);
         accum.helper_fns.extend(quote! {
-            fn #validate_fn_name(&self) -> Result<(), ::binparse::ParseError> {
+            fn #validate_fn_name(&mut self) -> Result<(), ::binparse::ParseError> {
                 let count = #check_count;
                 let max = #max;
                 if count > max {
@@ -429,7 +429,7 @@ pub(crate) fn generate<'a>(
             let (vis, dead_code) = crate::field::getter_visibility(attrs);
             accum.helper_fns.extend(quote! {
                 #dead_code
-                #vis fn #rest_fn_name(&self) -> ::binparse::ParseResult<&'a [u8]> {
+                #vis fn #rest_fn_name(&mut self) -> ::binparse::ParseResult<&'a [u8]> {
                     let end = #end;
                     let consumed = (#offset_bytes).saturating_add(#consumed);
                     if consumed > end {
@@ -551,7 +551,7 @@ fn tree_node(
                     let mut start = bit_range.start;
                     for (i, elem) in iter.enumerate() {
                         match elem {
-                            Ok(value) => {
+                            Ok(mut value) => {
                                 let end = start.saturating_add(#elem_len);
                                 elem_nodes.push(value.field_tree().renamed(i.to_string()).shifted(start));
                                 start = end;

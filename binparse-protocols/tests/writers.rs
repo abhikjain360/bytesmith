@@ -9,7 +9,9 @@ use binparse::ParseResult;
 #[cfg(feature = "ethernet")]
 #[test]
 fn ethernet_mode3_round_trips_and_pins_wire_bytes() {
-    use binparse_protocols::ethernet::{EthernetII, EthernetIIContent, EthernetIILens, EthernetIIWriter};
+    use binparse_protocols::ethernet::{
+        EthernetII, EthernetIIContent, EthernetIILens, EthernetIIWriter,
+    };
 
     let content = EthernetIIContent {
         dst: [0x00, 0x1b, 0x21, 0x3c, 0x9d, 0xf8],
@@ -24,22 +26,33 @@ fn ethernet_mode3_round_trips_and_pins_wire_bytes() {
     ];
     assert_eq!(bytes, expected);
 
-    let lens = EthernetIILens { payload: content.payload.len() };
+    let lens = EthernetIILens {
+        payload: content.payload.len(),
+    };
     assert_eq!(EthernetIIWriter::encoded_len(&lens), 18);
 
-    let (eth, rem) = EthernetII::parse(&bytes).unwrap();
+    let (mut eth, rem) = EthernetII::parse(&bytes).unwrap();
     assert!(rem.is_empty());
     assert_eq!(
-        eth.dst().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap(),
+        eth.dst()
+            .unwrap()
+            .collect::<ParseResult<Vec<u8>>>()
+            .unwrap(),
         vec![0x00, 0x1b, 0x21, 0x3c, 0x9d, 0xf8]
     );
     assert_eq!(
-        eth.src().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap(),
+        eth.src()
+            .unwrap()
+            .collect::<ParseResult<Vec<u8>>>()
+            .unwrap(),
         vec![0x00, 0x19, 0x06, 0xea, 0xb8, 0xc1]
     );
     assert_eq!(eth.ethertype(), 0x0800);
     assert_eq!(
-        eth.payload().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap(),
+        eth.payload()
+            .unwrap()
+            .collect::<ParseResult<Vec<u8>>>()
+            .unwrap(),
         vec![0xde, 0xad, 0xbe, 0xef]
     );
 }
@@ -52,8 +65,10 @@ fn ethernet_mode1_setters_and_mut_slices() {
     let lens = EthernetIILens { payload: 4 };
     let mut buf = vec![0u8; EthernetIIWriter::encoded_len(&lens)];
     let mut w = EthernetIIWriter::new(&mut buf, lens).unwrap();
-    w.dst_mut().copy_from_slice(&[0x00, 0x1b, 0x21, 0x3c, 0x9d, 0xf8]);
-    w.src_mut().copy_from_slice(&[0x00, 0x19, 0x06, 0xea, 0xb8, 0xc1]);
+    w.dst_mut()
+        .copy_from_slice(&[0x00, 0x1b, 0x21, 0x3c, 0x9d, 0xf8]);
+    w.src_mut()
+        .copy_from_slice(&[0x00, 0x19, 0x06, 0xea, 0xb8, 0xc1]);
     w.set_ethertype(0x0800);
     w.payload_mut().copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
 
@@ -88,14 +103,20 @@ fn vlan_round_trips_and_derives_constant_tpid() {
     // tpid is a derived constant (no setter): the writer must emit 0x8100 itself.
     assert_eq!(&bytes[12..14], &[0x81, 0x00]);
 
-    let (vlan, rem) = Vlan::parse(&bytes).unwrap();
+    let (mut vlan, rem) = Vlan::parse(&bytes).unwrap();
     assert!(rem.is_empty());
     assert_eq!(
-        vlan.dst().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap(),
+        vlan.dst()
+            .unwrap()
+            .collect::<ParseResult<Vec<u8>>>()
+            .unwrap(),
         vec![1, 2, 3, 4, 5, 6]
     );
     assert_eq!(
-        vlan.src().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap(),
+        vlan.src()
+            .unwrap()
+            .collect::<ParseResult<Vec<u8>>>()
+            .unwrap(),
         vec![10, 11, 12, 13, 14, 15]
     );
     assert_eq!(vlan.tpid(), 0x8100);
@@ -105,7 +126,10 @@ fn vlan_round_trips_and_derives_constant_tpid() {
     assert_eq!(vlan.vid_lo(), 0xbc);
     assert_eq!(vlan.ethertype(), 0x0800);
     assert_eq!(
-        vlan.payload().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap(),
+        vlan.payload()
+            .unwrap()
+            .collect::<ParseResult<Vec<u8>>>()
+            .unwrap(),
         vec![0xde, 0xad, 0xbe, 0xef]
     );
 }
@@ -126,11 +150,17 @@ fn ipv6_round_trips_and_derives_payload_len() {
         flow_lo: 0,
         next_header: 17,
         hop_limit: 64,
-        src: [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01],
-        dst: [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02],
+        src: [
+            0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,
+        ],
+        dst: [
+            0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02,
+        ],
         payload: &payload,
     };
-    let lens = Ipv6Lens { payload: payload.len() };
+    let lens = Ipv6Lens {
+        payload: payload.len(),
+    };
     assert_eq!(Ipv6Writer::encoded_len(&lens), 40 + payload.len());
 
     let bytes = Ipv6Writer::to_vec(&content);
@@ -138,7 +168,7 @@ fn ipv6_round_trips_and_derives_payload_len() {
     // payload_len is derived from the payload region (no setter): 12 == 0x000c.
     assert_eq!(&bytes[4..6], &[0x00, 0x0c]);
 
-    let (ip, rem) = Ipv6::parse(&bytes).unwrap();
+    let (mut ip, rem) = Ipv6::parse(&bytes).unwrap();
     assert!(rem.is_empty());
     assert_eq!(ip.version(), 6);
     assert_eq!(ip.payload_len(), 12);
@@ -146,11 +176,19 @@ fn ipv6_round_trips_and_derives_payload_len() {
     assert_eq!(ip.hop_limit(), 64);
     assert_eq!(
         ip.src().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap(),
-        vec![0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01]
+        vec![
+            0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01
+        ]
     );
-    assert_eq!(ip.dst().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap()[15], 0x02);
     assert_eq!(
-        ip.payload().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap(),
+        ip.dst().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap()[15],
+        0x02
+    );
+    assert_eq!(
+        ip.payload()
+            .unwrap()
+            .collect::<ParseResult<Vec<u8>>>()
+            .unwrap(),
         payload
     );
 }
@@ -168,7 +206,9 @@ fn udp_round_trips_affine_length_region() {
         payload: &payload,
     };
     // length is derived as payload + 8 (the affine `[u8; length - 8]` region).
-    let lens = UdpLens { payload: payload.len() };
+    let lens = UdpLens {
+        payload: payload.len(),
+    };
     assert_eq!(UdpWriter::encoded_len(&lens), 8 + payload.len());
 
     let bytes = UdpWriter::to_vec(&content);
@@ -177,14 +217,17 @@ fn udp_round_trips_affine_length_region() {
     ];
     assert_eq!(bytes, expected);
 
-    let (udp, rem) = Udp::parse(&bytes).unwrap();
+    let (mut udp, rem) = Udp::parse(&bytes).unwrap();
     assert!(rem.is_empty());
     assert_eq!(udp.src_port(), 50000);
     assert_eq!(udp.dst_port(), 53);
     assert_eq!(udp.length(), 12);
     assert_eq!(udp.checksum(), 0x1a2b);
     assert_eq!(
-        udp.payload().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap(),
+        udp.payload()
+            .unwrap()
+            .collect::<ParseResult<Vec<u8>>>()
+            .unwrap(),
         payload
     );
 }
@@ -203,13 +246,16 @@ fn udp_mode2_writer_over_edits_fixed_field_in_place() {
         w.set_dst_port(80);
     }
     // The edited fixed field took effect; derived length and payload untouched.
-    let (udp, rem) = Udp::parse(&buf).unwrap();
+    let (mut udp, rem) = Udp::parse(&buf).unwrap();
     assert!(rem.is_empty());
     assert_eq!(udp.src_port(), 50000);
     assert_eq!(udp.dst_port(), 80);
     assert_eq!(udp.length(), 12);
     assert_eq!(
-        udp.payload().unwrap().collect::<ParseResult<Vec<u8>>>().unwrap(),
+        udp.payload()
+            .unwrap()
+            .collect::<ParseResult<Vec<u8>>>()
+            .unwrap(),
         vec![0xde, 0xad, 0xbe, 0xef]
     );
 }
@@ -218,22 +264,26 @@ fn udp_mode2_writer_over_edits_fixed_field_in_place() {
 #[test]
 fn tcp_option_union_round_trips_fixed_variants() {
     use binparse_protocols::tcp::{
-        EolContent, NopContent, TcpOption, TcpOptionBodyContent, TcpOptionContent, TcpOptionWriter,
-        TcpOption_body,
+        EolContent, NopContent, TcpOption, TcpOption_body, TcpOptionBodyContent, TcpOptionContent,
+        TcpOptionWriter,
     };
 
-    let nop = TcpOptionContent { body: TcpOptionBodyContent::Nop(NopContent {}) };
+    let nop = TcpOptionContent {
+        body: TcpOptionBodyContent::Nop(NopContent {}),
+    };
     let bytes = TcpOptionWriter::to_vec(&nop);
     assert_eq!(bytes, vec![0x01]);
-    let (opt, rem) = TcpOption::parse(&bytes).unwrap();
+    let (mut opt, rem) = TcpOption::parse(&bytes).unwrap();
     assert!(rem.is_empty());
     assert_eq!(opt.kind(), 1);
     assert!(matches!(opt.body().unwrap(), TcpOption_body::Nop(_)));
 
-    let eol = TcpOptionContent { body: TcpOptionBodyContent::Eol(EolContent {}) };
+    let eol = TcpOptionContent {
+        body: TcpOptionBodyContent::Eol(EolContent {}),
+    };
     let bytes = TcpOptionWriter::to_vec(&eol);
     assert_eq!(bytes, vec![0x00]);
-    let (opt, rem) = TcpOption::parse(&bytes).unwrap();
+    let (mut opt, rem) = TcpOption::parse(&bytes).unwrap();
     assert!(rem.is_empty());
     assert_eq!(opt.kind(), 0);
     assert!(matches!(opt.body().unwrap(), TcpOption_body::Eol(_)));
@@ -243,22 +293,26 @@ fn tcp_option_union_round_trips_fixed_variants() {
 #[test]
 fn dhcp_option_union_round_trips_fixed_variants() {
     use binparse_protocols::dhcp::{
-        DhcpOption, DhcpOptionBodyContent, DhcpOptionContent, DhcpOptionWriter, DhcpOption_body,
+        DhcpOption, DhcpOption_body, DhcpOptionBodyContent, DhcpOptionContent, DhcpOptionWriter,
         EndContent, PadContent,
     };
 
-    let pad = DhcpOptionContent { body: DhcpOptionBodyContent::Pad(PadContent {}) };
+    let pad = DhcpOptionContent {
+        body: DhcpOptionBodyContent::Pad(PadContent {}),
+    };
     let bytes = DhcpOptionWriter::to_vec(&pad);
     assert_eq!(bytes, vec![0x00]);
-    let (opt, rem) = DhcpOption::parse(&bytes).unwrap();
+    let (mut opt, rem) = DhcpOption::parse(&bytes).unwrap();
     assert!(rem.is_empty());
     assert_eq!(opt.code(), 0);
     assert!(matches!(opt.body().unwrap(), DhcpOption_body::Pad(_)));
 
-    let end = DhcpOptionContent { body: DhcpOptionBodyContent::End(EndContent {}) };
+    let end = DhcpOptionContent {
+        body: DhcpOptionBodyContent::End(EndContent {}),
+    };
     let bytes = DhcpOptionWriter::to_vec(&end);
     assert_eq!(bytes, vec![0xff]);
-    let (opt, rem) = DhcpOption::parse(&bytes).unwrap();
+    let (mut opt, rem) = DhcpOption::parse(&bytes).unwrap();
     assert!(rem.is_empty());
     assert_eq!(opt.code(), 255);
     assert!(matches!(opt.body().unwrap(), DhcpOption_body::End(_)));

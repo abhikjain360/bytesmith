@@ -7,10 +7,10 @@ pub struct BitArray_nibbles_Iterator<'a> {
 }
 
 impl<'a> ::binparse::Dissect<'a> for BitArray<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         BitArray::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         BitArray::handoff(self)
     }
 }
@@ -42,7 +42,7 @@ impl<'a> ::std::iter::Iterator for BitArray_nibbles_Iterator<'a> {
 
 impl<'a> BitArray<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.nibbles_fatal_check()?;
         me.nibbles_recoverable_check()?;
         let len = me.nibbles_end_offset();
@@ -57,10 +57,10 @@ impl<'a> BitArray<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.nibbles_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -74,7 +74,7 @@ impl<'a> BitArray<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -129,11 +129,11 @@ impl<'a> BitArray<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn nibbles_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn nibbles_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.nibbles_bit_range();
         {
             let mut elem_nodes = ::std::vec::Vec::new();
@@ -179,7 +179,7 @@ impl<'a> BitArray<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn nibbles(&self) -> ::binparse::ParseResult<BitArray_nibbles_Iterator<'a>> {
+    pub fn nibbles(&mut self) -> ::binparse::ParseResult<BitArray_nibbles_Iterator<'a>> {
         Ok(BitArray_nibbles_Iterator {
             idx: 0,
             count: 4usize,
@@ -187,20 +187,20 @@ impl<'a> BitArray<'a> {
             bit_offset: 0,
         })
     }
-    pub fn nibbles_end_offset(&self) -> binparse::Len {
+    pub fn nibbles_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 2usize,
             bit: 0usize,
         }
     }
-    pub fn nibbles_start_offset(&self) -> binparse::Len {
+    pub fn nibbles_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn nibbles_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn nibbles_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.nibbles_start_offset().bits()..self.nibbles_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn nibbles_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn nibbles_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.nibbles_end_offset();
             let expected = len.byte_ceil();
@@ -214,7 +214,7 @@ impl<'a> BitArray<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn nibbles_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn nibbles_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

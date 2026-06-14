@@ -6,10 +6,10 @@ pub struct CStr_name_Iterator<'a> {
 }
 
 impl<'a> ::binparse::Dissect<'a> for CStr<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         CStr::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         CStr::handoff(self)
     }
 }
@@ -29,7 +29,7 @@ impl<'a> ::std::iter::Iterator for CStr_name_Iterator<'a> {
 
 impl<'a> CStr<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.name_fatal_check()?;
         me.name_recoverable_check()?;
         me.after_fatal_check()?;
@@ -46,14 +46,14 @@ impl<'a> CStr<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.name_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.after_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
@@ -67,7 +67,7 @@ impl<'a> CStr<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -160,11 +160,11 @@ impl<'a> CStr<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn name_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn name_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.name_bit_range();
         {
             let mut elem_nodes = ::std::vec::Vec::new();
@@ -210,14 +210,14 @@ impl<'a> CStr<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn name(&self) -> ::binparse::ParseResult<CStr_name_Iterator<'a>> {
+    pub fn name(&mut self) -> ::binparse::ParseResult<CStr_name_Iterator<'a>> {
         Ok(CStr_name_Iterator {
             idx: 0,
             count: self.data[0usize..].iter().position(|&b| b == 0u8).unwrap_or(0),
             data: &self.data[0usize..],
         })
     }
-    pub fn name_end_offset(&self) -> binparse::Len {
+    pub fn name_end_offset(&mut self) -> binparse::Len {
         ::binparse::Len {
             byte: 0usize,
             bit: 0usize,
@@ -237,14 +237,14 @@ impl<'a> CStr<'a> {
                 }
             })
     }
-    pub fn name_start_offset(&self) -> binparse::Len {
+    pub fn name_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn name_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn name_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.name_start_offset().bits()..self.name_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn name_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn name_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.name_end_offset();
             let expected = len.byte_ceil();
@@ -258,11 +258,11 @@ impl<'a> CStr<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn name_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn name_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn after_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn after_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.after_bit_range();
         ::binparse::FieldNode::new(
             "after",
@@ -272,7 +272,7 @@ impl<'a> CStr<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn after(&self) -> u8 {
+    pub fn after(&mut self) -> u8 {
         {
             let offset = ::binparse::Len {
                 byte: 0usize,
@@ -298,7 +298,7 @@ impl<'a> CStr<'a> {
             self.data[offset.byte]
         }
     }
-    pub fn after_end_offset(&self) -> binparse::Len {
+    pub fn after_end_offset(&mut self) -> binparse::Len {
         ::binparse::Len {
             byte: 1usize,
             bit: 0usize,
@@ -326,14 +326,14 @@ impl<'a> CStr<'a> {
                     })
             })
     }
-    pub fn after_start_offset(&self) -> binparse::Len {
+    pub fn after_start_offset(&mut self) -> binparse::Len {
         self.name_end_offset()
     }
-    pub fn after_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn after_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.after_start_offset().bits()..self.after_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn after_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn after_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.after_end_offset();
             let expected = len.byte_ceil();
@@ -347,7 +347,7 @@ impl<'a> CStr<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn after_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn after_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }

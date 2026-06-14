@@ -51,8 +51,8 @@ pub enum Error {
     NonLiteralConstraint,
     #[error("validations are not supported on conditional fields")]
     ValidationOnConditional,
-    #[error("@cache(value) is not yet supported; use @cache(len)")]
-    CacheValueUnsupported,
+    #[error("@cache(value) is only supported on @hook fields")]
+    CacheValueOnNonHook,
 }
 
 impl FieldAccum {
@@ -85,6 +85,10 @@ pub(crate) fn generate<'a>(
     let attrs = ParsedAttrs::parse(&ast.attributes)?;
     let field_inherited = attrs.merge_inherited(struct_accum.inherited);
     let mut field_accum = FieldAccum::new(ast.name);
+
+    if attrs.cache_value && attrs.hook.is_none() {
+        return Err(Error::CacheValueOnNonHook);
+    }
 
     let has_padding = attrs.pad.is_some() || attrs.pad_to.is_some();
     if let Some(pad) = attrs.pad {
@@ -230,10 +234,6 @@ pub(crate) fn generate<'a>(
         }
     };
 
-    if attrs.cache_value {
-        return Err(Error::CacheValueUnsupported);
-    }
-
     let (vis, dead_code) = getter_visibility(&attrs);
     let mut propagated_offset = end_offset.clone();
     field_accum.offset_getter = match &end_offset {
@@ -242,7 +242,7 @@ pub(crate) fn generate<'a>(
             let total_bit = total_len.bit;
             quote! {
                 #dead_code
-                #vis fn #offset_getter_fn_name(&self) -> binparse::Len {
+                #vis fn #offset_getter_fn_name(&mut self) -> binparse::Len {
                     binparse::Len { byte: #total_byte, bit: #total_bit }
                 }
             }
@@ -250,21 +250,20 @@ pub(crate) fn generate<'a>(
         GeneratedLen::Dynamic(total_len) if attrs.cache_len => {
             let cache_ident = format_ident!("{}_end_cache", ast.name);
             struct_accum.cache_field_defs.extend(quote! {
-                #cache_ident: ::std::cell::Cell<Option<binparse::Len>>,
+                #cache_ident: Option<binparse::Len>,
             });
             struct_accum.cache_inits.extend(quote! {
-                #cache_ident: ::std::cell::Cell::new(None),
+                #cache_ident: None,
             });
-            propagated_offset =
-                GeneratedLen::Dynamic(quote! { self.#offset_getter_fn_name() });
+            propagated_offset = GeneratedLen::Dynamic(quote! { self.#offset_getter_fn_name() });
             quote! {
                 #dead_code
-                #vis fn #offset_getter_fn_name(&self) -> binparse::Len {
-                    if let Some(cached) = self.#cache_ident.get() {
+                #vis fn #offset_getter_fn_name(&mut self) -> binparse::Len {
+                    if let Some(cached) = self.#cache_ident {
                         return cached;
                     }
                     let value = { #total_len };
-                    self.#cache_ident.set(Some(value));
+                    self.#cache_ident = Some(value);
                     value
                 }
             }
@@ -272,7 +271,7 @@ pub(crate) fn generate<'a>(
         GeneratedLen::Dynamic(total_len) => {
             quote! {
                 #dead_code
-                #vis fn #offset_getter_fn_name(&self) -> binparse::Len {
+                #vis fn #offset_getter_fn_name(&mut self) -> binparse::Len {
                     #total_len
                 }
             }
@@ -280,12 +279,12 @@ pub(crate) fn generate<'a>(
     };
     field_accum.offset_getter.extend(quote! {
         #dead_code
-        #vis fn #start_offset_getter_fn_name(&self) -> binparse::Len {
+        #vis fn #start_offset_getter_fn_name(&mut self) -> binparse::Len {
             #start_offset_body
         }
 
         #dead_code
-        #vis fn #bit_range_fn_name(&self) -> ::core::ops::Range<usize> {
+        #vis fn #bit_range_fn_name(&mut self) -> ::core::ops::Range<usize> {
             self.#start_offset_getter_fn_name().bits()..self.#offset_getter_fn_name().bits()
         }
     });
@@ -318,7 +317,7 @@ pub(crate) fn generate<'a>(
         };
         struct_accum.functions.extend(quote! {
             #[allow(dead_code)]
-            fn #pad_node_fn_name(&self) -> Option<::binparse::FieldNode<'a>> {
+            fn #pad_node_fn_name(&mut self) -> Option<::binparse::FieldNode<'a>> {
                 let bit_range = #prev_end.bits()..self.#start_offset_getter_fn_name().bits();
                 if bit_range.start < bit_range.end {
                     Some(
@@ -347,7 +346,7 @@ pub(crate) fn generate<'a>(
     let present_node_fn_name = format_ident!("{}_present_node", ast.name);
     struct_accum.functions.extend(quote! {
         #[allow(dead_code)]
-        fn #present_node_fn_name(&self) -> ::binparse::FieldNode<'a> {
+        fn #present_node_fn_name(&mut self) -> ::binparse::FieldNode<'a> {
             let bit_range = self.#bit_range_fn_name();
             #tree_body #hide
         }
@@ -361,7 +360,7 @@ pub(crate) fn generate<'a>(
         let absent_name = ast.name;
         struct_accum.functions.extend(quote! {
             #[allow(dead_code)]
-            fn #absent_node_fn_name(&self) -> ::binparse::FieldNode<'a> {
+            fn #absent_node_fn_name(&mut self) -> ::binparse::FieldNode<'a> {
                 let start = self.#start_offset_getter_fn_name().bits();
                 ::binparse::FieldNode::new(
                         #absent_name,
@@ -383,7 +382,7 @@ pub(crate) fn generate<'a>(
         Some(gate) => {
             struct_accum.tree_stmts.extend(quote! {
                 {
-                    let me = self;
+                    let me = &mut *self;
                     #pad_push
                     if me.#gate() {
                         #present_push
@@ -395,7 +394,7 @@ pub(crate) fn generate<'a>(
         }
         None => struct_accum.tree_stmts.extend(quote! {
             {
-                let me = self;
+                let me = &mut *self;
                 #pad_push
                 #present_push
             }
@@ -442,7 +441,7 @@ pub(crate) fn generate<'a>(
     });
     struct_accum.functions.extend(quote! {
         #[allow(dead_code)]
-        fn #fatal_check_fn_name(&self) -> Result<(), ::binparse::ParseError> {
+        fn #fatal_check_fn_name(&mut self) -> Result<(), ::binparse::ParseError> {
             #fatal_check
             Ok(())
         }
@@ -466,7 +465,7 @@ pub(crate) fn generate<'a>(
     )?;
     struct_accum.functions.extend(quote! {
         #[allow(dead_code)]
-        fn #recoverable_check_fn_name(&self) -> Result<(), ::binparse::ParseError> {
+        fn #recoverable_check_fn_name(&mut self) -> Result<(), ::binparse::ParseError> {
             #recoverable_check
             Ok(())
         }
@@ -562,17 +561,42 @@ fn generate_validations<'a>(
 
     if !matches!(
         field_type,
-        DoneFieldType::Primitive | DoneFieldType::BitField
+        DoneFieldType::Primitive
+            | DoneFieldType::BitField
+            | DoneFieldType::Hook
+            | DoneFieldType::HookRef
     ) {
         return Err(attr::Error::ValidationOnNonNumeric.into());
     }
 
     let field_name = format_ident!("{}", ast.name);
     let field_path = format!("{}.{}", struct_accum.name, ast.name);
+    let actual_u128 = match field_type {
+        DoneFieldType::Primitive | DoneFieldType::BitField => quote! { self.#field_name() as u128 },
+        DoneFieldType::Hook => {
+            quote! { self.#field_name().map(|value| value as u128).unwrap_or(0) }
+        }
+        DoneFieldType::HookRef => {
+            quote! { self.#field_name().map(|value| *value as u128).unwrap_or(0) }
+        }
+        DoneFieldType::Other => unreachable!(),
+    };
+    let actual_usize = match field_type {
+        DoneFieldType::Primitive | DoneFieldType::BitField => {
+            quote! { self.#field_name() as usize }
+        }
+        DoneFieldType::Hook => {
+            quote! { self.#field_name().map(|value| value as usize).unwrap_or(0) }
+        }
+        DoneFieldType::HookRef => {
+            quote! { self.#field_name().map(|value| *value as usize).unwrap_or(0) }
+        }
+        DoneFieldType::Other => unreachable!(),
+    };
     let validation_error = quote! {
         ::binparse::ParseError::ValidationFailed {
             field: #field_path,
-            actual: self.#field_name() as u128,
+            actual: #actual_u128,
         }
     };
 
@@ -581,7 +605,7 @@ fn generate_validations<'a>(
     if let Some(value) = constant {
         let expected = proc_macro2::Literal::u128_unsuffixed(value as u128);
         validations.extend(quote! {
-            if self.#field_name() != #expected {
+            if #actual_usize != #expected {
                 return Err(#validation_error);
             }
         });
@@ -601,7 +625,7 @@ fn generate_validations<'a>(
         let min_tokens = min.tokens;
         let max_tokens = max.tokens;
         validations.extend(quote! {
-            if !((#min_tokens)..=(#max_tokens)).contains(&(self.#field_name() as usize)) {
+            if !((#min_tokens)..=(#max_tokens)).contains(&(#actual_usize)) {
                 return Err(#validation_error);
             }
         });
@@ -620,7 +644,7 @@ fn generate_validations<'a>(
     let validate_fn_name = format_ident!("{}_validate", ast.name);
     struct_accum.functions.extend(quote! {
         #[allow(clippy::unnecessary_cast)]
-        fn #validate_fn_name(&self) -> Result<(), ::binparse::ParseError> {
+        fn #validate_fn_name(&mut self) -> Result<(), ::binparse::ParseError> {
             #validations
             Ok(())
         }
@@ -670,13 +694,13 @@ fn generate_plain<'a>(
             let raw_fn_name = tree_getter.clone();
             field_accum.helper_fns.extend(quote! {
                 #[allow(clippy::identity_op)]
-                fn #raw_fn_name(&self) -> #return_ty {
+                fn #raw_fn_name(&mut self) -> #return_ty {
                     #field_getter_body
                 }
             });
             field_accum.field_getter = quote! {
                 #dead_code
-                #vis fn #field_name(&self) -> Option<#return_ty> {
+                #vis fn #field_name(&mut self) -> Option<#return_ty> {
                     if self.#gate() {
                         Some(self.#raw_fn_name())
                     } else {
@@ -689,7 +713,7 @@ fn generate_plain<'a>(
             field_accum.field_getter = quote! {
                 #dead_code
                 #[allow(clippy::identity_op)]
-                #vis fn #field_name(&self) -> #return_ty {
+                #vis fn #field_name(&mut self) -> #return_ty {
                     #field_getter_body
                 }
             };
@@ -903,36 +927,80 @@ fn generate_vla_hook<'a>(
     };
 
     let (vis, dead_code) = getter_visibility(attrs);
+    let value_cache = attrs
+        .cache_value
+        .then(|| format_ident!("{}_value_cache", field_name));
+    if let Some(cache_ident) = &value_cache {
+        struct_accum.cache_field_defs.extend(quote! {
+            #cache_ident: Option<(#return_ty, usize)>,
+        });
+        struct_accum.cache_inits.extend(quote! {
+            #cache_ident: None,
+        });
+    }
 
     if let Some(len_expr) = &attrs.len {
         let lowered = expr::lower(len_expr, expr::ExprType::Numeric, &struct_accum.done_fields)?;
         let len_tokens = lowered.tokens;
         let rest_fn_name = format_ident!("{}_rest", field_name);
 
-        field_accum.helper_fns = quote! {
-            fn #raw_fn_name(&self) -> ::binparse::ParseResult<(#return_ty, usize)> {
-                let start = #start;
-                let window = start.saturating_add(#len_tokens).min(self.data.len());
-                let (value, consumed) = #hook_fn(
-                    &self.data[start.min(window)..window],
-                    ::binparse::HookContext {
-                        field: #field_path,
-                        offset: start,
-                        enclosing: self.data,
-                    },
-                )?;
-                let end = start.saturating_add(consumed);
-                if end > window {
-                    return Err(::binparse::ParseError::NotEnoughData {
-                        expected: end,
-                        got: window,
-                    });
+        let raw_fn = if let Some(cache_ident) = &value_cache {
+            quote! {
+                fn #raw_fn_name(&mut self) -> ::binparse::ParseResult<(&#return_ty, usize)> {
+                    if self.#cache_ident.is_none() {
+                        let start = #start;
+                        let window = start.saturating_add(#len_tokens).min(self.data.len());
+                        let (value, consumed) = #hook_fn(
+                            &self.data[start.min(window)..window],
+                            ::binparse::HookContext {
+                                field: #field_path,
+                                offset: start,
+                                enclosing: self.data,
+                            },
+                        )?;
+                        let end = start.saturating_add(consumed);
+                        if end > window {
+                            return Err(::binparse::ParseError::NotEnoughData {
+                                expected: end,
+                                got: window,
+                            });
+                        }
+                        self.#cache_ident = Some((value, consumed));
+                    }
+                    let (value, consumed) = self.#cache_ident.as_ref().unwrap();
+                    Ok((value, *consumed))
                 }
-                Ok((value, consumed))
             }
+        } else {
+            quote! {
+                fn #raw_fn_name(&mut self) -> ::binparse::ParseResult<(#return_ty, usize)> {
+                    let start = #start;
+                    let window = start.saturating_add(#len_tokens).min(self.data.len());
+                    let (value, consumed) = #hook_fn(
+                        &self.data[start.min(window)..window],
+                        ::binparse::HookContext {
+                            field: #field_path,
+                            offset: start,
+                            enclosing: self.data,
+                        },
+                    )?;
+                    let end = start.saturating_add(consumed);
+                    if end > window {
+                        return Err(::binparse::ParseError::NotEnoughData {
+                            expected: end,
+                            got: window,
+                        });
+                    }
+                    Ok((value, consumed))
+                }
+            }
+        };
+
+        field_accum.helper_fns = quote! {
+            #raw_fn
 
             #dead_code
-            #vis fn #rest_fn_name(&self) -> ::binparse::ParseResult<&'a [u8]> {
+            #vis fn #rest_fn_name(&mut self) -> ::binparse::ParseResult<&'a [u8]> {
                 let start = #start;
                 let window = start.saturating_add(#len_tokens).min(self.data.len());
                 let (_, consumed) = self.#raw_fn_name()?;
@@ -941,10 +1009,19 @@ fn generate_vla_hook<'a>(
             }
         };
 
-        field_accum.field_getter = quote! {
-            #dead_code
-            #vis fn #field_name(&self) -> ::binparse::ParseResult<#return_ty> {
-                self.#raw_fn_name().map(|(value, _)| value)
+        field_accum.field_getter = if attrs.cache_value {
+            quote! {
+                #dead_code
+                #vis fn #field_name(&mut self) -> ::binparse::ParseResult<&#return_ty> {
+                    self.#raw_fn_name().map(|(value, _)| value)
+                }
+            }
+        } else {
+            quote! {
+                #dead_code
+                #vis fn #field_name(&mut self) -> ::binparse::ParseResult<#return_ty> {
+                    self.#raw_fn_name().map(|(value, _)| value)
+                }
             }
         };
 
@@ -955,7 +1032,11 @@ fn generate_vla_hook<'a>(
             }),
         };
         field_accum.field_type = if hook_return_is_numeric(&hook.return_ty.to_string()) {
-            DoneFieldType::Hook
+            if attrs.cache_value {
+                DoneFieldType::HookRef
+            } else {
+                DoneFieldType::Hook
+            }
         } else {
             DoneFieldType::Other
         };
@@ -966,7 +1047,11 @@ fn generate_vla_hook<'a>(
         let name_str = field_accum.field_name.to_string();
         let type_name = hook.return_ty.to_string();
         let bind = hook_value_binding(&type_name);
-        let value = hook_value(&type_name, quote! { value });
+        let value = if attrs.cache_value {
+            hook_value(&type_name, quote! { *value })
+        } else {
+            hook_value(&type_name, quote! { value })
+        };
         field_accum.tree_body = quote! {
             match self.#raw_fn_name() {
                 Ok((#bind, consumed)) => {
@@ -1005,45 +1090,99 @@ fn generate_vla_hook<'a>(
         return Ok(());
     }
 
-    field_accum.helper_fns = quote! {
-        fn #raw_fn_name(&self) -> ::binparse::ParseResult<(#return_ty, usize)> {
-            let start = #start;
-            let (value, consumed) = #hook_fn(
-                &self.data[start..],
-                ::binparse::HookContext {
-                    field: #field_path,
-                    offset: start,
-                    enclosing: self.data,
-                },
-            )?;
-            let end = start.saturating_add(consumed);
-            if end > self.data.len() {
-                return Err(::binparse::ParseError::NotEnoughData {
-                    expected: end,
-                    got: self.data.len(),
-                });
+    field_accum.helper_fns = if let Some(cache_ident) = &value_cache {
+        quote! {
+            fn #raw_fn_name(&mut self) -> ::binparse::ParseResult<(&#return_ty, usize)> {
+                if self.#cache_ident.is_none() {
+                    let start = #start;
+                    let (value, consumed) = #hook_fn(
+                        &self.data[start..],
+                        ::binparse::HookContext {
+                            field: #field_path,
+                            offset: start,
+                            enclosing: self.data,
+                        },
+                    )?;
+                    let end = start.saturating_add(consumed);
+                    if end > self.data.len() {
+                        return Err(::binparse::ParseError::NotEnoughData {
+                            expected: end,
+                            got: self.data.len(),
+                        });
+                    }
+                    self.#cache_ident = Some((value, consumed));
+                }
+                let (value, consumed) = self.#cache_ident.as_ref().unwrap();
+                Ok((value, *consumed))
             }
-            Ok((value, consumed))
+        }
+    } else {
+        quote! {
+            fn #raw_fn_name(&mut self) -> ::binparse::ParseResult<(#return_ty, usize)> {
+                let start = #start;
+                let (value, consumed) = #hook_fn(
+                    &self.data[start..],
+                    ::binparse::HookContext {
+                        field: #field_path,
+                        offset: start,
+                        enclosing: self.data,
+                    },
+                )?;
+                let end = start.saturating_add(consumed);
+                if end > self.data.len() {
+                    return Err(::binparse::ParseError::NotEnoughData {
+                        expected: end,
+                        got: self.data.len(),
+                    });
+                }
+                Ok((value, consumed))
+            }
         }
     };
 
     field_accum.field_getter = match &struct_accum.condition {
-        Some(gate) => quote! {
-            #dead_code
-            #vis fn #field_name(&self) -> Option<::binparse::ParseResult<#return_ty>> {
-                if self.#gate() {
-                    Some(self.#raw_fn_name().map(|(value, _)| value))
-                } else {
-                    None
+        Some(gate) => {
+            if attrs.cache_value {
+                quote! {
+                    #dead_code
+                    #vis fn #field_name(&mut self) -> Option<::binparse::ParseResult<&#return_ty>> {
+                        if self.#gate() {
+                            Some(self.#raw_fn_name().map(|(value, _)| value))
+                        } else {
+                            None
+                        }
+                    }
+                }
+            } else {
+                quote! {
+                    #dead_code
+                    #vis fn #field_name(&mut self) -> Option<::binparse::ParseResult<#return_ty>> {
+                        if self.#gate() {
+                            Some(self.#raw_fn_name().map(|(value, _)| value))
+                        } else {
+                            None
+                        }
+                    }
                 }
             }
-        },
-        None => quote! {
-            #dead_code
-            #vis fn #field_name(&self) -> ::binparse::ParseResult<#return_ty> {
-                self.#raw_fn_name().map(|(value, _)| value)
+        }
+        None => {
+            if attrs.cache_value {
+                quote! {
+                    #dead_code
+                    #vis fn #field_name(&mut self) -> ::binparse::ParseResult<&#return_ty> {
+                        self.#raw_fn_name().map(|(value, _)| value)
+                    }
+                }
+            } else {
+                quote! {
+                    #dead_code
+                    #vis fn #field_name(&mut self) -> ::binparse::ParseResult<#return_ty> {
+                        self.#raw_fn_name().map(|(value, _)| value)
+                    }
+                }
             }
-        },
+        }
     };
 
     field_accum.len = GeneratedLen::Dynamic(quote! {
@@ -1053,7 +1192,11 @@ fn generate_vla_hook<'a>(
         }
     });
     field_accum.field_type = if hook_return_is_numeric(&hook.return_ty.to_string()) {
-        DoneFieldType::Hook
+        if attrs.cache_value {
+            DoneFieldType::HookRef
+        } else {
+            DoneFieldType::Hook
+        }
     } else {
         DoneFieldType::Other
     };
@@ -1063,7 +1206,11 @@ fn generate_vla_hook<'a>(
     let name_str = field_accum.field_name.to_string();
     let type_name = hook.return_ty.to_string();
     let bind = hook_value_binding(&type_name);
-    let value = hook_value(&type_name, quote! { value });
+    let value = if attrs.cache_value {
+        hook_value(&type_name, quote! { *value })
+    } else {
+        hook_value(&type_name, quote! { value })
+    };
     field_accum.tree_body = quote! {
         match self.#raw_fn_name() {
             Ok((#bind, _)) => ::binparse::FieldNode::new(
@@ -1157,7 +1304,11 @@ fn generate_fixed_hook<'a>(
 
     field_accum.len = info.len;
     field_accum.field_type = if hook_return_is_numeric(&hook.return_ty.to_string()) {
-        DoneFieldType::Hook
+        if attrs.cache_value {
+            DoneFieldType::HookRef
+        } else {
+            DoneFieldType::Hook
+        }
     } else {
         DoneFieldType::Other
     };
@@ -1180,35 +1331,82 @@ fn generate_fixed_hook<'a>(
             },
         )
     };
+    let value_cache = attrs
+        .cache_value
+        .then(|| format_ident!("{}_value_cache", field_name));
+    if let Some(cache_ident) = &value_cache {
+        struct_accum.cache_field_defs.extend(quote! {
+            #cache_ident: Option<#return_ty>,
+        });
+        struct_accum.cache_inits.extend(quote! {
+            #cache_ident: None,
+        });
+    }
 
     let raw_fn_name;
     field_accum.field_getter = match &struct_accum.condition {
         Some(gate) => {
             let inner_fn_name = format_ident!("{}_raw", field_name);
             raw_fn_name = inner_fn_name.clone();
-            quote! {
-                #[allow(clippy::identity_op)]
-                fn #inner_fn_name(&self) -> ::binparse::ParseResult<#return_ty> {
-                    #hook_body
-                }
+            if let Some(cache_ident) = &value_cache {
+                quote! {
+                    #[allow(clippy::identity_op)]
+                    fn #inner_fn_name(&mut self) -> ::binparse::ParseResult<&#return_ty> {
+                        if self.#cache_ident.is_none() {
+                            let value = { #hook_body }?;
+                            self.#cache_ident = Some(value);
+                        }
+                        Ok(self.#cache_ident.as_ref().unwrap())
+                    }
 
-                #dead_code
-                #vis fn #field_name(&self) -> Option<::binparse::ParseResult<#return_ty>> {
-                    if self.#gate() {
-                        Some(self.#inner_fn_name())
-                    } else {
-                        None
+                    #dead_code
+                    #vis fn #field_name(&mut self) -> Option<::binparse::ParseResult<&#return_ty>> {
+                        if self.#gate() {
+                            Some(self.#inner_fn_name())
+                        } else {
+                            None
+                        }
+                    }
+                }
+            } else {
+                quote! {
+                    #[allow(clippy::identity_op)]
+                    fn #inner_fn_name(&mut self) -> ::binparse::ParseResult<#return_ty> {
+                        #hook_body
+                    }
+
+                    #dead_code
+                    #vis fn #field_name(&mut self) -> Option<::binparse::ParseResult<#return_ty>> {
+                        if self.#gate() {
+                            Some(self.#inner_fn_name())
+                        } else {
+                            None
+                        }
                     }
                 }
             }
         }
         None => {
             raw_fn_name = field_name.clone();
-            quote! {
-                #dead_code
-                #[allow(clippy::identity_op)]
-                #vis fn #field_name(&self) -> ::binparse::ParseResult<#return_ty> {
-                    #hook_body
+            if let Some(cache_ident) = &value_cache {
+                quote! {
+                    #dead_code
+                    #[allow(clippy::identity_op)]
+                    #vis fn #field_name(&mut self) -> ::binparse::ParseResult<&#return_ty> {
+                        if self.#cache_ident.is_none() {
+                            let value = { #hook_body }?;
+                            self.#cache_ident = Some(value);
+                        }
+                        Ok(self.#cache_ident.as_ref().unwrap())
+                    }
+                }
+            } else {
+                quote! {
+                    #dead_code
+                    #[allow(clippy::identity_op)]
+                    #vis fn #field_name(&mut self) -> ::binparse::ParseResult<#return_ty> {
+                        #hook_body
+                    }
                 }
             }
         }
@@ -1221,7 +1419,11 @@ fn generate_fixed_hook<'a>(
     let name_str = field_accum.field_name.to_string();
     let type_name = hook.return_ty.to_string();
     let bind = hook_value_binding(&type_name);
-    let value = hook_value(&type_name, quote! { value });
+    let value = if attrs.cache_value {
+        hook_value(&type_name, quote! { *value })
+    } else {
+        hook_value(&type_name, quote! { value })
+    };
     field_accum.tree_body = quote! {
         match self.#raw_fn_name() {
             Ok(#bind) => ::binparse::FieldNode::new(

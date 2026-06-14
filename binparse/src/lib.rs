@@ -25,8 +25,8 @@ pub struct Handoff<'a> {
 /// declared a `@payload` field. Public stability of this trait is deferred to
 /// publish readiness.
 pub trait Dissect<'a> {
-    fn field_tree(&self) -> FieldNode<'a>;
-    fn handoff(&self) -> Option<Handoff<'a>>;
+    fn field_tree(&mut self) -> FieldNode<'a>;
+    fn handoff(&mut self) -> Option<Handoff<'a>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

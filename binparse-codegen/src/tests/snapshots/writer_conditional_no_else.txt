@@ -1,15 +1,15 @@
 impl<'a> ::binparse::Dissect<'a> for Opt<'a> {
-    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         Opt::field_tree(self)
     }
-    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         Opt::handoff(self)
     }
 }
 
 impl<'a> Opt<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-        let me = Self { data };
+        let mut me = Self { data };
         me.flags_fatal_check()?;
         me.flags_recoverable_check()?;
         if me.conditional_0_present() {
@@ -32,14 +32,14 @@ impl<'a> Opt<'a> {
         }
         Ok((me, &data[len.byte..]))
     }
-    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+    pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
         let mut children = ::std::vec::Vec::new();
         {
-            let me = self;
+            let me = &mut *self;
             children.push(me.flags_present_node());
         }
         {
-            let me = self;
+            let me = &mut *self;
             if me.conditional_0_present() {
                 children.push(me.a_present_node());
             } else {
@@ -47,7 +47,7 @@ impl<'a> Opt<'a> {
             }
         }
         {
-            let me = self;
+            let me = &mut *self;
             if me.conditional_0_present() {
                 children.push(me.b_present_node());
             } else {
@@ -65,7 +65,7 @@ impl<'a> Opt<'a> {
         root
     }
     pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
-        let me = Self { data };
+        let mut me = Self { data };
         let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
         let mut fatal: Option<::binparse::ParseError> = None;
         if fatal.is_none() {
@@ -204,11 +204,11 @@ impl<'a> Opt<'a> {
         root.set_paths("");
         root
     }
-    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+    pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
         None
     }
     #[allow(dead_code)]
-    fn flags_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn flags_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.flags_bit_range();
         ::binparse::FieldNode::new(
             "flags",
@@ -218,23 +218,23 @@ impl<'a> Opt<'a> {
         )
     }
     #[allow(clippy::identity_op)]
-    pub fn flags(&self) -> u8 {
+    pub fn flags(&mut self) -> u8 {
         self.data[0usize]
     }
-    pub fn flags_end_offset(&self) -> binparse::Len {
+    pub fn flags_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 1usize,
             bit: 0usize,
         }
     }
-    pub fn flags_start_offset(&self) -> binparse::Len {
+    pub fn flags_start_offset(&mut self) -> binparse::Len {
         binparse::Len::ZERO
     }
-    pub fn flags_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn flags_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.flags_start_offset().bits()..self.flags_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn flags_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn flags_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.flags_end_offset();
             let expected = len.byte_ceil();
@@ -248,15 +248,15 @@ impl<'a> Opt<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn flags_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn flags_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code, unused_parens)]
-    fn conditional_0_present(&self) -> bool {
+    fn conditional_0_present(&mut self) -> bool {
         ((self.flags() as usize) > (0usize))
     }
     #[allow(dead_code)]
-    fn a_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn a_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.a_bit_range();
         ::binparse::FieldNode::new(
             "a",
@@ -266,32 +266,32 @@ impl<'a> Opt<'a> {
         )
     }
     #[allow(dead_code)]
-    fn a_absent_node(&self) -> ::binparse::FieldNode<'a> {
+    fn a_absent_node(&mut self) -> ::binparse::FieldNode<'a> {
         let start = self.a_start_offset().bits();
         ::binparse::FieldNode::new("a", "u16", start..start, ::binparse::Value::Absent)
             .hide()
     }
     #[allow(clippy::identity_op)]
-    fn a_raw(&self) -> u16 {
+    fn a_raw(&mut self) -> u16 {
         u16::from_be_bytes(self.data[1usize..3usize].try_into().unwrap())
     }
-    pub fn a(&self) -> Option<u16> {
+    pub fn a(&mut self) -> Option<u16> {
         if self.conditional_0_present() { Some(self.a_raw()) } else { None }
     }
-    pub fn a_end_offset(&self) -> binparse::Len {
+    pub fn a_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 3usize,
             bit: 0usize,
         }
     }
-    pub fn a_start_offset(&self) -> binparse::Len {
+    pub fn a_start_offset(&mut self) -> binparse::Len {
         self.flags_end_offset()
     }
-    pub fn a_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn a_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.a_start_offset().bits()..self.a_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn a_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn a_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.a_end_offset();
             let expected = len.byte_ceil();
@@ -305,11 +305,11 @@ impl<'a> Opt<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn a_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn a_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn b_present_node(&self) -> ::binparse::FieldNode<'a> {
+    fn b_present_node(&mut self) -> ::binparse::FieldNode<'a> {
         let bit_range = self.b_bit_range();
         ::binparse::FieldNode::new(
             "b",
@@ -319,32 +319,32 @@ impl<'a> Opt<'a> {
         )
     }
     #[allow(dead_code)]
-    fn b_absent_node(&self) -> ::binparse::FieldNode<'a> {
+    fn b_absent_node(&mut self) -> ::binparse::FieldNode<'a> {
         let start = self.b_start_offset().bits();
         ::binparse::FieldNode::new("b", "u8", start..start, ::binparse::Value::Absent)
             .hide()
     }
     #[allow(clippy::identity_op)]
-    fn b_raw(&self) -> u8 {
+    fn b_raw(&mut self) -> u8 {
         self.data[3usize]
     }
-    pub fn b(&self) -> Option<u8> {
+    pub fn b(&mut self) -> Option<u8> {
         if self.conditional_0_present() { Some(self.b_raw()) } else { None }
     }
-    pub fn b_end_offset(&self) -> binparse::Len {
+    pub fn b_end_offset(&mut self) -> binparse::Len {
         binparse::Len {
             byte: 4usize,
             bit: 0usize,
         }
     }
-    pub fn b_start_offset(&self) -> binparse::Len {
+    pub fn b_start_offset(&mut self) -> binparse::Len {
         self.a_end_offset()
     }
-    pub fn b_bit_range(&self) -> ::core::ops::Range<usize> {
+    pub fn b_bit_range(&mut self) -> ::core::ops::Range<usize> {
         self.b_start_offset().bits()..self.b_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn b_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn b_fatal_check(&mut self) -> Result<(), ::binparse::ParseError> {
         {
             let len = self.b_end_offset();
             let expected = len.byte_ceil();
@@ -358,10 +358,10 @@ impl<'a> Opt<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn b_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn b_recoverable_check(&mut self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
-    fn conditional_0_end_offset(&self) -> binparse::Len {
+    fn conditional_0_end_offset(&mut self) -> binparse::Len {
         if self.conditional_0_present() {
             self.b_end_offset()
         } else {

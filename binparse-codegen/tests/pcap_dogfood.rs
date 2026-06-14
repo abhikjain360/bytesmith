@@ -135,12 +135,12 @@ mod tests {{
         data: Vec<u8>,
     }}
 
-    fn body_records(body: &Pcap_body<'_>) -> binparse::ParseResult<Vec<Record>> {{
+    fn body_records(body: &mut Pcap_body<'_>) -> binparse::ParseResult<Vec<Record>> {{
         match body {{
             Pcap_body::Be(be) => be
                 .records()?
                 .map(|rec| {{
-                    let rec = rec?;
+                    let mut rec = rec?;
                     let _ = rec.field_tree();
                     let data = rec.data()?.collect::<binparse::ParseResult<Vec<u8>>>()?;
                     Ok(Record {{
@@ -155,7 +155,7 @@ mod tests {{
             Pcap_body::Le(le) => le
                 .records()?
                 .map(|rec| {{
-                    let rec = rec?;
+                    let mut rec = rec?;
                     let _ = rec.field_tree();
                     let data = rec.data()?.collect::<binparse::ParseResult<Vec<u8>>>()?;
                     Ok(Record {{
@@ -170,14 +170,14 @@ mod tests {{
         }}
     }}
 
-    fn body_network(body: &Pcap_body<'_>) -> u32 {{
+    fn body_network(body: &mut Pcap_body<'_>) -> u32 {{
         match body {{
             Pcap_body::Be(be) => be.network(),
             Pcap_body::Le(le) => le.network(),
         }}
     }}
 
-    fn body_version_major(body: &Pcap_body<'_>) -> u16 {{
+    fn body_version_major(body: &mut Pcap_body<'_>) -> u16 {{
         match body {{
             Pcap_body::Be(be) => be.version_major(),
             Pcap_body::Le(le) => le.version_major(),
@@ -192,13 +192,13 @@ mod tests {{
             let bytes =
                 build_pcap(endian, 1, &[(0x1111_2222, 0x33, p0), (0x4444_5555, 0x66, p1)]);
             assert!(classify_magic(&bytes) == Some(endian));
-            let (pcap, rem) = Pcap::parse(&bytes).unwrap();
+            let (mut pcap, rem) = Pcap::parse(&bytes).unwrap();
             assert!(rem.is_empty());
-            let body = pcap.body().unwrap();
-            assert_eq!(body_version_major(&body), 2);
-            assert_eq!(body_network(&body), 1);
+            let mut body = pcap.body().unwrap();
+            assert_eq!(body_version_major(&mut body), 2);
+            assert_eq!(body_network(&mut body), 1);
 
-            let records = body_records(&body).unwrap();
+            let records = body_records(&mut body).unwrap();
             assert_eq!(records.len(), 2);
             assert_eq!(records[0].ts_sec, 0x1111_2222);
             assert_eq!(records[0].ts_usec, 0x33);
@@ -218,9 +218,9 @@ mod tests {{
         let bytes = build_pcap(Endian::Little, 1, &[(0, 0, p0)]);
         let truncated = &bytes[..bytes.len() - 3];
         match Pcap::parse(truncated) {{
-            Ok((pcap, _)) => {{
-                let body = pcap.body().unwrap();
-                match body_records(&body) {{
+            Ok((mut pcap, _)) => {{
+                let mut body = pcap.body().unwrap();
+                match body_records(&mut body) {{
                     Ok(records) => assert!(
                         records.iter().all(|r| r.data.len() == r.incl_len as usize),
                         "truncated record must not yield a short payload silently"
@@ -245,7 +245,7 @@ mod tests {{
         bytes[2] = 0x22;
         bytes[3] = 0x33;
         assert!(classify_magic(&bytes).is_none());
-        let (pcap, _) = Pcap::parse(&bytes).unwrap();
+        let (mut pcap, _) = Pcap::parse(&bytes).unwrap();
         assert!(matches!(pcap.body(), Err(Error::BadMagic {{ .. }})));
     }}
 
@@ -253,7 +253,7 @@ mod tests {{
     fn field_tree_smoke() {{
         let p0: &[u8] = &[0xca, 0xfe];
         let bytes = build_pcap(Endian::Big, 1, &[(0x99, 0x88, p0)]);
-        let (pcap, _) = Pcap::parse(&bytes).unwrap();
+        let (mut pcap, _) = Pcap::parse(&bytes).unwrap();
         let mut tree = pcap.field_tree();
         tree.set_paths("");
         assert_eq!(tree.name, "Pcap");
@@ -273,10 +273,10 @@ mod tests {{
     fn truncated_prefix_never_panics() {{
         let bytes = build_pcap(Endian::Little, 1, &[(0x1111, 0x22, &[0xde, 0xad, 0xbe, 0xef])]);
         assert_parse_no_panic("Pcap", &bytes, |data| {{
-            if let Ok((pcap, _)) = Pcap::parse(data)
-                && let Ok(body) = pcap.body()
+            if let Ok((mut pcap, _)) = Pcap::parse(data)
+                && let Ok(mut body) = pcap.body()
             {{
-                let _ = body_records(&body);
+                let _ = body_records(&mut body);
                 let _ = pcap.field_tree();
             }}
         }});
@@ -295,7 +295,7 @@ mod tests {{
     }}
 
     fn dissect_ethernet(stats: &mut SoakStats, frame: &[u8]) {{
-        let Ok((eth, _)) = EthernetHdr::parse(frame) else {{
+        let Ok((mut eth, _)) = EthernetHdr::parse(frame) else {{
             return;
         }};
         stats.ethernet_ok += 1;
@@ -309,7 +309,7 @@ mod tests {{
     }}
 
     fn dissect_ipv4(stats: &mut SoakStats, packet: &[u8]) {{
-        let Ok((ip, _)) = Ipv4Hdr::parse(packet) else {{
+        let Ok((mut ip, _)) = Ipv4Hdr::parse(packet) else {{
             return;
         }};
         if ip.version() != 4 {{
@@ -329,13 +329,13 @@ mod tests {{
         let payload = &packet[header_len..total_len];
         match ip.proto() {{
             17 => {{
-                if let Ok((udp, _)) = UdpHdr::parse(payload) {{
+                if let Ok((mut udp, _)) = UdpHdr::parse(payload) {{
                     stats.udp_ok += 1;
                     let _ = udp.field_tree();
                 }}
             }}
             6 => {{
-                if let Ok((tcp, _)) = TcpHdr::parse(payload) {{
+                if let Ok((mut tcp, _)) = TcpHdr::parse(payload) {{
                     stats.tcp_ok += 1;
                     let _ = tcp.field_tree();
                 }}
@@ -345,7 +345,7 @@ mod tests {{
     }}
 
     fn soak_one_file(stats: &mut SoakStats, bytes: &[u8]) {{
-        let pcap = match Pcap::parse(bytes) {{
+        let mut pcap = match Pcap::parse(bytes) {{
             Ok((pcap, _)) => pcap,
             Err(_) => {{
                 stats.files_failed += 1;
@@ -353,15 +353,15 @@ mod tests {{
             }}
         }};
         let _ = pcap.field_tree();
-        let body = match pcap.body() {{
+        let mut body = match pcap.body() {{
             Ok(body) => body,
             Err(_) => {{
                 stats.files_failed += 1;
                 return;
             }}
         }};
-        let network = body_network(&body);
-        let records = match body_records(&body) {{
+        let network = body_network(&mut body);
+        let records = match body_records(&mut body) {{
             Ok(records) => records,
             Err(_) => {{
                 stats.files_failed += 1;

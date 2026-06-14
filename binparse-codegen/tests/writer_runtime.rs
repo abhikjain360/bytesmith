@@ -103,7 +103,7 @@ struct P {
 
         let content = PContent { a: 0x11, b: 0x2233, c: 0x44556677 };
         let bytes = PWriter::to_vec(&content);
-        let (p, _) = P::parse(&bytes).unwrap();
+        let (mut p, _) = P::parse(&bytes).unwrap();
         assert_eq!(p.a(), 0x11);
         assert_eq!(p.b(), 0x2233);
         assert_eq!(p.c(), 0x44556677);
@@ -127,7 +127,7 @@ struct Ip {
 
         let content = IpContent { version: 4, ihl: 5, ttl: 64, total: 0x1234 };
         let bytes = IpWriter::to_vec(&content);
-        let (ip, _) = Ip::parse(&bytes).unwrap();
+        let (mut ip, _) = Ip::parse(&bytes).unwrap();
         assert_eq!(ip.version(), 4);
         assert_eq!(ip.ihl(), 5);
         assert_eq!(ip.ttl(), 64);
@@ -150,7 +150,7 @@ struct S {
 
         let content = SContent { a: 5, b: 0x4b, c: 0x29 };
         let bytes = SWriter::to_vec(&content);
-        let (s, _) = S::parse(&bytes).unwrap();
+        let (mut s, _) = S::parse(&bytes).unwrap();
         assert_eq!(s.a(), 5);
         assert_eq!(s.b(), 0x4b);
         assert_eq!(s.c(), 0x29);
@@ -173,7 +173,7 @@ struct S {
 
         let content = SContent { a: 5, b: 0x4b, c: 0x29 };
         let bytes = SWriter::to_vec(&content);
-        let (s, _) = S::parse(&bytes).unwrap();
+        let (mut s, _) = S::parse(&bytes).unwrap();
         assert_eq!(s.a(), 5);
         assert_eq!(s.b(), 0x4b);
         assert_eq!(s.c(), 0x29);
@@ -199,7 +199,7 @@ struct Eth {
             ethertype: 0x0800,
         };
         let bytes = EthWriter::to_vec(&content);
-        let (p, _) = Eth::parse(&bytes).unwrap();
+        let (mut p, _) = Eth::parse(&bytes).unwrap();
         assert_eq!(p.ethertype(), 0x0800);
         assert_eq!(
             p.dst().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
@@ -229,7 +229,7 @@ struct Eth {
         w.src_mut().copy_from_slice(&[10, 11, 12, 13, 14, 15]);
         w.set_ethertype(0x0800);
 
-        let (p, _) = Eth::parse(&buf).unwrap();
+        let (mut p, _) = Eth::parse(&buf).unwrap();
         assert_eq!(p.ethertype(), 0x0800);
         assert_eq!(
             p.dst().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
@@ -258,7 +258,7 @@ fn generated_writer_struct_ref_to_vec_round_trips() {
             trailer: 0xBB,
         };
         let bytes = OuterWriter::to_vec(&content);
-        let (outer, _) = Outer::parse(&bytes).unwrap();
+        let (mut outer, _) = Outer::parse(&bytes).unwrap();
         assert_eq!(outer.tag(), 0xAA);
         assert_eq!(outer.trailer(), 0xBB);
         assert_eq!(outer.inner().unwrap().a(), 1);
@@ -284,7 +284,7 @@ fn generated_writer_struct_ref_mut_round_trips() {
         }
         w.set_trailer(0xBB);
 
-        let (outer, _) = Outer::parse(&buf).unwrap();
+        let (mut outer, _) = Outer::parse(&buf).unwrap();
         assert_eq!(outer.tag(), 0xAA);
         assert_eq!(outer.trailer(), 0xBB);
         assert_eq!(outer.inner().unwrap().a(), 1);
@@ -309,7 +309,7 @@ struct M {
 
         let content = MContent { a: 0xa, b: 0x5, data: [0x11, 0x22, 0x33], tail: 0x4455 };
         let bytes = MWriter::to_vec(&content);
-        let (m, _) = M::parse(&bytes).unwrap();
+        let (mut m, _) = M::parse(&bytes).unwrap();
         assert_eq!(m.a(), 0xa);
         assert_eq!(m.b(), 0x5);
         assert_eq!(
@@ -334,7 +334,7 @@ struct Frame {
         let content = FrameContent { kind: 0x02, payload: b"hello" };
         let bytes = FrameWriter::to_vec(&content);
         assert_eq!(bytes.len(), 7);
-        let (frame, _) = Frame::parse(&bytes).unwrap();
+        let (mut frame, _) = Frame::parse(&bytes).unwrap();
         assert_eq!(frame.kind(), 0x02);
         assert_eq!(frame.len(), 5);
         assert_eq!(
@@ -347,7 +347,7 @@ struct Frame {
         let mut w = FrameWriter::new(&mut buf, lens).unwrap();
         w.set_kind(0x02);
         w.payload_mut().copy_from_slice(b"hello");
-        let (frame, _) = Frame::parse(&buf).unwrap();
+        let (mut frame, _) = Frame::parse(&buf).unwrap();
         assert_eq!(frame.kind(), 0x02);
         assert_eq!(frame.len(), 5);
         assert_eq!(
@@ -381,7 +381,7 @@ struct VarFrame {
         let bytes = VarFrameWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x07, 0x05, b'h', b'e', b'l', b'l', b'o']);
 
-        let (frame, _) = VarFrame::parse(&bytes).unwrap();
+        let (mut frame, _) = VarFrame::parse(&bytes).unwrap();
         assert_eq!(frame.tag(), 0x07);
         assert_eq!(frame.len().unwrap(), 5);
         assert_eq!(
@@ -411,7 +411,7 @@ struct VarFrame {
         assert_eq!(bytes.len(), 303);
         assert_eq!(&bytes[1..3], &[0xAC, 0x02]);
 
-        let (frame, _) = VarFrame::parse(&bytes).unwrap();
+        let (mut frame, _) = VarFrame::parse(&bytes).unwrap();
         assert_eq!(frame.tag(), 0x01);
         assert_eq!(frame.len().unwrap(), 300);
         assert_eq!(
@@ -450,14 +450,14 @@ struct Msg {
         let bytes = MsgWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x09, 0x07, b'p', b'a', b'y', b'l', b'o', b'a', b'd']);
 
-        let (msg, _) = Msg::parse(&bytes).unwrap();
+        let (mut msg, _) = Msg::parse(&bytes).unwrap();
         assert_eq!(msg.count(), 0x09);
         assert_eq!(msg.body().unwrap(), b"payload");
 
         let empty = MsgContent { count: 0x00, body: b"" };
         let bytes = MsgWriter::to_vec(&empty);
         assert_eq!(bytes, vec![0x00, 0x00]);
-        let (msg, _) = Msg::parse(&bytes).unwrap();
+        let (mut msg, _) = Msg::parse(&bytes).unwrap();
         assert_eq!(msg.body().unwrap(), b"");
 
         let mut small = [0u8; 3];
@@ -488,7 +488,7 @@ struct Msg {
         let mut buf = vec![0u8; 64];
         let written = MsgWriter::write_into(&mut buf, &inline).unwrap();
         assert_eq!(written, inline_bytes.len());
-        let (msg, rest) = Msg::parse(&buf[..written]).unwrap();
+        let (mut msg, rest) = Msg::parse(&buf[..written]).unwrap();
         assert_eq!(rest.len(), 0);
         assert_eq!(buf[..written].len() - rest.len(), written);
         assert_eq!(
@@ -511,7 +511,7 @@ struct Msg {
         let mut buf2 = vec![0u8; 64];
         let written2 = MsgWriter::write_into(&mut buf2, &compressed).unwrap();
         assert_eq!(written2, compressed_bytes.len());
-        let (msg2, rest2) = Msg::parse(&buf2[..written2]).unwrap();
+        let (mut msg2, rest2) = Msg::parse(&buf2[..written2]).unwrap();
         assert_eq!(buf2[..written2].len() - rest2.len(), written2);
         assert_eq!(
             msg2.header().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
@@ -547,10 +547,10 @@ struct Packet {
         let bytes = PacketWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x01, 0x00, 0x3C]);
 
-        let (packet, _) = Packet::parse(&bytes).unwrap();
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
         assert_eq!(packet.kind(), 1);
         match packet.body().unwrap() {
-            Packet_body::Connect(connect) => assert_eq!(connect.keep_alive(), 60),
+            Packet_body::Connect(mut connect) => assert_eq!(connect.keep_alive(), 60),
             _ => panic!("expected Connect variant"),
         }
     "#;
@@ -577,10 +577,10 @@ struct Packet {
         let bytes = PacketWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x02, 0xAB, 0x05]);
 
-        let (packet, _) = Packet::parse(&bytes).unwrap();
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
         assert_eq!(packet.kind(), 2);
         match packet.body().unwrap() {
-            Packet_body::Connack(connack) => {
+            Packet_body::Connack(mut connack) => {
                 assert_eq!(connack.ack(), 0xAB);
                 assert_eq!(connack.code(), 0x05);
             }
@@ -612,11 +612,11 @@ struct P2 {
         let bytes = P2Writer::to_vec(&content);
         assert_eq!(bytes, vec![0x17, 0x12, 0x34]);
 
-        let (p2, _) = P2::parse(&bytes).unwrap();
+        let (mut p2, _) = P2::parse(&bytes).unwrap();
         assert_eq!(p2.tag(), 1);
         assert_eq!(p2.flags(), 0x7);
         match p2.body().unwrap() {
-            P2_body::A(a) => assert_eq!(a.v(), 0x1234),
+            P2_body::A(mut a) => assert_eq!(a.v(), 0x1234),
             _ => panic!("expected A variant"),
         }
 
@@ -627,11 +627,11 @@ struct P2 {
         let bytes = P2Writer::to_vec(&content);
         assert_eq!(bytes, vec![0x22, 0xDE, 0xAD, 0xBE, 0xEF]);
 
-        let (p2, _) = P2::parse(&bytes).unwrap();
+        let (mut p2, _) = P2::parse(&bytes).unwrap();
         assert_eq!(p2.tag(), 2);
         assert_eq!(p2.flags(), 0x2);
         match p2.body().unwrap() {
-            P2_body::B(b) => assert_eq!(b.v(), 0xDEADBEEF),
+            P2_body::B(mut b) => assert_eq!(b.v(), 0xDEADBEEF),
             _ => panic!("expected B variant"),
         }
     "#;
@@ -659,7 +659,7 @@ struct EthernetII {
         assert_eq!(EthernetIIWriter::encoded_len(&lens), 14 + content.payload.len());
 
         let bytes = EthernetIIWriter::to_vec(&content);
-        let (eth, _) = EthernetII::parse(&bytes).unwrap();
+        let (mut eth, _) = EthernetII::parse(&bytes).unwrap();
         assert_eq!(
             eth.dst().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
             vec![1, 2, 3, 4, 5, 6]
@@ -706,7 +706,7 @@ struct Vlan {
         let bytes = VlanWriter::to_vec(&content);
         assert_eq!(&bytes[12..14], &[0x81, 0x00]);
 
-        let (vlan, _) = Vlan::parse(&bytes).unwrap();
+        let (mut vlan, _) = Vlan::parse(&bytes).unwrap();
         assert_eq!(
             vlan.dst().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
             vec![1, 2, 3, 4, 5, 6]
@@ -739,7 +739,7 @@ struct Msg {
         let content = MsgContent { body: &payload };
         let bytes = MsgWriter::to_vec(&content);
         assert_eq!(bytes.len(), 302);
-        let (msg, _) = Msg::parse(&bytes).unwrap();
+        let (mut msg, _) = Msg::parse(&bytes).unwrap();
         assert_eq!(msg.len(), 300);
         assert_eq!(
             msg.body().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
@@ -770,7 +770,7 @@ struct Frame {
             vec![0x09, 0x05, b'h', b'e', b'l', b'l', b'o', 0xBE, 0xEF, 0x7F]
         );
 
-        let (frame, rem) = Frame::parse(&bytes).unwrap();
+        let (mut frame, rem) = Frame::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(frame.kind(), 0x09);
         assert_eq!(frame.len(), 5);
@@ -788,7 +788,7 @@ struct Frame {
         w.payload_mut().copy_from_slice(b"world");
         w.set_crc(0xBEEF);
         w.set_tail(0x7F);
-        let (frame, _) = Frame::parse(&buf).unwrap();
+        let (mut frame, _) = Frame::parse(&buf).unwrap();
         assert_eq!(frame.kind(), 0x09);
         assert_eq!(frame.len(), 5);
         assert_eq!(
@@ -801,7 +801,7 @@ struct Frame {
         let empty = FrameContent { kind: 1, payload: b"", crc: 0x0102, tail: 0x03 };
         let bytes = FrameWriter::to_vec(&empty);
         assert_eq!(bytes, vec![0x01, 0x00, 0x01, 0x02, 0x03]);
-        let (frame, _) = Frame::parse(&bytes).unwrap();
+        let (mut frame, _) = Frame::parse(&bytes).unwrap();
         assert_eq!(frame.len(), 0);
         assert_eq!(frame.crc(), 0x0102);
         assert_eq!(frame.tail(), 0x03);
@@ -847,7 +847,7 @@ struct Msg {
         assert_eq!(&bytes[303..307], &[0xDE, 0xAD, 0xBE, 0xEF]);
         assert_eq!(&bytes[307..309], &[0x12, 0x34]);
 
-        let (msg, rem) = Msg::parse(&bytes).unwrap();
+        let (mut msg, rem) = Msg::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(msg.ver(), 1);
         assert_eq!(msg.rlen(), 300);
@@ -899,7 +899,7 @@ struct Udp {
             vec![0x12, 0x34, 0x56, 0x78, 0x00, 0x0D, 0xBE, 0xEF, b'h', b'e', b'l', b'l', b'o']
         );
 
-        let (udp, rem) = Udp::parse(&bytes).unwrap();
+        let (mut udp, rem) = Udp::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(udp.src(), 0x1234);
         assert_eq!(udp.dst(), 0x5678);
@@ -915,7 +915,7 @@ struct Udp {
         let empty = UdpContent { src: 1, dst: 2, checksum: 3, payload: b"" };
         let bytes = UdpWriter::to_vec(&empty);
         assert_eq!(bytes.len(), 8);
-        let (udp, _) = Udp::parse(&bytes).unwrap();
+        let (mut udp, _) = Udp::parse(&bytes).unwrap();
         assert_eq!(udp.length(), 8);
         assert_eq!(
             udp.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
@@ -930,7 +930,7 @@ struct Udp {
         w.set_dst(0x5678);
         w.set_checksum(0xBEEF);
         w.payload_mut().copy_from_slice(b"world");
-        let (udp, _) = Udp::parse(&buf).unwrap();
+        let (mut udp, _) = Udp::parse(&buf).unwrap();
         assert_eq!(udp.length(), 13);
         assert_eq!(
             udp.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
@@ -981,7 +981,7 @@ struct Frame {
             vec![0x09, 0x00, 0x08, b'a', b'b', b'c', 0xDE, 0xAD]
         );
 
-        let (frame, rem) = Frame::parse(&bytes).unwrap();
+        let (mut frame, rem) = Frame::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(frame.kind(), 0x09);
         // derived: total == payload.len() + 5
@@ -1013,7 +1013,7 @@ struct Frame {
         // derived: len == payload.len() - 2 == 3
         assert_eq!(bytes, vec![0x02, 0x03, b'h', b'e', b'l', b'l', b'o']);
 
-        let (frame, _) = Frame::parse(&bytes).unwrap();
+        let (mut frame, _) = Frame::parse(&bytes).unwrap();
         assert_eq!(frame.kind(), 0x02);
         assert_eq!(frame.len(), 3);
         assert_eq!(
@@ -1026,7 +1026,7 @@ struct Frame {
         let small = FrameContent { kind: 0x01, payload: b"xy" };
         let bytes = FrameWriter::to_vec(&small);
         assert_eq!(bytes, vec![0x01, 0x00, b'x', b'y']);
-        let (frame, _) = Frame::parse(&bytes).unwrap();
+        let (mut frame, _) = Frame::parse(&bytes).unwrap();
         assert_eq!(frame.len(), 0);
         assert_eq!(
             frame.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
@@ -1055,12 +1055,12 @@ fn generated_writer_len_region_struct_ref_round_trips() {
         // length is DERIVED = Inner encoded_len = 3
         assert_eq!(bytes, vec![0x42, 0x03, 0x11, 0x22, 0x33]);
 
-        let (tlv, rem) = Tlv::parse(&bytes).unwrap();
+        let (mut tlv, rem) = Tlv::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(tlv.tag(), 0x42);
         // derived length field == inner encoded_len
         assert_eq!(tlv.length() as usize, InnerWriter::SIZE);
-        let inner = tlv.value().unwrap();
+        let mut inner = tlv.value().unwrap();
         assert_eq!(inner.a(), 0x11);
         assert_eq!(inner.b(), 0x2233);
 
@@ -1074,10 +1074,10 @@ fn generated_writer_len_region_struct_ref_round_trips() {
             inner.set_a(0x44);
             inner.set_b(0x5566);
         }
-        let (tlv, _) = Tlv::parse(&buf).unwrap();
+        let (mut tlv, _) = Tlv::parse(&buf).unwrap();
         assert_eq!(tlv.tag(), 0x99);
         assert_eq!(tlv.length() as usize, InnerWriter::SIZE);
-        let inner = tlv.value().unwrap();
+        let mut inner = tlv.value().unwrap();
         assert_eq!(inner.a(), 0x44);
         assert_eq!(inner.b(), 0x5566);
 
@@ -1106,10 +1106,10 @@ fn generated_writer_len_region_struct_ref_affine_round_trips() {
         // length is DERIVED: Inner encoded_len (3) + 2 = 5
         assert_eq!(bytes, vec![0x42, 0x05, 0x11, 0x22, 0x33]);
 
-        let (tlv, rem) = Tlv::parse(&bytes).unwrap();
+        let (mut tlv, rem) = Tlv::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(tlv.length() as usize, InnerWriter::SIZE + 2);
-        let inner = tlv.value().unwrap();
+        let mut inner = tlv.value().unwrap();
         assert_eq!(inner.a(), 0x11);
         assert_eq!(inner.b(), 0x2233);
     "#;
@@ -1135,10 +1135,10 @@ fn generated_writer_len_region_struct_ref_with_trailer_round_trips() {
         let bytes = TlvWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x42, 0x03, 0x11, 0x22, 0x33, 0xBE, 0xEF]);
 
-        let (tlv, rem) = Tlv::parse(&bytes).unwrap();
+        let (mut tlv, rem) = Tlv::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(tlv.length() as usize, InnerWriter::SIZE);
-        let inner = tlv.value().unwrap();
+        let mut inner = tlv.value().unwrap();
         assert_eq!(inner.a(), 0x11);
         assert_eq!(inner.b(), 0x2233);
         // trailer sits AFTER the bounded region.
@@ -1169,12 +1169,12 @@ fn generated_writer_len_region_union_round_trips() {
         let bytes = PacketWriter::to_vec(&content);
         // kind (derived) = 1, length (derived) = 2, then body.
         assert_eq!(bytes, vec![0x01, 0x02, 0x12, 0x34]);
-        let (packet, rem) = Packet::parse(&bytes).unwrap();
+        let (mut packet, rem) = Packet::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(packet.kind(), 1);
         assert_eq!(packet.length(), 2);
         match packet.body().unwrap() {
-            Packet_body::Connect(c) => assert_eq!(c.keep_alive(), 0x1234),
+            Packet_body::Connect(mut c) => assert_eq!(c.keep_alive(), 0x1234),
             _ => panic!("expected Connect"),
         }
 
@@ -1184,12 +1184,12 @@ fn generated_writer_len_region_union_round_trips() {
         };
         let bytes = PacketWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x02, 0x02, 0xAB, 0xCD]);
-        let (packet, _) = Packet::parse(&bytes).unwrap();
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
         assert_eq!(packet.kind(), 2);
         // derived length == inner encoded_len
         assert_eq!(packet.length(), 2);
         match packet.body().unwrap() {
-            Packet_body::Connack(c) => {
+            Packet_body::Connack(mut c) => {
                 assert_eq!(c.ack(), 0xAB);
                 assert_eq!(c.code(), 0xCD);
             }
@@ -1254,11 +1254,11 @@ fn generated_writer_counted_array_of_structs_round_trips() {
         // n is DERIVED = element count = 2, then each Pair written sequentially.
         assert_eq!(bytes, vec![0x02, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
 
-        let (rec, rem) = Rec::parse(&bytes).unwrap();
+        let (mut rec, rem) = Rec::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         // derived count field == number of supplied elements.
         assert_eq!(rec.n(), 2);
-        let items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
+        let mut items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
         assert_eq!(items.len(), 2);
         assert_eq!((items[0].a(), items[0].b()), (0x11, 0x2233));
         assert_eq!((items[1].a(), items[1].b()), (0x44, 0x5566));
@@ -1267,7 +1267,7 @@ fn generated_writer_counted_array_of_structs_round_trips() {
         let empty = RecContent { items: &[] };
         let bytes = RecWriter::to_vec(&empty);
         assert_eq!(bytes, vec![0x00]);
-        let (rec, _) = Rec::parse(&bytes).unwrap();
+        let (mut rec, _) = Rec::parse(&bytes).unwrap();
         assert_eq!(rec.n(), 0);
         assert_eq!(rec.items().unwrap().count(), 0);
 
@@ -1300,10 +1300,10 @@ fn generated_writer_counted_array_of_structs_with_trailer_round_trips() {
         let bytes = RecWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x02, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0xBE, 0xEF]);
 
-        let (rec, rem) = Rec::parse(&bytes).unwrap();
+        let (mut rec, rem) = Rec::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(rec.n(), 2);
-        let items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
+        let mut items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
         assert_eq!(items.len(), 2);
         assert_eq!((items[1].a(), items[1].b()), (0x44, 0x5566));
         // trailer sits AFTER the array region.
@@ -1356,10 +1356,10 @@ fn generated_writer_greedy_array_of_structs_round_trips() {
             vec![0x99, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99],
         );
 
-        let (rec, rem) = Rec::parse(&bytes).unwrap();
+        let (mut rec, rem) = Rec::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(rec.tag(), 0x99);
-        let items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
+        let mut items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
         // no count field; all supplied elements are recovered by reading to EOF.
         assert_eq!(items.len(), 3);
         assert_eq!((items[0].a(), items[0].b()), (0x11, 0x2233));
@@ -1369,7 +1369,7 @@ fn generated_writer_greedy_array_of_structs_round_trips() {
         let empty = RecContent { tag: 0x01, items: &[] };
         let bytes = RecWriter::to_vec(&empty);
         assert_eq!(bytes, vec![0x01]);
-        let (rec, _) = Rec::parse(&bytes).unwrap();
+        let (mut rec, _) = Rec::parse(&bytes).unwrap();
         assert_eq!(rec.tag(), 0x01);
         assert_eq!(rec.items().unwrap().count(), 0);
 
@@ -1399,7 +1399,7 @@ struct Cond {
         assert_eq!(CondWriter::encoded_len(&present), 3);
         let bytes = CondWriter::to_vec(&present);
         assert_eq!(bytes, vec![0x01, 0xAB, 0xCD]);
-        let (c, rem) = Cond::parse(&bytes).unwrap();
+        let (mut c, rem) = Cond::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(c.n(), 1);
         assert_eq!(c.x(), Some(0xABCD));
@@ -1409,7 +1409,7 @@ struct Cond {
         assert_eq!(CondWriter::encoded_len(&absent), 2);
         let bytes = CondWriter::to_vec(&absent);
         assert_eq!(bytes, vec![0x02, 0x7F]);
-        let (c, rem) = Cond::parse(&bytes).unwrap();
+        let (mut c, rem) = Cond::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(c.n(), 2);
         assert_eq!(c.x(), None);
@@ -1440,7 +1440,7 @@ struct Opt {
         assert_eq!(OptWriter::encoded_len(&present), 4);
         let bytes = OptWriter::to_vec(&present);
         assert_eq!(bytes, vec![0x05, 0x12, 0x34, 0x56]);
-        let (o, rem) = Opt::parse(&bytes).unwrap();
+        let (mut o, rem) = Opt::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(o.flags(), 5);
         assert_eq!(o.a(), Some(0x1234));
@@ -1450,7 +1450,7 @@ struct Opt {
         assert_eq!(OptWriter::encoded_len(&absent), 1);
         let bytes = OptWriter::to_vec(&absent);
         assert_eq!(bytes, vec![0x00]);
-        let (o, rem) = Opt::parse(&bytes).unwrap();
+        let (mut o, rem) = Opt::parse(&bytes).unwrap();
         assert!(rem.is_empty());
         assert_eq!(o.flags(), 0);
         assert_eq!(o.a(), None);
@@ -1479,10 +1479,10 @@ struct Packet {
         let bytes = PacketWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x01, 0xAB, 0xCD]);
 
-        let (packet, _) = Packet::parse(&bytes).unwrap();
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
         assert_eq!(packet.kind(), 1);
         match packet.body().unwrap() {
-            Packet_body::Hello(hello) => assert_eq!(hello.v(), 0xABCD),
+            Packet_body::Hello(mut hello) => assert_eq!(hello.v(), 0xABCD),
             _ => panic!("expected Hello variant"),
         }
 
@@ -1491,10 +1491,10 @@ struct Packet {
         };
         let bytes = PacketWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x03, 0x09]);
-        let (packet, _) = Packet::parse(&bytes).unwrap();
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
         assert_eq!(packet.kind(), 3);
         match packet.body().unwrap() {
-            Packet_body::Bye(bye) => assert_eq!(bye.code(), 0x09),
+            Packet_body::Bye(mut bye) => assert_eq!(bye.code(), 0x09),
             _ => panic!("expected Bye variant"),
         }
     "#;
@@ -1521,11 +1521,11 @@ struct Packet {
         };
         let bytes = PacketWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x00, 0x00, 0x12, 0x34]);
-        let (packet, _) = Packet::parse(&bytes).unwrap();
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
         assert_eq!(packet.a(), 0);
         assert_eq!(packet.b(), 0);
         match packet.body().unwrap() {
-            Packet_body::Both(both) => assert_eq!(both.v(), 0x1234),
+            Packet_body::Both(mut both) => assert_eq!(both.v(), 0x1234),
             _ => panic!("expected Both variant"),
         }
 
@@ -1534,11 +1534,11 @@ struct Packet {
         };
         let bytes = PacketWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x01, 0x02, 0x77]);
-        let (packet, _) = Packet::parse(&bytes).unwrap();
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
         assert_eq!(packet.a(), 1);
         assert_eq!(packet.b(), 2);
         match packet.body().unwrap() {
-            Packet_body::OneTwo(one_two) => assert_eq!(one_two.code(), 0x77),
+            Packet_body::OneTwo(mut one_two) => assert_eq!(one_two.code(), 0x77),
             _ => panic!("expected OneTwo variant"),
         }
     "#;
@@ -1568,10 +1568,10 @@ struct Packet {
         let n = PacketWriter::write_into(&mut buf, &content).unwrap();
         assert_eq!(n, 3);
         assert_eq!(buf, vec![99, 0xAA, 0xBB]);
-        let (packet, _) = Packet::parse(&buf).unwrap();
+        let (mut packet, _) = Packet::parse(&buf).unwrap();
         assert_eq!(packet.kind(), 99);
         match packet.body().unwrap() {
-            Packet_body::Generic(generic) => {
+            Packet_body::Generic(mut generic) => {
                 assert_eq!(generic.a(), 0xAA);
                 assert_eq!(generic.b(), 0xBB);
             }
@@ -1584,10 +1584,10 @@ struct Packet {
         let mut buf = vec![0xFFu8; PacketWriter::encoded_len(&content)];
         let _ = PacketWriter::write_into(&mut buf, &content).unwrap();
         assert_eq!(buf, vec![0x01, 0x00, 0x3C]);
-        let (packet, _) = Packet::parse(&buf).unwrap();
+        let (mut packet, _) = Packet::parse(&buf).unwrap();
         assert_eq!(packet.kind(), 1);
         match packet.body().unwrap() {
-            Packet_body::Connect(connect) => assert_eq!(connect.keep_alive(), 60),
+            Packet_body::Connect(mut connect) => assert_eq!(connect.keep_alive(), 60),
             _ => panic!("expected Connect variant"),
         }
     "#;
@@ -1613,10 +1613,10 @@ struct Packet {
         };
         let bytes = PacketWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x01, 0x00, 0x5A]);
-        let (packet, _) = Packet::parse(&bytes).unwrap();
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
         assert_eq!(packet.kind(), 1);
         match packet.body().unwrap() {
-            Packet_body::Connect(connect) => assert_eq!(connect.keep_alive(), 90),
+            Packet_body::Connect(mut connect) => assert_eq!(connect.keep_alive(), 90),
             _ => panic!("expected Connect variant"),
         }
     "#;
@@ -1646,7 +1646,7 @@ struct Samples {
             bytes,
             vec![4, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0xAB, 0xCD]
         );
-        let (p, _) = Samples::parse(&bytes).unwrap();
+        let (mut p, _) = Samples::parse(&bytes).unwrap();
         assert_eq!(p.count(), 4);
         assert_eq!(p.crc(), 0xABCD);
         assert_eq!(
@@ -1673,7 +1673,7 @@ struct LeSamples {
             bytes,
             vec![0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55]
         );
-        let (p, _) = LeSamples::parse(&bytes).unwrap();
+        let (mut p, _) = LeSamples::parse(&bytes).unwrap();
         assert_eq!(
             p.data().unwrap().collect::<Result<Vec<u32>, _>>().unwrap(),
             vec![0x11223344, 0x55667788]
@@ -1702,7 +1702,7 @@ struct WithConcat {
         };
         let bytes = WithConcatWriter::to_vec(&content);
         assert_eq!(bytes, vec![0xAA, 0x42, 0x12, 0x34, 0xBB]);
-        let (p, _) = WithConcat::parse(&bytes).unwrap();
+        let (mut p, _) = WithConcat::parse(&bytes).unwrap();
         assert_eq!(p.tag(), 0xAA);
         assert_eq!(p.trailer(), 0xBB);
         assert_eq!(p.combo(), (0x42, 0x1234));
@@ -1724,7 +1724,7 @@ struct Nib {
         let content = NibContent { combo: (0xA, 0x5), tail: 0xFF };
         let bytes = NibWriter::to_vec(&content);
         assert_eq!(bytes, vec![0xA5, 0xFF]);
-        let (p, _) = Nib::parse(&bytes).unwrap();
+        let (mut p, _) = Nib::parse(&bytes).unwrap();
         assert_eq!(p.combo(), (0xA, 0x5));
         assert_eq!(p.tail(), 0xFF);
     "#;
@@ -1752,7 +1752,7 @@ struct Padded {
         .unwrap();
         assert_eq!(written, 6);
         assert_eq!(buf, [0x11, 0x00, 0x00, 0x22, 0x33, 0x44]);
-        let (p, _) = Padded::parse(&buf).unwrap();
+        let (mut p, _) = Padded::parse(&buf).unwrap();
         assert_eq!(p.a(), 0x11);
         assert_eq!(p.b(), 0x2233);
         assert_eq!(p.c(), 0x44);
@@ -1776,7 +1776,7 @@ struct Aligned {
         AlignedWriter::write_into(&mut buf, &AlignedContent { a: 0x11, b: 0x22334455 })
             .unwrap();
         assert_eq!(buf, [0x11, 0x00, 0x00, 0x00, 0x22, 0x33, 0x44, 0x55]);
-        let (p, _) = Aligned::parse(&buf).unwrap();
+        let (mut p, _) = Aligned::parse(&buf).unwrap();
         assert_eq!(p.a(), 0x11);
         assert_eq!(p.b(), 0x22334455);
     "#;
@@ -1798,7 +1798,7 @@ struct Al {
         let content = AlContent { a: 0x1122, b: 0x3344 };
         let bytes = AlWriter::to_vec(&content);
         assert_eq!(bytes, vec![0x11, 0x22, 0x33, 0x44]);
-        let (p, _) = Al::parse(&bytes).unwrap();
+        let (mut p, _) = Al::parse(&bytes).unwrap();
         assert_eq!(p.a(), 0x1122);
         assert_eq!(p.b(), 0x3344);
     "#;
@@ -1821,7 +1821,7 @@ struct Sk {
         let mut buf = [0xFFu8; 4];
         SkWriter::write_into(&mut buf, &SkContent { a: 0x11, b: 0x22 }).unwrap();
         assert_eq!(buf, [0x11, 0x00, 0x00, 0x22]);
-        let (p, _) = Sk::parse(&buf).unwrap();
+        let (mut p, _) = Sk::parse(&buf).unwrap();
         assert_eq!(p.a(), 0x11);
         assert_eq!(p.b(), 0x22);
     "#;
@@ -1846,7 +1846,7 @@ struct P {
             let mut w = PWriter::writer_over(&mut buf).unwrap();
             w.set_b(0xBEEF);
         }
-        let (p, _) = P::parse(&buf).unwrap();
+        let (mut p, _) = P::parse(&buf).unwrap();
         assert_eq!(p.a(), 0x11);
         assert_eq!(p.b(), 0xBEEF);
         assert_eq!(p.c(), 0x44556677);
@@ -1876,7 +1876,7 @@ struct Frame {
             w.payload_mut().copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
         }
         assert_eq!(buf[1], original_len);
-        let (f, _) = Frame::parse(&buf).unwrap();
+        let (mut f, _) = Frame::parse(&buf).unwrap();
         assert_eq!(f.kind(), 9);
         let payload: Vec<u8> = f.payload().unwrap().map(|b| b.unwrap()).collect();
         assert_eq!(payload, vec![0xAA, 0xBB, 0xCC, 0xDD]);
@@ -1911,7 +1911,7 @@ struct Frame {
             w.set_crc(0x1234);
             w.set_tail(0x77);
         }
-        let (f, _) = Frame::parse(&buf).unwrap();
+        let (mut f, _) = Frame::parse(&buf).unwrap();
         assert_eq!(f.kind(), 2);
         let payload: Vec<u8> = f.payload().unwrap().map(|b| b.unwrap()).collect();
         assert_eq!(payload, vec![0x10, 0x99, 0x30]);

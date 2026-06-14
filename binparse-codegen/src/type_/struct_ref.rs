@@ -67,7 +67,7 @@ pub(crate) fn generate<'a>(
         let (vis, dead_code) = getter_visibility(attrs);
         accum.helper_fns.extend(quote! {
             #dead_code
-            #vis fn #rest_fn_name(&self) -> ::binparse::ParseResult<&'a [u8]> {
+            #vis fn #rest_fn_name(&mut self) -> ::binparse::ParseResult<&'a [u8]> {
                 let start = #start;
                 let end = start.saturating_add(#len_tokens);
                 #struct_ident::parse(&self.data[start..end]).map(|(_, rest)| rest)
@@ -83,7 +83,7 @@ pub(crate) fn generate<'a>(
 
         let tree = GeneratedTree::Node(quote! {
             match self.#field_ident() {
-                Ok(value) => {
+                Ok(mut value) => {
                     let inner = value.field_tree().renamed(#name_str).shifted(bit_range.start);
                     let consumed = inner.bit_range.end.min(bit_range.end);
                     let mut node = inner.with_bit_range(bit_range.clone());
@@ -143,7 +143,7 @@ pub(crate) fn generate<'a>(
             GeneratedLen::Dynamic(quote! {{
                 let start = (#start_byte).min(self.data.len());
                 match #struct_ident::parse(&self.data[start..]) {
-                    Ok((value, _)) => value.#last_offset_getter(),
+                    Ok((mut value, _)) => value.#last_offset_getter(),
                     Err(_) => binparse::Len::ZERO,
                 }
             }})
@@ -156,7 +156,7 @@ pub(crate) fn generate<'a>(
 
     let tree = GeneratedTree::Node(quote! {
         match self.#field_ident() {
-            Ok(value) => value.field_tree().renamed(#name_str).shifted(bit_range.start),
+            Ok(mut value) => value.field_tree().renamed(#name_str).shifted(bit_range.start),
             Err(error) => ::binparse::FieldNode::new(
                     #name_str,
                     #struct_name,

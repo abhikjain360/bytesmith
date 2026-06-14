@@ -16,6 +16,7 @@ pub(crate) enum DoneFieldType {
     Primitive,
     BitField,
     Hook,
+    HookRef,
     Other,
 }
 
@@ -211,7 +212,7 @@ pub(crate) fn generate_struct<'a>(
         }
     };
     let tree_fn = quote! {
-        pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        pub fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
             #tree_children
             let mut root = ::binparse::FieldNode::new(
                     #struct_name_str,
@@ -281,7 +282,7 @@ pub(crate) fn generate_struct<'a>(
             None => quote! { children.last().map(|child| child.bit_range.end).unwrap_or(0) },
         };
         quote! {
-            let me = #self_ctor;
+            let mut me = #self_ctor;
             let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
             let mut fatal: Option<::binparse::ParseError> = None;
             #dissect_stmts
@@ -315,7 +316,7 @@ pub(crate) fn generate_struct<'a>(
                 .iter()
                 .map(|field| quote! { self.#field() as u128 });
             quote! {
-                pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+                pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
                     let start = self.#start_fn();
                     let end = self.#end_fn();
                     if !start.is_byte_aligned() || !end.is_byte_aligned() {
@@ -332,7 +333,7 @@ pub(crate) fn generate_struct<'a>(
             }
         }
         None => quote! {
-            pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+            pub fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
                 None
             }
         },
@@ -340,11 +341,11 @@ pub(crate) fn generate_struct<'a>(
 
     let dissect_impl = quote! {
         impl<'a> ::binparse::Dissect<'a> for #name<'a> {
-            fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+            fn field_tree(&mut self) -> ::binparse::FieldNode<'a> {
                 #name::field_tree(self)
             }
 
-            fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+            fn handoff(&mut self) -> Option<::binparse::Handoff<'a>> {
                 #name::handoff(self)
             }
         }
@@ -353,7 +354,7 @@ pub(crate) fn generate_struct<'a>(
     let parse_fn = if let Some(fn_name) = last_offset_getter_fn_name {
         quote! {
             pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-                let me = #self_ctor;
+                let mut me = #self_ctor;
                 #parse_checks
                 let len = me.#fn_name();
                 if len.bit != 0 {
@@ -425,7 +426,7 @@ fn apply_struct_len(accum: &mut StructAccum<'_>) -> Result<Option<syn::Ident>, E
     let struct_len_fn_name = format_ident!("struct_len");
     accum.functions.extend(quote! {
         #[allow(dead_code)]
-        fn #struct_len_fn_name(&self) -> binparse::Len {
+        fn #struct_len_fn_name(&mut self) -> binparse::Len {
             binparse::Len { byte: #len_tokens, bit: 0 }
         }
     });
@@ -500,7 +501,7 @@ fn generate_conditional<'a>(
     let then_condition = gated(quote! { #condition });
     accum.functions.extend(quote! {
         #[allow(dead_code, unused_parens)]
-        fn #present_fn_name(&self) -> bool {
+        fn #present_fn_name(&mut self) -> bool {
             #then_condition
         }
     });
@@ -519,7 +520,7 @@ fn generate_conditional<'a>(
             let else_condition = gated(quote! { !#condition });
             accum.functions.extend(quote! {
                 #[allow(dead_code, unused_parens)]
-                fn #absent_fn_name(&self) -> bool {
+                fn #absent_fn_name(&mut self) -> bool {
                     #else_condition
                 }
             });
@@ -536,7 +537,7 @@ fn generate_conditional<'a>(
     accum.condition = outer_gate;
 
     accum.functions.extend(quote! {
-        fn #end_offset_fn_name(&self) -> binparse::Len {
+        fn #end_offset_fn_name(&mut self) -> binparse::Len {
             if self.#present_fn_name() {
                 #then_end_expr
             } else {

@@ -160,13 +160,32 @@ struct ForwardLayout {
 }
 
 enum Layout {
-    Fixed { fields: Vec<WriterField> },
-    FixedPadded { fields: Vec<PaddedField> },
-    DynamicTail { fields: Vec<WriterField>, tail: DynamicTail },
-    DynamicTailHook { fields: Vec<WriterField>, tail: DynamicTailHook },
-    ContentHook { fields: Vec<WriterField>, hook: ContentHook },
-    ContentHookNoWidth { fields: Vec<WriterField>, hook: ContentHookNoWidth },
-    DynamicTailOpen { fields: Vec<WriterField>, tail: DynamicTailOpen },
+    Fixed {
+        fields: Vec<WriterField>,
+    },
+    FixedPadded {
+        fields: Vec<PaddedField>,
+    },
+    DynamicTail {
+        fields: Vec<WriterField>,
+        tail: DynamicTail,
+    },
+    DynamicTailHook {
+        fields: Vec<WriterField>,
+        tail: DynamicTailHook,
+    },
+    ContentHook {
+        fields: Vec<WriterField>,
+        hook: ContentHook,
+    },
+    ContentHookNoWidth {
+        fields: Vec<WriterField>,
+        hook: ContentHookNoWidth,
+    },
+    DynamicTailOpen {
+        fields: Vec<WriterField>,
+        tail: DynamicTailOpen,
+    },
     Union(UnionLayout),
     Forward(ForwardLayout),
     LenUnion(LenUnionLayout),
@@ -422,7 +441,8 @@ fn classify(
                 {
                     return classify_dynamic_tail_hook(ast.name, field.name, pending, fields);
                 }
-                let Some(tail) = classify_dynamic_tail(size, field.name, bit_offset, &fields) else {
+                let Some(tail) = classify_dynamic_tail(size, field.name, bit_offset, &fields)
+                else {
                     return Ok(None);
                 };
                 return Ok(Some(Layout::DynamicTail { fields, tail }));
@@ -477,9 +497,11 @@ fn classify(
                 if !field_attrs_supported(&field_attrs) {
                     return Ok(None);
                 }
-                let Some((kind, width)) =
-                    constant_field_kind(lit, bit_offset, field_attrs.merge_inherited(struct_inherited))
-                else {
+                let Some((kind, width)) = constant_field_kind(
+                    lit,
+                    bit_offset,
+                    field_attrs.merge_inherited(struct_inherited),
+                ) else {
                     return Ok(None);
                 };
                 fields.push(WriterField {
@@ -563,7 +585,9 @@ fn classify_forward(
                     .is_none()
                 && let Some((len_field_str, len_adjust)) = affine_size_shape(size)
             {
-                let len_field = prefix_fields.iter().find(|f: &&WriterField| f.name == len_field_str)?;
+                let len_field = prefix_fields
+                    .iter()
+                    .find(|f: &&WriterField| f.name == len_field_str)?;
                 let (len_primitive, len_endian) = forward_len_field(len_field)?;
                 region = Some(ForwardRegion {
                     region_field: format_ident!("{}", field.name),
@@ -585,7 +609,9 @@ fn classify_forward(
                 && let Some((len_field_str, len_adjust)) = affine_size_shape(len_expr)
                 && let Some(size) = writer_sizes.get(child_name).copied()
             {
-                let len_field = prefix_fields.iter().find(|f: &&WriterField| f.name == len_field_str)?;
+                let len_field = prefix_fields
+                    .iter()
+                    .find(|f: &&WriterField| f.name == len_field_str)?;
                 let (len_primitive, len_endian) = forward_len_field(len_field)?;
                 region = Some(ForwardRegion {
                     region_field: format_ident!("{}", field.name),
@@ -616,7 +642,9 @@ fn classify_forward(
                 && let Some((len_field_str, len_adjust)) = affine_size_shape(size)
                 && let Some(child_size) = writer_sizes.get(child_name).copied()
             {
-                let len_field = prefix_fields.iter().find(|f: &&WriterField| f.name == len_field_str)?;
+                let len_field = prefix_fields
+                    .iter()
+                    .find(|f: &&WriterField| f.name == len_field_str)?;
                 let (len_primitive, len_endian) = forward_len_field(len_field)?;
                 region = Some(ForwardRegion {
                     region_field: format_ident!("{}", field.name),
@@ -752,12 +780,10 @@ fn classify_conditional(
                 let condition = lower_condition(&conditional.condition, &prefix_fields)?;
                 let then_fields =
                     classify_branch(&conditional.then_branch, struct_inherited, writer_sizes)?;
-                let then_size =
-                    then_fields.iter().map(field_bit_width).sum::<usize>() / 8;
+                let then_size = then_fields.iter().map(field_bit_width).sum::<usize>() / 8;
                 let (else_fields, else_size) = match &conditional.else_branch {
                     Some(else_branch) => {
-                        let fields =
-                            classify_branch(else_branch, struct_inherited, writer_sizes)?;
+                        let fields = classify_branch(else_branch, struct_inherited, writer_sizes)?;
                         let size = fields.iter().map(field_bit_width).sum::<usize>() / 8;
                         (fields, size)
                     }
@@ -1072,7 +1098,11 @@ fn classify_field_type(
             ))
         }
         ast::FieldValue::Constraint(ast::Expr::Literal(ast::Literal::Int(lit))) => {
-            constant_field_kind(lit, bit_offset, field_attrs.merge_inherited(struct_inherited))
+            constant_field_kind(
+                lit,
+                bit_offset,
+                field_attrs.merge_inherited(struct_inherited),
+            )
         }
         _ => None,
     }
@@ -1142,8 +1172,13 @@ fn classify_padded_fixed(
             uses_layout = true;
         }
 
-        let (kind, width) =
-            classify_field_type(field, &field_attrs, bit_offset, struct_inherited, writer_sizes)?;
+        let (kind, width) = classify_field_type(
+            field,
+            &field_attrs,
+            bit_offset,
+            struct_inherited,
+            writer_sizes,
+        )?;
         fields.push(PaddedField {
             field: WriterField {
                 name: format_ident!("{}", field.name),
@@ -1187,9 +1222,12 @@ fn classify_fixed_items(
 }
 
 fn fields_all_simple(fields: &[WriterField]) -> bool {
-    fields
-        .iter()
-        .all(|f| !matches!(f.kind, FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. }))
+    fields.iter().all(|f| {
+        !matches!(
+            f.kind,
+            FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. }
+        )
+    })
 }
 
 fn classify_concat_items(
@@ -1277,9 +1315,7 @@ fn classify_concat_items(
                     }
                 }
             }
-            ast::Type::StructRef(_)
-            | ast::Type::Concat(_)
-            | ast::Type::Union(_) => return None,
+            ast::Type::StructRef(_) | ast::Type::Concat(_) | ast::Type::Union(_) => return None,
         }
     }
     if !bit_offset.is_multiple_of(8) {
@@ -1470,7 +1506,11 @@ fn union_variant_write_pat(
         (pat, quote! { content }, disc_write)
     } else {
         let disc_writes = variant_disc_writes(variant, discs, target);
-        (quote! { #body_enum::#reader_variant(c) }, quote! { c }, disc_writes)
+        (
+            quote! { #body_enum::#reader_variant(c) },
+            quote! { c },
+            disc_writes,
+        )
     }
 }
 
@@ -1526,17 +1566,15 @@ fn classify_union(
     struct_inherited: Inherited,
     writer_sizes: &HashMap<&str, usize>,
 ) -> Result<Option<Layout>, Error> {
-    Ok(
-        build_union_layout(
-            union,
-            field_name,
-            prefix_fields,
-            bit_offset,
-            struct_inherited,
-            writer_sizes,
-        )
-        .map(Layout::Union),
+    Ok(build_union_layout(
+        union,
+        field_name,
+        prefix_fields,
+        bit_offset,
+        struct_inherited,
+        writer_sizes,
     )
+    .map(Layout::Union))
 }
 
 fn classify_len_union(
@@ -1574,7 +1612,9 @@ fn classify_len_union(
             let Some((len_field_str, len_adjust)) = affine_size_shape(len_expr) else {
                 return Ok(None);
             };
-            let Some(len_field) = prefix_fields.iter().find(|f: &&WriterField| f.name == len_field_str)
+            let Some(len_field) = prefix_fields
+                .iter()
+                .find(|f: &&WriterField| f.name == len_field_str)
             else {
                 return Ok(None);
             };
@@ -1905,7 +1945,7 @@ fn writer_over_dynamic(
     quote! {
         pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
             let lens = {
-                let (view, _) = #reader_name::parse(data)
+                let (mut view, _) = #reader_name::parse(data)
                     .map_err(|_| ::binparse::WriteError::InvalidContent)?;
                 let region_bytes = view.#end_off().byte - view.#start_off().byte;
                 #lens_init
@@ -2001,7 +2041,10 @@ fn fixed_field_setter(field: &WriterField) -> TokenStream {
                 }
             }
         }
-        FieldKind::StructRef { name: child_writer, size } => {
+        FieldKind::StructRef {
+            name: child_writer,
+            size,
+        } => {
             let accessor_name = format_ident!("{}_mut", field.name);
             let offset = field.bit_offset / 8;
             let end = offset + size;
@@ -2071,7 +2114,10 @@ fn fixed_field_write_call(field: &WriterField) -> TokenStream {
             let accessor_name = format_ident!("{}_mut", field.name);
             quote! { w.#accessor_name().copy_from_slice(&content.#field_name); }
         }
-        FieldKind::StructRef { name: child_writer, size } => {
+        FieldKind::StructRef {
+            name: child_writer,
+            size,
+        } => {
             let offset = field.bit_offset / 8;
             let end = offset + size;
             quote! { #child_writer::write_into(&mut w.data[#offset..#end], &content.#field_name)?; }
@@ -2220,7 +2266,10 @@ fn emit_dynamic_tail(name: &str, fields: &[WriterField], tail: &DynamicTail) -> 
                     }
                 }
             }
-            FieldKind::StructRef { name: child_writer, size } => {
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
                 let accessor_name = format_ident!("{}_mut", field.name);
                 let offset = field.bit_offset / 8;
                 let end = offset + size;
@@ -2385,7 +2434,10 @@ fn emit_dynamic_tail_open(
                     }
                 }
             }
-            FieldKind::StructRef { name: child_writer, size } => {
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
                 let accessor_name = format_ident!("{}_mut", field.name);
                 let offset = field.bit_offset / 8;
                 let end = offset + size;
@@ -2533,7 +2585,10 @@ fn emit_greedy_struct_tail(name: &str, tail: &GreedyStructTail) -> TokenStream {
                     }
                 }
             }
-            FieldKind::StructRef { name: child_writer, size } => {
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
                 let accessor_name = format_ident!("{}_mut", field.name);
                 let offset = field.bit_offset / 8;
                 let end = offset + size;
@@ -2654,9 +2709,7 @@ fn emit_greedy_struct_tail(name: &str, tail: &GreedyStructTail) -> TokenStream {
     }
 }
 
-fn branch_content_fields<'a>(
-    fields: &'a [WriterField],
-) -> impl Iterator<Item = TokenStream> + 'a {
+fn branch_content_fields<'a>(fields: &'a [WriterField]) -> impl Iterator<Item = TokenStream> + 'a {
     fields
         .iter()
         .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
@@ -2683,7 +2736,10 @@ fn branch_write_calls<'a>(
                     }
                 }
             }
-            FieldKind::StructRef { name: child_writer, size } => {
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
                 let offset = field.bit_offset / 8;
                 let end = offset + size;
                 quote! {
@@ -2744,7 +2800,10 @@ fn emit_conditional(name: &str, layout: &ConditionalLayout) -> TokenStream {
                     }
                 }
             }
-            FieldKind::StructRef { name: child_writer, size } => {
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
                 let accessor_name = format_ident!("{}_mut", field.name);
                 let offset = field.bit_offset / 8;
                 let end = offset + size;
@@ -2897,7 +2956,10 @@ fn emit_dynamic_tail_hook(
                     }
                 }
             }
-            FieldKind::StructRef { name: child_writer, size } => {
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
                 let accessor_name = format_ident!("{}_mut", field.name);
                 let offset = field.bit_offset / 8;
                 let end = offset + size;
@@ -3223,7 +3285,10 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
                     }
                 }
             }
-            FieldKind::StructRef { name: child_writer, size } => {
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
                 let accessor_name = format_ident!("{}_mut", field.name);
                 let offset = field.bit_offset / 8;
                 let end = offset + size;
@@ -3296,7 +3361,8 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
 
     let write_arms = layout.variants.iter().map(|variant| {
         let variant_writer = format_ident!("{}Writer", variant.name);
-        let (pat, c, disc_writes) = union_variant_write_pat(&body_enum, variant, discs, &disc_target);
+        let (pat, c, disc_writes) =
+            union_variant_write_pat(&body_enum, variant, discs, &disc_target);
         quote! {
             #pat => {
                 #disc_writes
@@ -3401,7 +3467,10 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
                     }
                 }
             }
-            FieldKind::StructRef { name: child_writer, size } => {
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
                 let accessor_name = format_ident!("{}_mut", field.name);
                 let offset = field.bit_offset / 8;
                 let end = offset + size;
@@ -3510,7 +3579,8 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
 
     let write_arms = union.variants.iter().map(|variant| {
         let variant_writer = format_ident!("{}Writer", variant.name);
-        let (pat, c, disc_writes) = union_variant_write_pat(&body_enum, variant, discs, &disc_target);
+        let (pat, c, disc_writes) =
+            union_variant_write_pat(&body_enum, variant, discs, &disc_target);
         quote! {
             #pat => {
                 #disc_writes
@@ -3624,8 +3694,7 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
         .prefix_fields
         .iter()
         .filter(|field| {
-            field.name != layout.len_field_str
-                && !matches!(field.kind, FieldKind::Constant { .. })
+            field.name != layout.len_field_str && !matches!(field.kind, FieldKind::Constant { .. })
         })
         .map(|field| match &field.kind {
             FieldKind::ByteArray { len } => {
@@ -3638,7 +3707,10 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
                     }
                 }
             }
-            FieldKind::StructRef { name: child_writer, size } => {
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
                 let accessor_name = format_ident!("{}_mut", field.name);
                 let offset = field.bit_offset / 8;
                 let end = offset + size;
@@ -3682,7 +3754,10 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
                         }
                     }
                 }
-                FieldKind::StructRef { name: child_writer, size } => {
+                FieldKind::StructRef {
+                    name: child_writer,
+                    size,
+                } => {
                     let accessor_name = format_ident!("{}_mut", field.name);
                     let offset = field.bit_offset / 8;
                     let end = offset + size;
@@ -3748,7 +3823,10 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
                         .copy_from_slice(&content.#field_name);
                 }
             }
-            FieldKind::StructRef { name: child_writer, size } => {
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
                 let offset = field.bit_offset / 8;
                 let end = offset + size;
                 quote! {
@@ -3801,8 +3879,7 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
         .prefix_fields
         .iter()
         .filter(|field| {
-            field.name != layout.len_field_str
-                && !matches!(field.kind, FieldKind::Constant { .. })
+            field.name != layout.len_field_str && !matches!(field.kind, FieldKind::Constant { .. })
         })
         .map(|field| {
             let field_name = &field.name;
