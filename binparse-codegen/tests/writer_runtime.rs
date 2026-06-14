@@ -1288,3 +1288,81 @@ fn generated_writer_greedy_array_of_structs_round_trips() {
     "#;
     run_round_trip("greedy-array-of-structs", dsl, test_body);
 }
+
+#[test]
+fn generated_writer_conditional_with_else_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Cond {
+    n: u8,
+    if (n == 1) {
+        x: u16,
+    } else {
+        y: u8,
+    }
+}
+"#;
+    let test_body = r#"
+        let present = CondContent { n: 1, x: Some(0xABCD), y: None };
+        assert_eq!(CondWriter::encoded_len(&present), 3);
+        let bytes = CondWriter::to_vec(&present);
+        assert_eq!(bytes, vec![0x01, 0xAB, 0xCD]);
+        let (c, rem) = Cond::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(c.n(), 1);
+        assert_eq!(c.x(), Some(0xABCD));
+        assert_eq!(c.y(), None);
+
+        let absent = CondContent { n: 2, x: None, y: Some(0x7F) };
+        assert_eq!(CondWriter::encoded_len(&absent), 2);
+        let bytes = CondWriter::to_vec(&absent);
+        assert_eq!(bytes, vec![0x02, 0x7F]);
+        let (c, rem) = Cond::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(c.n(), 2);
+        assert_eq!(c.x(), None);
+        assert_eq!(c.y(), Some(0x7F));
+
+        assert!(matches!(
+            CondWriter::write_into(&mut [0u8; 1], &present),
+            Err(binparse::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("conditional-with-else", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_conditional_no_else_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Opt {
+    flags: u8,
+    if (flags > 0) {
+        a: u16,
+        b: u8,
+    }
+}
+"#;
+    let test_body = r#"
+        let present = OptContent { flags: 5, a: Some(0x1234), b: Some(0x56) };
+        assert_eq!(OptWriter::encoded_len(&present), 4);
+        let bytes = OptWriter::to_vec(&present);
+        assert_eq!(bytes, vec![0x05, 0x12, 0x34, 0x56]);
+        let (o, rem) = Opt::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(o.flags(), 5);
+        assert_eq!(o.a(), Some(0x1234));
+        assert_eq!(o.b(), Some(0x56));
+
+        let absent = OptContent { flags: 0, a: None, b: None };
+        assert_eq!(OptWriter::encoded_len(&absent), 1);
+        let bytes = OptWriter::to_vec(&absent);
+        assert_eq!(bytes, vec![0x00]);
+        let (o, rem) = Opt::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(o.flags(), 0);
+        assert_eq!(o.a(), None);
+        assert_eq!(o.b(), None);
+    "#;
+    run_round_trip("conditional-no-else", dsl, test_body);
+}

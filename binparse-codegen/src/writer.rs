@@ -87,6 +87,16 @@ struct GreedyStructTail {
     size: usize,
 }
 
+struct ConditionalLayout {
+    prefix_fields: Vec<WriterField>,
+    prefix_size: usize,
+    condition: TokenStream,
+    then_fields: Vec<WriterField>,
+    then_size: usize,
+    else_fields: Vec<WriterField>,
+    else_size: usize,
+}
+
 struct UnionVariantInfo {
     name: syn::Ident,
     reader_variant: syn::Ident,
@@ -149,6 +159,7 @@ enum Layout {
     Forward(ForwardLayout),
     LenUnion(LenUnionLayout),
     GreedyStructTail(GreedyStructTail),
+    Conditional(ConditionalLayout),
 }
 
 pub(crate) fn generate(
@@ -172,6 +183,7 @@ pub(crate) fn generate(
         Some(Layout::GreedyStructTail(layout)) => {
             (emit_greedy_struct_tail(ast.name, &layout), None)
         }
+        Some(Layout::Conditional(layout)) => (emit_conditional(ast.name, &layout), None),
         None => (TokenStream::new(), None),
     })
 }
@@ -195,6 +207,10 @@ fn classify(
 
     if let Some(layout) = classify_greedy_struct_tail(ast, struct_inherited, writer_sizes) {
         return Ok(Some(Layout::GreedyStructTail(layout)));
+    }
+
+    if let Some(layout) = classify_conditional(ast, struct_inherited, writer_sizes) {
+        return Ok(Some(Layout::Conditional(layout)));
     }
 
     if let Some(layout) = classify_forward(ast, struct_inherited, writer_sizes) {
@@ -611,6 +627,133 @@ fn classify_greedy_struct_tail(
     }
 
     None
+}
+
+fn classify_conditional(
+    ast: &ast::Struct,
+    struct_inherited: Inherited,
+    writer_sizes: &HashMap<&str, usize>,
+) -> Option<ConditionalLayout> {
+    let last_index = ast.items.len().checked_sub(1)?;
+    let mut prefix_fields = Vec::new();
+    let mut bit_offset = 0usize;
+
+    for (index, item) in ast.items.iter().enumerate() {
+        match item {
+            ast::StructItem::Field(field) => {
+                let (writer_field, width) =
+                    classify_fixed_field(field, bit_offset, struct_inherited, writer_sizes)?;
+                prefix_fields.push(writer_field);
+                bit_offset += width;
+            }
+            ast::StructItem::Conditional(conditional) => {
+                if index != last_index {
+                    return None;
+                }
+                if !bit_offset.is_multiple_of(8) {
+                    return None;
+                }
+                let condition = lower_condition(&conditional.condition, &prefix_fields)?;
+                let then_fields =
+                    classify_branch(&conditional.then_branch, struct_inherited, writer_sizes)?;
+                let then_size =
+                    then_fields.iter().map(field_bit_width).sum::<usize>() / 8;
+                let (else_fields, else_size) = match &conditional.else_branch {
+                    Some(else_branch) => {
+                        let fields =
+                            classify_branch(else_branch, struct_inherited, writer_sizes)?;
+                        let size = fields.iter().map(field_bit_width).sum::<usize>() / 8;
+                        (fields, size)
+                    }
+                    None => (Vec::new(), 0),
+                };
+                return Some(ConditionalLayout {
+                    prefix_fields,
+                    prefix_size: bit_offset / 8,
+                    condition,
+                    then_fields,
+                    then_size,
+                    else_fields,
+                    else_size,
+                });
+            }
+        }
+    }
+
+    None
+}
+
+fn classify_branch(
+    items: &[ast::StructItem<'_>],
+    struct_inherited: Inherited,
+    writer_sizes: &HashMap<&str, usize>,
+) -> Option<Vec<WriterField>> {
+    let mut fields = Vec::with_capacity(items.len());
+    let mut bit_offset = 0usize;
+    for item in items {
+        let ast::StructItem::Field(field) = item else {
+            return None;
+        };
+        let (writer_field, width) =
+            classify_fixed_field(field, bit_offset, struct_inherited, writer_sizes)?;
+        fields.push(writer_field);
+        bit_offset += width;
+    }
+    if !bit_offset.is_multiple_of(8) {
+        return None;
+    }
+    Some(fields)
+}
+
+fn lower_condition(expr: &ast::Expr<'_>, prefix_fields: &[WriterField]) -> Option<TokenStream> {
+    match expr {
+        ast::Expr::Literal(ast::Literal::Int(ast::IntLiteral { value, .. })) => {
+            let v = *value;
+            Some(quote! { #v })
+        }
+        ast::Expr::Path(path) => {
+            let [field_name] = path.as_slice() else {
+                return None;
+            };
+            let field = prefix_fields.iter().find(|f| f.name == *field_name)?;
+            match &field.kind {
+                FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
+                    let ident = &field.name;
+                    Some(quote! { (content.#ident as usize) })
+                }
+                FieldKind::ByteArray { .. }
+                | FieldKind::StructRef { .. }
+                | FieldKind::Constant { .. } => None,
+            }
+        }
+        ast::Expr::Binary(binary) => {
+            let lhs = lower_condition(&binary.lhs, prefix_fields)?;
+            let rhs = lower_condition(&binary.rhs, prefix_fields)?;
+            let op = match binary.op {
+                ast::BinaryOp::Bool(ast::BoolBinaryOp::Eq) => quote! { == },
+                ast::BinaryOp::Bool(ast::BoolBinaryOp::Neq) => quote! { != },
+                ast::BinaryOp::Bool(ast::BoolBinaryOp::Lt) => quote! { < },
+                ast::BinaryOp::Bool(ast::BoolBinaryOp::Gt) => quote! { > },
+                ast::BinaryOp::Bool(ast::BoolBinaryOp::Le) => quote! { <= },
+                ast::BinaryOp::Bool(ast::BoolBinaryOp::Ge) => quote! { >= },
+                ast::BinaryOp::Bool(ast::BoolBinaryOp::And) => quote! { && },
+                ast::BinaryOp::Bool(ast::BoolBinaryOp::Or) => quote! { || },
+                ast::BinaryOp::Numeric(ast::NumericBinaryOp::Add) => quote! { + },
+                ast::BinaryOp::Numeric(ast::NumericBinaryOp::Sub) => quote! { - },
+                ast::BinaryOp::Numeric(ast::NumericBinaryOp::Mul) => quote! { * },
+                ast::BinaryOp::Numeric(ast::NumericBinaryOp::Div) => quote! { / },
+                ast::BinaryOp::Numeric(ast::NumericBinaryOp::Mod) => quote! { % },
+                ast::BinaryOp::Numeric(ast::NumericBinaryOp::BitAnd) => quote! { & },
+                ast::BinaryOp::Numeric(ast::NumericBinaryOp::BitOr) => quote! { | },
+                ast::BinaryOp::Numeric(ast::NumericBinaryOp::BitXor) => quote! { ^ },
+            };
+            Some(quote! { ((#lhs) #op (#rhs)) })
+        }
+        ast::Expr::Literal(ast::Literal::String(_))
+        | ast::Expr::Call(..)
+        | ast::Expr::Tuple(_)
+        | ast::Expr::RawType(_) => None,
+    }
 }
 
 fn len_only_attr_supported(attrs: &ParsedAttrs<'_>) -> bool {
@@ -1714,6 +1857,215 @@ fn emit_greedy_struct_tail(name: &str, tail: &GreedyStructTail) -> TokenStream {
         pub struct #content_name<'a> {
             #(#content_fields,)*
             pub #array_field: &'a [#child_content],
+        }
+    }
+}
+
+fn branch_content_fields<'a>(
+    fields: &'a [WriterField],
+) -> impl Iterator<Item = TokenStream> + 'a {
+    fields
+        .iter()
+        .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
+        .map(|field| {
+            let field_name = &field.name;
+            let ty = field_type(field);
+            quote! { pub #field_name: ::core::option::Option<#ty> }
+        })
+}
+
+fn branch_write_calls<'a>(
+    fields: &'a [WriterField],
+    base: &'a TokenStream,
+) -> impl Iterator<Item = TokenStream> + 'a {
+    fields.iter().map(move |field| {
+        let field_name = &field.name;
+        match &field.kind {
+            FieldKind::ByteArray { len } => {
+                let offset = field.bit_offset / 8;
+                let end = offset + len;
+                quote! {
+                    if let ::core::option::Option::Some(value) = &content.#field_name {
+                        w.data[#base + #offset..#base + #end].copy_from_slice(value);
+                    }
+                }
+            }
+            FieldKind::StructRef { name: child_writer, size } => {
+                let offset = field.bit_offset / 8;
+                let end = offset + size;
+                quote! {
+                    if let ::core::option::Option::Some(value) = &content.#field_name {
+                        #child_writer::write_into(
+                            &mut w.data[#base + #offset..#base + #end],
+                            value,
+                        )?;
+                    }
+                }
+            }
+            FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
+                let ty = field_type(field);
+                let body = setter_body_into(field, &quote! { branch });
+                quote! {
+                    if let ::core::option::Option::Some(value) = content.#field_name {
+                        let value: #ty = value;
+                        let branch = &mut w.data[#base..];
+                        #body
+                    }
+                }
+            }
+            FieldKind::Constant { .. } => {
+                let body = constant_write_call(field, &quote! { branch });
+                quote! {
+                    {
+                        let branch = &mut w.data[#base..];
+                        #body
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn emit_conditional(name: &str, layout: &ConditionalLayout) -> TokenStream {
+    let writer_name = format_ident!("{}Writer", name);
+    let content_name = format_ident!("{}Content", name);
+
+    let prefix_size = layout.prefix_size;
+    let then_size = layout.then_size;
+    let else_size = layout.else_size;
+    let condition = &layout.condition;
+
+    let prefix_setters = layout
+        .prefix_fields
+        .iter()
+        .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
+        .map(|field| match &field.kind {
+            FieldKind::ByteArray { len } => {
+                let accessor_name = format_ident!("{}_mut", field.name);
+                let offset = field.bit_offset / 8;
+                let end = offset + len;
+                quote! {
+                    pub fn #accessor_name(&mut self) -> &mut [u8] {
+                        &mut self.data[#offset..#end]
+                    }
+                }
+            }
+            FieldKind::StructRef { name: child_writer, size } => {
+                let accessor_name = format_ident!("{}_mut", field.name);
+                let offset = field.bit_offset / 8;
+                let end = offset + size;
+                quote! {
+                    pub fn #accessor_name(&mut self) -> #child_writer<'_> {
+                        #child_writer { data: &mut self.data[#offset..#end] }
+                    }
+                }
+            }
+            FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
+                let setter_name = format_ident!("set_{}", field.name);
+                let ty = field_type(field);
+                let body = setter_body(field);
+                quote! {
+                    pub fn #setter_name(&mut self, value: #ty) -> &mut Self {
+                        #body
+                        self
+                    }
+                }
+            }
+            FieldKind::Constant { .. } => unreachable!(),
+        });
+
+    let prefix_write_calls = layout.prefix_fields.iter().map(|field| {
+        let field_name = &field.name;
+        match &field.kind {
+            FieldKind::ByteArray { .. } => {
+                let accessor_name = format_ident!("{}_mut", field.name);
+                quote! { w.#accessor_name().copy_from_slice(&content.#field_name); }
+            }
+            FieldKind::StructRef { name: child_writer, size } => {
+                let offset = field.bit_offset / 8;
+                let end = offset + size;
+                quote! { #child_writer::write_into(&mut w.data[#offset..#end], &content.#field_name)?; }
+            }
+            FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
+                let setter_name = format_ident!("set_{}", field.name);
+                quote! { w.#setter_name(content.#field_name); }
+            }
+            FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
+        }
+    });
+
+    let prefix_content_fields = layout
+        .prefix_fields
+        .iter()
+        .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
+        .map(|field| {
+            let field_name = &field.name;
+            let ty = field_type(field);
+            quote! { pub #field_name: #ty }
+        });
+
+    let then_content_fields = branch_content_fields(&layout.then_fields);
+    let else_content_fields = branch_content_fields(&layout.else_fields);
+
+    let base = quote! { #prefix_size };
+    let then_write_calls = branch_write_calls(&layout.then_fields, &base);
+    let else_write_calls = branch_write_calls(&layout.else_fields, &base);
+
+    let branch_write = if layout.else_fields.is_empty() {
+        quote! {
+            if #condition {
+                #(#then_write_calls)*
+            }
+        }
+    } else {
+        quote! {
+            if #condition {
+                #(#then_write_calls)*
+            } else {
+                #(#else_write_calls)*
+            }
+        }
+    };
+
+    quote! {
+        pub struct #writer_name<'a> {
+            data: &'a mut [u8],
+        }
+
+        impl<'a> #writer_name<'a> {
+            #[allow(unused_parens)]
+            pub fn encoded_len(content: &#content_name) -> usize {
+                #prefix_size + if #condition { #then_size } else { #else_size }
+            }
+
+            #(#prefix_setters)*
+
+            #[allow(unused_parens)]
+            pub fn write_into(data: &'a mut [u8], content: &#content_name) -> ::binparse::WriteResult<usize> {
+                let need = Self::encoded_len(content);
+                if data.len() < need {
+                    return Err(::binparse::WriteError::NotEnoughSpace {
+                        expected: need,
+                        got: data.len(),
+                    });
+                }
+                let mut w = Self { data };
+                #(#prefix_write_calls)*
+                #branch_write
+                Ok(need)
+            }
+
+            pub fn to_vec(content: &#content_name) -> ::std::vec::Vec<u8> {
+                let mut buf = ::std::vec![0u8; Self::encoded_len(content)];
+                let _ = #writer_name::write_into(&mut buf, content);
+                buf
+            }
+        }
+
+        pub struct #content_name {
+            #(#prefix_content_fields,)*
+            #(#then_content_fields,)*
+            #(#else_content_fields,)*
         }
     }
 }

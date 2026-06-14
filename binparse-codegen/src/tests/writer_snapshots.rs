@@ -166,6 +166,65 @@ fn writer_greedy_open_tail() {
 }
 
 #[test]
+fn writer_conditional_with_else() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Cond {
+            n: u8,
+            if (n == 1) {
+                x: u16,
+            } else {
+                y: u8,
+            }
+        }"#,
+        "writer_conditional_with_else",
+    );
+}
+
+#[test]
+fn writer_conditional_no_else() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Opt {
+            flags: u8,
+            if (flags > 0) {
+                a: u16,
+                b: u8,
+            }
+        }"#,
+        "writer_conditional_no_else",
+    );
+}
+
+#[test]
+fn writer_conditional_not_last_skipped() {
+    let code = generate_writers(
+        r#"struct Foo {
+            n: u8,
+            if (n == 1) {
+                x: u16,
+            }
+            tail: u8,
+        }"#,
+    );
+    syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
+    assert!(!code.contains("FooWriter"));
+}
+
+#[test]
+fn writer_conditional_dynamic_branch_skipped() {
+    let code = generate_writers(
+        r#"struct Bar {
+            n: u8,
+            len: u8,
+            if (n == 1) {
+                payload: [u8; len],
+            }
+        }"#,
+    );
+    syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
+    assert!(!code.contains("BarWriter"));
+}
+
+#[test]
 fn writer_hook_len_without_write_hook_errors() {
     let err = generate_writers_err(
         r#"struct VarFrame {
