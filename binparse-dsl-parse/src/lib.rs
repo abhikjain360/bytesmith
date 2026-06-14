@@ -666,19 +666,33 @@ fn report_error(src: &str, offset: usize, msg: String) -> String {
     String::from_utf8_lossy(&output).into_owned()
 }
 
-/// Convenience function that takes an owned string and returns Result.
-pub fn parse_str(src: &str) -> Result<Vec<ast::Definition<'_>>, String> {
+/// A parse failure carrying the byte offset into the source where it was
+/// detected, suitable for mapping to editor diagnostics.
+#[derive(Debug, Clone)]
+pub struct ParseError {
+    pub offset: usize,
+    pub message: String,
+}
+
+/// Parse a BinParse DSL source string, returning the byte offset of any error
+/// instead of a pre-formatted report.
+pub fn parse_str_located(src: &str) -> Result<Vec<ast::Definition<'_>>, ParseError> {
     let input = LocatingSlice::new(src);
     parse.parse(input).map_err(|e| {
         let offset = e.offset();
         let inner = e.inner();
-        let err_msg = if inner.to_string().is_empty() {
+        let message = if inner.to_string().is_empty() {
             "parse error".to_string()
         } else {
             inner.to_string()
         };
-        report_error(src, offset, err_msg)
+        ParseError { offset, message }
     })
+}
+
+/// Convenience function that takes an owned string and returns Result.
+pub fn parse_str(src: &str) -> Result<Vec<ast::Definition<'_>>, String> {
+    parse_str_located(src).map_err(|e| report_error(src, e.offset, e.message))
 }
 
 #[cfg(test)]
