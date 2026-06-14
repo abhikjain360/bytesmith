@@ -137,6 +137,230 @@ fn v3_publish(c: &mut Criterion) {
     g.finish();
 }
 
+// Write-path groups: serialize a structured value to fresh owned bytes (alloc +
+// encode), mirroring binparse's `to_vec`. The model is the mirror image of the
+// read benches: binparse's `*Content` borrows the field slices (`&'static`
+// fixtures, built untimed), so its timed work is purely encode-into-a-fresh-Vec;
+// the rumqtt arms hold owned packet structs (allocating String/Bytes), built in
+// `iter_batched` setup (untimed), and the timed routine serializes into a fresh
+// `BytesMut`. Both sides pay exactly one output allocation + one encode pass.
+fn v3_connect_write(c: &mut Criterion) {
+    use binparse_protocols::mqtt_v3::{
+        ConnectContent, MqttPacketBodyContent, MqttPacketContent, MqttPacketWriter,
+    };
+
+    let content = MqttPacketContent {
+        flags: 0,
+        body: MqttPacketBodyContent::Connect(ConnectContent {
+            proto_name: b"MQTT",
+            proto_level: 4,
+            connect_flags: 2,
+            keep_alive: 60,
+            payload: &[0x00, 0x02, b'i', b'd'],
+        }),
+    };
+    assert_eq!(MqttPacketWriter::to_vec(&content), MQTT_V3_CONNECT);
+
+    {
+        let mut c0 = mqttbytes::v4::Connect::new("id");
+        c0.keep_alive = 60;
+        let mut buf = BytesMut::new();
+        c0.write(&mut buf).unwrap();
+        if buf.as_ref() != MQTT_V3_CONNECT {
+            eprintln!(
+                "mqtt_v3_connect_write: mqttbytes_0.6 output differs from fixture: {:02x?} vs {:02x?}",
+                buf.as_ref(),
+                MQTT_V3_CONNECT
+            );
+        }
+    }
+    {
+        use rumqttc_v4_next::mqttbytes::v4;
+        let mut c0 = v4::Connect::new("id");
+        c0.keep_alive = 60;
+        let mut buf = BytesMut::new();
+        c0.write(&mut buf).unwrap();
+        if buf.as_ref() != MQTT_V3_CONNECT {
+            eprintln!(
+                "mqtt_v3_connect_write: rumqttc_v4_next output differs from fixture: {:02x?} vs {:02x?}",
+                buf.as_ref(),
+                MQTT_V3_CONNECT
+            );
+        }
+    }
+    {
+        use rumqttd::protocol::{Connect, Packet, Protocol, v4::V4};
+        let connect = Connect {
+            keep_alive: 60,
+            client_id: "id".into(),
+            clean_session: true,
+        };
+        let pkt = Packet::Connect(connect, None, None, None, None);
+        let mut buf = BytesMut::new();
+        V4.write(pkt, &mut buf).unwrap();
+        if buf.as_ref() != MQTT_V3_CONNECT {
+            eprintln!(
+                "mqtt_v3_connect_write: rumqttd_0.20 output differs from fixture: {:02x?} vs {:02x?}",
+                buf.as_ref(),
+                MQTT_V3_CONNECT
+            );
+        }
+    }
+
+    let mut g = c.benchmark_group("mqtt_v3_connect_write");
+    g.bench_function("binparse", |b| {
+        b.iter(|| black_box(MqttPacketWriter::to_vec(black_box(&content))))
+    });
+    g.bench_function("mqttbytes_0.6", |b| {
+        b.iter_batched(
+            || {
+                let mut c0 = mqttbytes::v4::Connect::new("id");
+                c0.keep_alive = 60;
+                c0
+            },
+            |pkt| {
+                let mut buf = BytesMut::new();
+                pkt.write(&mut buf).unwrap();
+                black_box(buf)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    g.bench_function("rumqttc_v4_next", |b| {
+        use rumqttc_v4_next::mqttbytes::v4;
+        b.iter_batched(
+            || {
+                let mut c0 = v4::Connect::new("id");
+                c0.keep_alive = 60;
+                c0
+            },
+            |pkt| {
+                let mut buf = BytesMut::new();
+                pkt.write(&mut buf).unwrap();
+                black_box(buf)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    g.bench_function("rumqttd_0.20", |b| {
+        use rumqttd::protocol::{Connect, Packet, Protocol, v4::V4};
+        b.iter_batched(
+            || {
+                let connect = Connect {
+                    keep_alive: 60,
+                    client_id: "id".into(),
+                    clean_session: true,
+                };
+                Packet::Connect(connect, None, None, None, None)
+            },
+            |pkt| {
+                let mut buf = BytesMut::new();
+                V4.write(pkt, &mut buf).unwrap();
+                black_box(buf)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    g.finish();
+}
+
+fn v3_publish_write(c: &mut Criterion) {
+    use binparse_protocols::mqtt_v3::{
+        MqttPacketBodyContent, MqttPacketContent, MqttPacketWriter, PublishContent,
+    };
+    use mqttbytes::QoS;
+
+    let content = MqttPacketContent {
+        flags: 0,
+        body: MqttPacketBodyContent::Publish(PublishContent {
+            topic: b"a/b",
+            payload: b"hello",
+        }),
+    };
+    assert_eq!(MqttPacketWriter::to_vec(&content), MQTT_V3_PUBLISH);
+
+    {
+        let p = mqttbytes::v4::Publish::new("a/b", QoS::AtMostOnce, "hello");
+        let mut buf = BytesMut::new();
+        p.write(&mut buf).unwrap();
+        if buf.as_ref() != MQTT_V3_PUBLISH {
+            eprintln!(
+                "mqtt_v3_publish_write: mqttbytes_0.6 output differs from fixture: {:02x?} vs {:02x?}",
+                buf.as_ref(),
+                MQTT_V3_PUBLISH
+            );
+        }
+    }
+    {
+        use rumqttc_v4_next::mqttbytes::{QoS, v4};
+        let p = v4::Publish::new("a/b", QoS::AtMostOnce, "hello");
+        let mut buf = BytesMut::new();
+        p.write(&mut buf).unwrap();
+        if buf.as_ref() != MQTT_V3_PUBLISH {
+            eprintln!(
+                "mqtt_v3_publish_write: rumqttc_v4_next output differs from fixture: {:02x?} vs {:02x?}",
+                buf.as_ref(),
+                MQTT_V3_PUBLISH
+            );
+        }
+    }
+    {
+        use rumqttd::protocol::{Packet, Protocol, Publish, v4::V4};
+        let publish = Publish::new("a/b", "hello", false);
+        let pkt = Packet::Publish(publish, None);
+        let mut buf = BytesMut::new();
+        V4.write(pkt, &mut buf).unwrap();
+        if buf.as_ref() != MQTT_V3_PUBLISH {
+            eprintln!(
+                "mqtt_v3_publish_write: rumqttd_0.20 output differs from fixture: {:02x?} vs {:02x?}",
+                buf.as_ref(),
+                MQTT_V3_PUBLISH
+            );
+        }
+    }
+
+    let mut g = c.benchmark_group("mqtt_v3_publish_write");
+    g.bench_function("binparse", |b| {
+        b.iter(|| black_box(MqttPacketWriter::to_vec(black_box(&content))))
+    });
+    g.bench_function("mqttbytes_0.6", |b| {
+        b.iter_batched(
+            || mqttbytes::v4::Publish::new("a/b", QoS::AtMostOnce, "hello"),
+            |pkt| {
+                let mut buf = BytesMut::new();
+                pkt.write(&mut buf).unwrap();
+                black_box(buf)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    g.bench_function("rumqttc_v4_next", |b| {
+        use rumqttc_v4_next::mqttbytes::{QoS, v4};
+        b.iter_batched(
+            || v4::Publish::new("a/b", QoS::AtMostOnce, "hello"),
+            |pkt| {
+                let mut buf = BytesMut::new();
+                pkt.write(&mut buf).unwrap();
+                black_box(buf)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    g.bench_function("rumqttd_0.20", |b| {
+        use rumqttd::protocol::{Packet, Protocol, Publish, v4::V4};
+        b.iter_batched(
+            || Packet::Publish(Publish::new("a/b", "hello", false), None),
+            |pkt| {
+                let mut buf = BytesMut::new();
+                V4.write(pkt, &mut buf).unwrap();
+                black_box(buf)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    g.finish();
+}
+
 fn v5_connack(c: &mut Criterion) {
     use binparse_protocols::mqtt_v5::{MqttPacket, MqttPacket_body};
     let mut g = c.benchmark_group("mqtt_v5_connack");
@@ -185,5 +409,12 @@ fn v5_connack(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(benches, v3_connect, v3_publish, v5_connack);
+criterion_group!(
+    benches,
+    v3_connect,
+    v3_publish,
+    v5_connack,
+    v3_connect_write,
+    v3_publish_write
+);
 criterion_main!(benches);

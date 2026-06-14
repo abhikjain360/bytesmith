@@ -143,5 +143,108 @@ fn dns(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(benches, dns);
+// Write-path group: serialize a structured value to fresh owned bytes (alloc +
+// encode), mirroring binparse's `to_vec`, the mirror image of the read group.
+// binparse's `DnsContent` borrows the field slices (the `&'static` name fixture,
+// built untimed) and its timed work is purely encode-into-a-fresh-Vec, deriving
+// atype/rdlength and the answer-name compression pointer; simple-dns holds an
+// owned `Packet` (allocating `Name`/`Vec`), built untimed, and the timed routine
+// builds a fresh compressed byte vec. Both sides pay one output allocation + one
+// encode pass.
+fn dns_write(c: &mut Criterion) {
+    use binparse_protocols::dns::{AContent, DnsContent, DnsRdataContent, DnsWriter};
+
+    const NAME: &[u8] = &[
+        7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,
+    ];
+
+    let content = DnsContent {
+        id: 0x1234,
+        qr: 1,
+        opcode: 0,
+        aa: 0,
+        tc: 0,
+        rd: 1,
+        ra: 1,
+        z: 0,
+        rcode: 0,
+        qdcount: 1,
+        ancount: 1,
+        nscount: 0,
+        arcount: 0,
+        qname: NAME,
+        qtype: 1,
+        qclass: 1,
+        aname: NAME,
+        aclass: 1,
+        ttl: 0x0e10,
+        rdata: DnsRdataContent::A(AContent {
+            addr: [0x5d, 0xb8, 0xd8, 0x22],
+        }),
+    };
+    assert_eq!(DnsWriter::to_vec(&content), DNS_RESPONSE);
+
+    {
+        use simple_dns::rdata::{A, RData};
+        use simple_dns::{CLASS, Name, Packet, PacketFlag, Question, ResourceRecord, TYPE};
+        let mut pkt = Packet::new_reply(0x1234);
+        pkt.set_flags(PacketFlag::RECURSION_DESIRED | PacketFlag::RECURSION_AVAILABLE);
+        pkt.questions.push(Question::new(
+            Name::new("example.com").unwrap(),
+            TYPE::A.into(),
+            CLASS::IN.into(),
+            false,
+        ));
+        pkt.answers.push(ResourceRecord::new(
+            Name::new("example.com").unwrap(),
+            CLASS::IN,
+            3600,
+            RData::A(A {
+                address: 0x5db8d822,
+            }),
+        ));
+        let bytes = pkt.build_bytes_vec_compressed().unwrap();
+        if bytes != DNS_RESPONSE {
+            eprintln!(
+                "dns_write: simple-dns output differs from fixture: {:02x?} vs {:02x?}",
+                bytes, DNS_RESPONSE
+            );
+        }
+    }
+
+    let mut g = c.benchmark_group("dns_write");
+    g.bench_function("binparse", |b| {
+        b.iter(|| black_box(DnsWriter::to_vec(black_box(&content))))
+    });
+    g.bench_function("simple-dns", |b| {
+        use simple_dns::rdata::{A, RData};
+        use simple_dns::{CLASS, Name, Packet, PacketFlag, Question, ResourceRecord, TYPE};
+        b.iter_batched(
+            || {
+                let mut pkt = Packet::new_reply(0x1234);
+                pkt.set_flags(PacketFlag::RECURSION_DESIRED | PacketFlag::RECURSION_AVAILABLE);
+                pkt.questions.push(Question::new(
+                    Name::new("example.com").unwrap(),
+                    TYPE::A.into(),
+                    CLASS::IN.into(),
+                    false,
+                ));
+                pkt.answers.push(ResourceRecord::new(
+                    Name::new("example.com").unwrap(),
+                    CLASS::IN,
+                    3600,
+                    RData::A(A {
+                        address: 0x5db8d822,
+                    }),
+                ));
+                pkt
+            },
+            |pkt| black_box(pkt.build_bytes_vec_compressed().unwrap()),
+            criterion::BatchSize::SmallInput,
+        )
+    });
+    g.finish();
+}
+
+criterion_group!(benches, dns, dns_write);
 criterion_main!(benches);
