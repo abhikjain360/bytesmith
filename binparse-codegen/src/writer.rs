@@ -196,6 +196,21 @@ struct ForwardLayout {
     trailer_prefix_size: usize,
 }
 
+struct MultiRegionLayout {
+    segments: Vec<RegionSegment>,
+}
+
+enum RegionSegment {
+    FixedRun {
+        fields: Vec<WriterField>,
+        bytes: usize,
+    },
+    ByteRegion {
+        field: syn::Ident,
+    },
+    TerminalLenUnion(LenUnionLayout),
+}
+
 enum Layout {
     Fixed {
         fields: Vec<WriterField>,
@@ -229,6 +244,7 @@ enum Layout {
     LenUnionHook(LenUnionHookLayout),
     GreedyStructTail(GreedyStructTail),
     Conditional(ConditionalLayout),
+    MultiRegion(MultiRegionLayout),
 }
 
 pub(crate) fn generate(
@@ -261,6 +277,7 @@ pub(crate) fn generate(
             (emit_greedy_struct_tail(ast.name, &layout), None)
         }
         Some(Layout::Conditional(layout)) => (emit_conditional(ast.name, &layout), None),
+        Some(Layout::MultiRegion(layout)) => (emit_multi_region(ast.name, &layout), None),
         None => (TokenStream::new(), None),
     })
 }
@@ -312,6 +329,10 @@ fn classify(
 
     if let Some(layout) = classify_len_union(ast, struct_inherited, writer_sizes)? {
         return Ok(Some(Layout::LenUnion(layout)));
+    }
+
+    if let Some(layout) = classify_multi_region(ast, struct_inherited, writer_sizes) {
+        return Ok(Some(Layout::MultiRegion(layout)));
     }
 
     if let Some(fields) = classify_padded_fixed(ast, struct_inherited, writer_sizes) {
@@ -1892,6 +1913,133 @@ fn classify_len_union(
     }
 
     Ok(None)
+}
+
+fn field_len_references(item: &ast::StructItem<'_>, name: &str) -> bool {
+    let ast::StructItem::Field(field) = item else {
+        return false;
+    };
+    let Ok(field_attrs) = ParsedAttrs::parse(&field.attributes) else {
+        return false;
+    };
+    let Some(len_expr) = &field_attrs.len else {
+        return false;
+    };
+    matches!(affine_size_shape(len_expr), Some((len_field, _)) if len_field == name)
+}
+
+fn classify_multi_region(
+    ast: &ast::Struct,
+    struct_inherited: Inherited,
+    writer_sizes: &HashMap<&str, usize>,
+) -> Option<MultiRegionLayout> {
+    let last_index = ast.items.len().checked_sub(1)?;
+    let mut segments: Vec<RegionSegment> = Vec::new();
+    let mut cur_run: Vec<WriterField> = Vec::new();
+    let mut cur_run_bits = 0usize;
+    let mut has_byte_region = false;
+    let mut has_terminal_union = false;
+
+    for (index, item) in ast.items.iter().enumerate() {
+        let ast::StructItem::Field(field) = item else {
+            return None;
+        };
+        let field_attrs = ParsedAttrs::parse(&field.attributes).ok()?;
+
+        if let ast::FieldValue::Type(ast::Type::Array(array)) = &field.value
+            && matches!(
+                array.elem_ty,
+                ast::ArrayElemType::Primitive(ast::Primitive::U8)
+            )
+            && array.size.is_none()
+            && field_attrs.hook.is_some()
+        {
+            if parse_write_hook_present(&field.attributes) {
+                return None;
+            }
+            if ast.items[index + 1..]
+                .iter()
+                .any(|later| field_len_references(later, field.name))
+            {
+                return None;
+            }
+            if !cur_run_bits.is_multiple_of(8) {
+                return None;
+            }
+            if !cur_run.is_empty() {
+                segments.push(RegionSegment::FixedRun {
+                    fields: std::mem::take(&mut cur_run),
+                    bytes: cur_run_bits / 8,
+                });
+                cur_run_bits = 0;
+            }
+            segments.push(RegionSegment::ByteRegion {
+                field: format_ident!("{}", field.name),
+            });
+            has_byte_region = true;
+            continue;
+        }
+
+        if let ast::FieldValue::Type(ast::Type::Union(union)) = &field.value {
+            if index != last_index {
+                return None;
+            }
+            if !cur_run_bits.is_multiple_of(8) {
+                return None;
+            }
+            let len_expr = field_attrs.len.as_ref()?;
+            if !len_only_attr_supported(&field_attrs) {
+                return None;
+            }
+            let (len_field_str, len_adjust) = affine_size_shape(len_expr)?;
+            let len_field = cur_run.iter().find(|f| f.name == len_field_str)?;
+            let (len_primitive, len_endian) = forward_len_field(len_field)?;
+            let len_offset = len_field.bit_offset / 8;
+            let prefix_size = cur_run_bits / 8;
+            let union_layout = build_union_layout(
+                union,
+                field.name,
+                std::mem::take(&mut cur_run),
+                cur_run_bits,
+                struct_inherited,
+                writer_sizes,
+                true,
+            )?;
+            cur_run_bits = 0;
+            segments.push(RegionSegment::TerminalLenUnion(LenUnionLayout {
+                union: union_layout,
+                region_offset: prefix_size,
+                len_field_str: len_field_str.to_string(),
+                len_primitive,
+                len_offset,
+                len_endian,
+                len_adjust,
+            }));
+            has_terminal_union = true;
+            continue;
+        }
+
+        let (writer_field, width) =
+            classify_fixed_field(field, cur_run_bits, struct_inherited, writer_sizes)?;
+        cur_run.push(writer_field);
+        cur_run_bits += width;
+    }
+
+    if !cur_run_bits.is_multiple_of(8) {
+        return None;
+    }
+    if !cur_run.is_empty() {
+        segments.push(RegionSegment::FixedRun {
+            fields: cur_run,
+            bytes: cur_run_bits / 8,
+        });
+    }
+
+    if !has_byte_region || !has_terminal_union {
+        return None;
+    }
+
+    Some(MultiRegionLayout { segments })
 }
 
 fn classify_dynamic_tail(
@@ -3950,6 +4098,325 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
         pub struct #content_name #body_lt {
             #(#content_fields,)*
             pub #body_field: #body_enum #body_lt,
+        }
+    }
+}
+
+fn fixed_run_field_writes_at_base(
+    fields: &[WriterField],
+    skip: &dyn Fn(&WriterField) -> bool,
+    base: &TokenStream,
+) -> TokenStream {
+    let writes = fields.iter().filter_map(|field| {
+        if skip(field) {
+            return None;
+        }
+        let field_name = &field.name;
+        Some(match &field.kind {
+            FieldKind::ByteArray { len } => {
+                let offset = field.bit_offset / 8;
+                let end = offset + len;
+                quote! {
+                    data[#base + #offset..#base + #end]
+                        .copy_from_slice(&content.#field_name);
+                }
+            }
+            FieldKind::StructRef {
+                name: child_writer,
+                size,
+            } => {
+                let offset = field.bit_offset / 8;
+                let end = offset + size;
+                quote! {
+                    #child_writer::write_into(
+                        &mut data[#base + #offset..#base + #end],
+                        &content.#field_name,
+                    )?;
+                }
+            }
+            FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
+                let ty = field_type(field);
+                let body = setter_body_into(field, &quote! { run });
+                quote! {
+                    {
+                        let value: #ty = content.#field_name;
+                        let run = &mut data[#base..];
+                        #body
+                    }
+                }
+            }
+            FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
+            FieldKind::Constant { .. } => {
+                let body = constant_write_call(field, &quote! { run });
+                quote! {
+                    {
+                        let run = &mut data[#base..];
+                        #body
+                    }
+                }
+            }
+        })
+    });
+    writes.collect()
+}
+
+fn emit_multi_region(name: &str, layout: &MultiRegionLayout) -> TokenStream {
+    let writer_name = format_ident!("{}Writer", name);
+    let content_name = format_ident!("{}Content", name);
+
+    let byte_regions: Vec<&syn::Ident> = layout
+        .segments
+        .iter()
+        .filter_map(|s| match s {
+            RegionSegment::ByteRegion { field } => Some(field),
+            _ => None,
+        })
+        .collect();
+
+    let region_locals = byte_regions.iter().enumerate().map(|(i, field)| {
+        let local = format_ident!("r{}", i);
+        quote! { let #local = content.#field.len(); }
+    });
+    let region_locals: TokenStream = region_locals.collect();
+
+    let terminal = layout.segments.iter().find_map(|s| match s {
+        RegionSegment::TerminalLenUnion(layout) => Some(layout),
+        _ => None,
+    });
+
+    let mut variant_entities = TokenStream::new();
+    let mut body_lt = quote! {};
+    let mut body_local = TokenStream::new();
+    if let Some(term) = terminal {
+        let union = &term.union;
+        let discs = &union.discs;
+        let field_pascal = to_pascal_case(&union.field_name);
+        let body_enum = format_ident!("{}{}Content", name, field_pascal);
+        let body_field = format_ident!("{}", union.field_name);
+        body_lt = body_lifetime(&union.variants);
+        for variant in &union.variants {
+            variant_entities.extend(emit_variant_entity(variant));
+        }
+        let enum_variants = union
+            .variants
+            .iter()
+            .map(|variant| union_variant_decl(variant, discs));
+        variant_entities.extend(quote! {
+            pub enum #body_enum #body_lt {
+                #(#enum_variants),*
+            }
+        });
+        let region_len_arms = union
+            .variants
+            .iter()
+            .map(|variant| variant_size_arm(&body_enum, variant));
+        body_local = quote! {
+            let region_len = match &content.#body_field {
+                #(#region_len_arms),*
+            };
+        };
+    }
+
+    let mut encoded_len_terms: Vec<TokenStream> = Vec::new();
+    let mut ri = 0usize;
+    for segment in &layout.segments {
+        match segment {
+            RegionSegment::FixedRun { bytes, .. } => encoded_len_terms.push(quote! { #bytes }),
+            RegionSegment::ByteRegion { .. } => {
+                let local = format_ident!("r{}", ri);
+                encoded_len_terms.push(quote! { #local });
+                ri += 1;
+            }
+            RegionSegment::TerminalLenUnion(term) => {
+                let prefix_size = term.union.prefix_size;
+                encoded_len_terms.push(quote! { #prefix_size + region_len });
+            }
+        }
+    }
+
+    let mut write_body = TokenStream::new();
+    let mut ri = 0usize;
+    for segment in &layout.segments {
+        match segment {
+            RegionSegment::FixedRun { fields, bytes } => {
+                let field_writes =
+                    fixed_run_field_writes_at_base(fields, &|_| false, &quote! { base });
+                write_body.extend(quote! {
+                    #field_writes
+                    base += #bytes;
+                });
+            }
+            RegionSegment::ByteRegion { field } => {
+                let local = format_ident!("r{}", ri);
+                write_body.extend(quote! {
+                    data[base..base + #local].copy_from_slice(content.#field);
+                    base += #local;
+                });
+                ri += 1;
+            }
+            RegionSegment::TerminalLenUnion(term) => {
+                let union = &term.union;
+                let discs = &union.discs;
+                let len_field_str = &term.len_field_str;
+                let len_ty = crate::match_primitive(&term.len_primitive).1;
+                let len_field_qualified = format!("{}.{}", name, len_field_str);
+                let prefix_size = union.prefix_size;
+                let field_pascal = to_pascal_case(&union.field_name);
+                let body_enum = format_ident!("{}{}Content", name, field_pascal);
+                let body_field = format_ident!("{}", union.field_name);
+
+                let prefix_writes = fixed_run_field_writes_at_base(
+                    &union.prefix_fields,
+                    &|field| is_disc_field(discs, &field.name) || field.name == *len_field_str,
+                    &quote! { ubase },
+                );
+
+                let disc_target = quote! { run };
+                let write_len = {
+                    let len_offset = term.len_offset;
+                    let len_value = len_value_expr(&quote! { region_len }, term.len_adjust);
+                    let check = quote! {
+                        let len_field_value = #len_value;
+                        if len_field_value > (#len_ty::MAX as usize) {
+                            return Err(::binparse::WriteError::ValueTooLarge {
+                                field: #len_field_qualified,
+                                value: len_field_value,
+                                max: #len_ty::MAX as usize,
+                            });
+                        }
+                    };
+                    let single_byte = crate::single_byte_read(&term.len_primitive);
+                    if single_byte.is_some() {
+                        quote! {
+                            #check
+                            data[ubase + #len_offset] = len_field_value as #len_ty;
+                        }
+                    } else {
+                        let (len, _) = crate::match_primitive(&term.len_primitive);
+                        let end = len_offset + len.byte;
+                        let to_bytes = match term.len_endian {
+                            Endian::Big => quote! { to_be_bytes },
+                            Endian::Little => quote! { to_le_bytes },
+                        };
+                        quote! {
+                            #check
+                            data[ubase + #len_offset..ubase + #end]
+                                .copy_from_slice(&(len_field_value as #len_ty).#to_bytes());
+                        }
+                    }
+                };
+
+                let write_arms = union.variants.iter().map(|variant| {
+                    let variant_writer = format_ident!("{}Writer", variant.name);
+                    let (pat, c, disc_writes) =
+                        union_variant_write_pat(&body_enum, variant, discs, &disc_target);
+                    let region_len = variant_region_len(variant, &c);
+                    quote! {
+                        #pat => {
+                            {
+                                let run = &mut data[ubase..];
+                                #disc_writes
+                            }
+                            #region_len
+                            #write_len
+                            let region_start = ubase + #prefix_size;
+                            let region_end = region_start + region_len;
+                            #variant_writer::write_into(&mut data[region_start..region_end], #c)?;
+                            base += #prefix_size + region_len;
+                        }
+                    }
+                });
+
+                write_body.extend(quote! {
+                    let ubase = base;
+                    #prefix_writes
+                    match &content.#body_field {
+                        #(#write_arms)*
+                    }
+                });
+            }
+        }
+    }
+
+    let content_fields = layout.segments.iter().flat_map(|s| match s {
+        RegionSegment::FixedRun { fields, .. } => fields
+            .iter()
+            .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
+            .map(|field| {
+                let field_name = &field.name;
+                let ty = field_type(field);
+                quote! { pub #field_name: #ty }
+            })
+            .collect::<Vec<_>>(),
+        RegionSegment::ByteRegion { field } => {
+            vec![quote! { pub #field: &'a [u8] }]
+        }
+        RegionSegment::TerminalLenUnion(term) => {
+            let union = &term.union;
+            let discs = &union.discs;
+            let len_field_str = &term.len_field_str;
+            let field_pascal = to_pascal_case(&union.field_name);
+            let body_enum = format_ident!("{}{}Content", name, field_pascal);
+            let body_field = format_ident!("{}", union.field_name);
+            let body_lt = body_lifetime(&union.variants);
+            let mut entries = union
+                .prefix_fields
+                .iter()
+                .filter(|field| {
+                    !is_disc_field(discs, &field.name)
+                        && field.name != *len_field_str
+                        && !matches!(field.kind, FieldKind::Constant { .. })
+                })
+                .map(|field| {
+                    let field_name = &field.name;
+                    let ty = field_type(field);
+                    quote! { pub #field_name: #ty }
+                })
+                .collect::<Vec<_>>();
+            entries.push(quote! { pub #body_field: #body_enum #body_lt });
+            entries
+        }
+    });
+
+    quote! {
+        #variant_entities
+
+        pub struct #writer_name<'a> {
+            data: &'a mut [u8],
+        }
+
+        impl<'a> #writer_name<'a> {
+            pub fn encoded_len(content: &#content_name #body_lt) -> usize {
+                #region_locals
+                #body_local
+                0usize #(+ #encoded_len_terms)*
+            }
+
+            pub fn write_into(data: &'a mut [u8], content: &#content_name #body_lt) -> ::binparse::WriteResult<usize> {
+                #region_locals
+                #body_local
+                let need = 0usize #(+ #encoded_len_terms)*;
+                if data.len() < need {
+                    return Err(::binparse::WriteError::NotEnoughSpace {
+                        expected: need,
+                        got: data.len(),
+                    });
+                }
+                let mut base = 0usize;
+                #write_body
+                let _ = base;
+                Ok(need)
+            }
+
+            pub fn to_vec(content: &#content_name #body_lt) -> ::std::vec::Vec<u8> {
+                let mut buf = ::std::vec![0u8; Self::encoded_len(content)];
+                let _ = #writer_name::write_into(&mut buf, content);
+                buf
+            }
+        }
+
+        pub struct #content_name #body_lt {
+            #(#content_fields,)*
         }
     }
 }

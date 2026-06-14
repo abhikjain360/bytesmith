@@ -457,3 +457,68 @@ fn mqtt_v3_connect_round_trips_dynamic_variant() {
         _ => panic!("expected Connect"),
     }
 }
+
+#[cfg(feature = "dns")]
+#[test]
+fn dns_response_round_trips_uncompressed_names() {
+    use binparse_protocols::dns::{AContent, DnsContent, DnsRdataContent, DnsWriter};
+    use binparse_protocols::dns::{Dns, Dns_rdata};
+
+    let name: &[u8] = &[
+        7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,
+    ];
+
+    let content = DnsContent {
+        id: 0x1234,
+        qr: 1,
+        opcode: 0,
+        aa: 0,
+        tc: 0,
+        rd: 1,
+        ra: 1,
+        z: 0,
+        rcode: 0,
+        qdcount: 1,
+        ancount: 1,
+        nscount: 0,
+        arcount: 0,
+        qname: name,
+        qtype: 1,
+        qclass: 1,
+        aname: name,
+        aclass: 1,
+        ttl: 0x0e10,
+        rdata: DnsRdataContent::A(AContent {
+            addr: [0x5d, 0xb8, 0xd8, 0x22],
+        }),
+    };
+
+    let bytes = DnsWriter::to_vec(&content);
+    let expected: Vec<u8> = vec![
+        0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 7, b'e', b'x',
+        b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0, 0x00, 0x01, 0x00, 0x01, 7, b'e',
+        b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0, 0x00, 0x01, 0x00, 0x01, 0x00,
+        0x00, 0x0e, 0x10, 0x00, 0x04, 0x5d, 0xb8, 0xd8, 0x22,
+    ];
+    assert_eq!(bytes, expected);
+    assert_eq!(&bytes[50..52], [0x00, 0x04]);
+    assert_eq!(&bytes[42..44], [0x00, 0x01]);
+
+    let (mut dns, rem) = Dns::parse(&bytes).unwrap();
+    assert!(rem.is_empty());
+    assert_eq!(dns.id(), 0x1234);
+    let qlabels: Vec<&[u8]> = dns.qname().unwrap().labels().collect();
+    assert_eq!(qlabels, vec![b"example".as_slice(), b"com".as_slice()]);
+    let alabels: Vec<&[u8]> = dns.aname().unwrap().labels().collect();
+    assert_eq!(alabels, vec![b"example".as_slice(), b"com".as_slice()]);
+    assert_eq!(dns.qtype(), 1);
+    assert_eq!(dns.ttl(), 0x0e10);
+    assert_eq!(dns.rdlength(), 4);
+    match dns.rdata().unwrap() {
+        Dns_rdata::A(mut a) => {
+            let addr: Vec<u8> = a.addr().unwrap().collect::<ParseResult<Vec<_>>>().unwrap();
+            assert_eq!(addr, vec![93, 184, 216, 34]);
+        }
+        _ => panic!("expected A record"),
+    }
+}
