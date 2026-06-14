@@ -69,6 +69,7 @@ pub enum Expr<'a> {
     Binary(Box<BinaryExpr<'a>>),
     Call(&'a str, Vec<Expr<'a>>), // macros
     Tuple(Vec<Expr<'a>>),         // tuple matching in unions
+    RawType(&'a str),             // raw Rust type token, e.g. @hook return type `Vec<&'a [u8]>`
 }
 
 #[derive(Debug, Clone, PartialEq)]

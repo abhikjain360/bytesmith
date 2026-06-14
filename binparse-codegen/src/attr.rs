@@ -363,6 +363,13 @@ impl<'a> ParsedAttrs<'a> {
                 let idents: Vec<_> = segments.iter().map(|s| format_ident!("{}", s)).collect();
                 Ok(quote::quote! { #(#idents)::* })
             }
+            // Raw type token (`@hook` return type): may carry references, generics,
+            // slices, and lifetimes. The DSL spells path separators as `.`; rewrite
+            // to `::` (a Rust type never legitimately contains a `.`) before lexing.
+            ast::Expr::RawType(raw) => raw
+                .replace('.', "::")
+                .parse::<TokenStream>()
+                .map_err(|_| Error::InvalidHookArg),
             _ => Err(Error::InvalidHookArg),
         }
     }

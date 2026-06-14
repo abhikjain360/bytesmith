@@ -155,6 +155,26 @@ fn args<'a>(input: &mut Input<'a>) -> ModalResult<Vec<ast::Expr<'a>>> {
     delimited(padded('('), separated(0.., expr, padded(',')), padded(')')).parse_next(input)
 }
 
+/// `@hook`/`@parse_with` take `(fn_path, ReturnType)` where the return type may
+/// be any Rust type token (`&'a [u8]`, `NameRef<'a>`, `Vec<&'a [u8]>`) that the
+/// general expression grammar cannot represent. The fn path parses as a normal
+/// expression; the return type is captured raw up to the closing paren.
+fn hook_args<'a>(input: &mut Input<'a>) -> ModalResult<Vec<ast::Expr<'a>>> {
+    delimited(
+        padded('('),
+        (expr, preceded(padded(','), type_token)),
+        padded(')'),
+    )
+    .map(|(fn_arg, ty)| vec![fn_arg, ty])
+    .parse_next(input)
+}
+
+fn type_token<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
+    take_while(1.., |c| c != ')')
+        .map(|s: &str| ast::Expr::RawType(s.trim()))
+        .parse_next(input)
+}
+
 fn atom<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     padded(alt((
         literal.map(ast::Expr::Literal),
@@ -337,12 +357,14 @@ fn logic_or<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
 }
 
 fn attribute<'a>(input: &mut Input<'a>) -> ModalResult<ast::Attribute<'a>> {
-    seq! {ast::Attribute {
-        _: '@',
-        name: identifier,
-        args: opt(args).map(|o: Option<Vec<ast::Expr>>| o.unwrap_or_default()),
-    }}
-    .parse_next(input)
+    '@'.parse_next(input)?;
+    let name = identifier(input)?;
+    let args = if name == "hook" || name == "parse_with" {
+        opt(hook_args).parse_next(input)?.unwrap_or_default()
+    } else {
+        opt(args).parse_next(input)?.unwrap_or_default()
+    };
+    Ok(ast::Attribute { name, args })
 }
 
 fn attributes<'a>(input: &mut Input<'a>) -> ModalResult<Vec<ast::Attribute<'a>>> {
@@ -1200,6 +1222,34 @@ mod tests {
                 ast::StructItem::Field(f) => {
                     assert_eq!(f.attributes[0].name, "parse_with");
                     assert_eq!(f.attributes[0].args.len(), 2);
+                }
+                _ => panic!("Expected field"),
+            },
+            _ => panic!("Expected struct"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hook_borrowed_return_type() {
+        let src = r#"
+            struct Name {
+                @hook(proto.hooks.dns_name, proto.hooks.NameRef<'a>) name: [u8],
+            }
+        "#;
+        let defs = parse_helper(src);
+        match &defs[0] {
+            ast::Definition::Struct(s) => match &s.items[0] {
+                ast::StructItem::Field(f) => {
+                    assert_eq!(f.attributes[0].name, "hook");
+                    assert_eq!(f.attributes[0].args.len(), 2);
+                    assert_eq!(
+                        f.attributes[0].args[0],
+                        ast::Expr::Path(vec!["proto", "hooks", "dns_name"])
+                    );
+                    assert_eq!(
+                        f.attributes[0].args[1],
+                        ast::Expr::RawType("proto.hooks.NameRef<'a>")
+                    );
                 }
                 _ => panic!("Expected field"),
             },

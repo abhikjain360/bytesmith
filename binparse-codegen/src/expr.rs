@@ -184,6 +184,12 @@ fn lower_inner(
         }),
 
         ast::Expr::Call(..) => Err(Error::MacroCall { expr: render(root) }),
+
+        ast::Expr::RawType(_) => Err(Error::TypeMismatch {
+            expr: render(root),
+            expected,
+            got: "type".to_string(),
+        }),
     }
 }
 
@@ -299,5 +305,6 @@ fn render(expr: &ast::Expr<'_>) -> String {
             let elements = elements.iter().map(render).collect::<Vec<_>>().join(", ");
             format!("({elements})")
         }
+        ast::Expr::RawType(raw) => raw.to_string(),
     }
 }
