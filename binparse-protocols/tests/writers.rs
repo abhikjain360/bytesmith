@@ -460,7 +460,7 @@ fn mqtt_v3_connect_round_trips_dynamic_variant() {
 
 #[cfg(feature = "dns")]
 #[test]
-fn dns_response_round_trips_uncompressed_names() {
+fn dns_response_writer_derives_name_compression() {
     use binparse_protocols::dns::{AContent, DnsContent, DnsRdataContent, DnsWriter};
     use binparse_protocols::dns::{Dns, Dns_rdata};
 
@@ -496,13 +496,11 @@ fn dns_response_round_trips_uncompressed_names() {
     let bytes = DnsWriter::to_vec(&content);
     let expected: Vec<u8> = vec![
         0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 7, b'e', b'x',
-        b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0, 0x00, 0x01, 0x00, 0x01, 7, b'e',
-        b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0, 0x00, 0x01, 0x00, 0x01, 0x00,
-        0x00, 0x0e, 0x10, 0x00, 0x04, 0x5d, 0xb8, 0xd8, 0x22,
+        b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0, 0x00, 0x01, 0x00, 0x01, 0xc0, 0x0c,
+        0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x0e, 0x10, 0x00, 0x04, 0x5d, 0xb8, 0xd8, 0x22,
     ];
     assert_eq!(bytes, expected);
-    assert_eq!(&bytes[50..52], [0x00, 0x04]);
-    assert_eq!(&bytes[42..44], [0x00, 0x01]);
+    assert_eq!(&bytes[29..31], [0xc0, 0x0c]);
 
     let (mut dns, rem) = Dns::parse(&bytes).unwrap();
     assert!(rem.is_empty());

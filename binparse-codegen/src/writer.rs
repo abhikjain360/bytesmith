@@ -207,6 +207,7 @@ enum RegionSegment {
     },
     ByteRegion {
         field: syn::Ident,
+        encode: Option<TokenStream>,
     },
     TerminalLenUnion(LenUnionLayout),
 }
@@ -1954,9 +1955,14 @@ fn classify_multi_region(
             && array.size.is_none()
             && field_attrs.hook.is_some()
         {
-            if parse_write_hook_present(&field.attributes) {
-                return None;
-            }
+            let encode = if parse_write_hook_present(&field.attributes) {
+                if parse_write_hook(&field.attributes).is_some() {
+                    return None;
+                }
+                Some(parse_write_hook_encode_only(&field.attributes)?)
+            } else {
+                None
+            };
             if ast.items[index + 1..]
                 .iter()
                 .any(|later| field_len_references(later, field.name))
@@ -1975,6 +1981,7 @@ fn classify_multi_region(
             }
             segments.push(RegionSegment::ByteRegion {
                 field: format_ident!("{}", field.name),
+                encode,
             });
             has_byte_region = true;
             continue;
@@ -4168,7 +4175,7 @@ fn emit_multi_region(name: &str, layout: &MultiRegionLayout) -> TokenStream {
         .segments
         .iter()
         .filter_map(|s| match s {
-            RegionSegment::ByteRegion { field } => Some(field),
+            RegionSegment::ByteRegion { field, .. } => Some(field),
             _ => None,
         })
         .collect();
@@ -4246,12 +4253,30 @@ fn emit_multi_region(name: &str, layout: &MultiRegionLayout) -> TokenStream {
                     base += #bytes;
                 });
             }
-            RegionSegment::ByteRegion { field } => {
-                let local = format_ident!("r{}", ri);
-                write_body.extend(quote! {
-                    data[base..base + #local].copy_from_slice(content.#field);
-                    base += #local;
-                });
+            RegionSegment::ByteRegion { field, encode } => {
+                match encode {
+                    Some(enc) => {
+                        write_body.extend(quote! {
+                            let (head, rest) = data.split_at_mut(base);
+                            let written = #enc(
+                                content.#field,
+                                rest,
+                                ::binparse::WriteHookContext {
+                                    offset: base,
+                                    written: &*head,
+                                },
+                            )?;
+                            base += written;
+                        });
+                    }
+                    None => {
+                        let local = format_ident!("r{}", ri);
+                        write_body.extend(quote! {
+                            data[base..base + #local].copy_from_slice(content.#field);
+                            base += #local;
+                        });
+                    }
+                }
                 ri += 1;
             }
             RegionSegment::TerminalLenUnion(term) => {
@@ -4348,7 +4373,7 @@ fn emit_multi_region(name: &str, layout: &MultiRegionLayout) -> TokenStream {
                 quote! { pub #field_name: #ty }
             })
             .collect::<Vec<_>>(),
-        RegionSegment::ByteRegion { field } => {
+        RegionSegment::ByteRegion { field, .. } => {
             vec![quote! { pub #field: &'a [u8] }]
         }
         RegionSegment::TerminalLenUnion(term) => {
@@ -4404,13 +4429,13 @@ fn emit_multi_region(name: &str, layout: &MultiRegionLayout) -> TokenStream {
                 }
                 let mut base = 0usize;
                 #write_body
-                let _ = base;
-                Ok(need)
+                Ok(base)
             }
 
             pub fn to_vec(content: &#content_name #body_lt) -> ::std::vec::Vec<u8> {
                 let mut buf = ::std::vec![0u8; Self::encoded_len(content)];
-                let _ = #writer_name::write_into(&mut buf, content);
+                let n = #writer_name::write_into(&mut buf, content).unwrap_or(0);
+                buf.truncate(n);
                 buf
             }
         }
