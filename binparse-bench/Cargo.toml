@@ -37,3 +37,14 @@ harness = false
 [[bench]]
 name = "dns"
 harness = false
+
+# Standalone head-to-head programs (under comparison/) for deterministic
+# profiling — callgrind/perf instruction + allocation counts. Run with an
+# iteration count: `cargo run -p binparse-bench --example dns_binparse --release -- 1000`.
+[[example]]
+name = "dns_binparse"
+path = "comparison/dns_binparse.rs"
+
+[[example]]
+name = "dns_simpledns"
+path = "comparison/dns_simpledns.rs"
