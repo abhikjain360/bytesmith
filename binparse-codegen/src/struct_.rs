@@ -34,6 +34,8 @@ pub(crate) struct StructAccum<'a> {
     pub(crate) done_fields: Vec<DoneField>,
     pub(crate) other_entities: TokenStream,
     pub(crate) field_definitions: TokenStream,
+    pub(crate) cache_field_defs: TokenStream,
+    pub(crate) cache_inits: TokenStream,
     pub(crate) functions: TokenStream,
     pub(crate) parse_checks: TokenStream,
     pub(crate) tree_stmts: TokenStream,
@@ -54,6 +56,7 @@ pub(crate) struct GeneratedStruct {
     pub(crate) len: GeneratedLen,
     pub(crate) tokens: TokenStream,
     pub(crate) last_offset_getter: Option<syn::Ident>,
+    pub(crate) cache_inits: TokenStream,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -86,6 +89,8 @@ impl<'a> StructAccum<'a> {
             done_fields: vec![],
             other_entities: TokenStream::new(),
             field_definitions: TokenStream::new(),
+            cache_field_defs: TokenStream::new(),
+            cache_inits: TokenStream::new(),
             functions: TokenStream::new(),
             parse_checks: TokenStream::new(),
             tree_stmts: TokenStream::new(),
@@ -147,6 +152,8 @@ pub(crate) fn generate_struct<'a>(
         done_fields: _,
         other_entities,
         field_definitions,
+        cache_field_defs,
+        cache_inits,
         functions,
         parse_checks,
         tree_stmts,
@@ -159,6 +166,12 @@ pub(crate) fn generate_struct<'a>(
     } = accum;
 
     let last_offset_getter = last_offset_getter_fn_name.clone();
+
+    let self_ctor = if cache_inits.is_empty() {
+        quote! { Self { data } }
+    } else {
+        quote! { Self { data, #cache_inits } }
+    };
 
     let struct_name_str = name.to_string();
     let tree_total_bits = match &last_offset_getter {
@@ -268,7 +281,7 @@ pub(crate) fn generate_struct<'a>(
             None => quote! { children.last().map(|child| child.bit_range.end).unwrap_or(0) },
         };
         quote! {
-            let me = Self { data };
+            let me = #self_ctor;
             let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
             let mut fatal: Option<::binparse::ParseError> = None;
             #dissect_stmts
@@ -340,7 +353,7 @@ pub(crate) fn generate_struct<'a>(
     let parse_fn = if let Some(fn_name) = last_offset_getter_fn_name {
         quote! {
             pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
-                let me = Self { data };
+                let me = #self_ctor;
                 #parse_checks
                 let len = me.#fn_name();
                 if len.bit != 0 {
@@ -367,7 +380,7 @@ pub(crate) fn generate_struct<'a>(
         pub struct #name<'a> {
             #[allow(dead_code)]
             data: &'a [u8],
-            #field_definitions
+            #field_definitions #cache_field_defs
         }
 
         impl<'a> #name<'a> {
@@ -389,6 +402,7 @@ pub(crate) fn generate_struct<'a>(
         len: offset,
         tokens,
         last_offset_getter,
+        cache_inits,
     })
 }
 

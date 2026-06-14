@@ -106,6 +106,8 @@ pub enum Error {
     DiscriminatorOnConcatOrUnion,
     #[error("@payload is not supported on concat and union fields")]
     PayloadOnConcatOrUnion,
+    #[error("@cache arguments must be 'len' or 'value'")]
+    InvalidCacheArg,
 }
 
 /// Padding and alignment semantics: `@pad(N)` consumes N bytes before the
@@ -156,6 +158,8 @@ pub(crate) struct ParsedAttrs<'a> {
     pub len: Option<ast::Expr<'a>>,
     pub discriminator: bool,
     pub payload: bool,
+    pub cache_len: bool,
+    pub cache_value: bool,
 }
 
 impl<'a> ParsedAttrs<'a> {
@@ -197,6 +201,7 @@ impl<'a> ParsedAttrs<'a> {
                     Self::parse_flag(attr, "payload")?;
                     result.payload = true;
                 }
+                "cache" => Self::parse_cache(attr, &mut result)?,
                 _ => {}
             }
         }
@@ -216,6 +221,22 @@ impl<'a> ParsedAttrs<'a> {
                 got: attr.args.len(),
             })
         }
+    }
+
+    fn parse_cache(attr: &ast::Attribute<'_>, result: &mut Self) -> Result<(), Error> {
+        if attr.args.is_empty() {
+            result.cache_len = true;
+            result.cache_value = true;
+            return Ok(());
+        }
+        for arg in &attr.args {
+            match arg {
+                ast::Expr::Path(path) if path.as_slice() == ["len"] => result.cache_len = true,
+                ast::Expr::Path(path) if path.as_slice() == ["value"] => result.cache_value = true,
+                _ => return Err(Error::InvalidCacheArg),
+            }
+        }
+        Ok(())
     }
 
     fn parse_padding(attr: &ast::Attribute<'_>, name: &'static str) -> Result<usize, Error> {

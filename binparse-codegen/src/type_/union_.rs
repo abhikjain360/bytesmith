@@ -177,9 +177,15 @@ pub(crate) fn generate<'a>(
                         let last_offset_getter = generated
                             .last_offset_getter
                             .expect("dynamic-length variant struct has an offset getter");
-                        quote! {
-                            #struct_name { data: &self.data[#clamped_start..] }.#last_offset_getter()
-                        }
+                        let variant_inits = generated.cache_inits.clone();
+                        let ctor = if variant_inits.is_empty() {
+                            quote! { #struct_name { data: &self.data[#clamped_start..] } }
+                        } else {
+                            quote! {
+                                #struct_name { data: &self.data[#clamped_start..], #variant_inits }
+                            }
+                        };
+                        quote! { #ctor.#last_offset_getter() }
                     }
                 };
                 len_match_arms.extend(quote! {

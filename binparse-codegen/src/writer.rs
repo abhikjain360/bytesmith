@@ -685,6 +685,8 @@ fn struct_attrs_supported(attrs: &ParsedAttrs<'_>) -> bool {
         len,
         discriminator: _,
         payload: _,
+        cache_len: _,
+        cache_value: _,
     } = attrs;
     hook.is_none()
         && until.is_none()

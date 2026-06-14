@@ -68,6 +68,13 @@ fn read_leb128(data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseRe
     binparse::hooks::leb128_unsigned(data, ctx)
 }}
 
+static COUNTING_HOOK_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn counting_cstring(data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseResult<(String, usize)> {{
+    COUNTING_HOOK_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    binparse::hooks::cstring(data, ctx)
+}}
+
 fn lying_hook(data: &[u8], _ctx: binparse::HookContext<'_>) -> binparse::ParseResult<(u8, usize)> {{
     Ok((0, data.len() + 100))
 }}
@@ -531,6 +538,41 @@ mod tests {{
                 let _ = packet.field_tree();
             }}
         }});
+    }}
+
+    #[test]
+    fn cache_len_memoizes_hook_end_offset() {{
+        // count=7, body="hi\0" (cstring hook consumes 3), then a/b/c are u16 each.
+        let data = [7, b'h', b'i', 0, 0x00, 0x0a, 0x00, 0x0b, 0x00, 0x0c];
+        let (packet, rem) = Cached::parse(&data).unwrap();
+        assert!(rem.is_empty());
+
+        // Reset after parse: isolate the downstream offset re-walk, which is the
+        // O(n^2) pathology @cache(len) fixes. Every getter/offset below calls
+        // body_end_offset() transitively; without the cache each would re-run
+        // the hook, with the cache the hook runs at most once (first miss).
+        COUNTING_HOOK_CALLS.store(0, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(packet.count(), 7);
+        assert_eq!(packet.a(), 0x000a);
+        assert_eq!(packet.b(), 0x000b);
+        assert_eq!(packet.c(), 0x000c);
+        let _ = packet.a_bit_range();
+        let _ = packet.b_bit_range();
+        let _ = packet.c_bit_range();
+        let _ = packet.body_bit_range();
+        let _ = packet.c_end_offset();
+        let _ = packet.b_end_offset();
+        let _ = packet.a_end_offset();
+        let offset_calls = COUNTING_HOOK_CALLS.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            offset_calls <= 1,
+            "@cache(len) should memoize the end-offset across downstream offset \
+             re-walks; hook ran {{offset_calls}} times (expected <= 1)"
+        );
+
+        // Reading the value itself still runs the hook (value is not cached),
+        // but exactly once per body() call.
+        assert_eq!(packet.body().unwrap(), "hi");
     }}
 
     #[test]
@@ -2641,6 +2683,14 @@ struct DnsMsg {
     qtype: u16,
     @hook(parse_dns_name, String) aname: [u8],
     atype: u16,
+}
+
+struct Cached {
+    count: u8,
+    @hook(counting_cstring, String) @cache(len) body: [u8],
+    a: u16,
+    b: u16,
+    c: u16,
 }
 
 struct Eth {

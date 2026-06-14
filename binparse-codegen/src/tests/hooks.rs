@@ -47,3 +47,59 @@ fn golden_vla_hook() {
         "vla_hook",
     );
 }
+#[test]
+fn golden_cache_len_hook() {
+    assert_generated_eq(
+        r#"struct WithCachedHook {
+            count: u8,
+            @hook(parse_cstring, String) @cache(len) body: [u8],
+            trailer: u16,
+        }"#,
+        "cache_len_hook",
+    );
+}
+#[test]
+fn cache_value_is_not_yet_supported() {
+    let err = generate_err(
+        r#"struct Foo {
+            count: u8,
+            @hook(parse_cstring, String) @cache(value) body: [u8],
+        }"#,
+    );
+    assert!(
+        err.to_string()
+            .contains("@cache(value) is not yet supported")
+    );
+}
+#[test]
+fn bare_cache_errors_until_value_caching_lands() {
+    let err = generate_err(
+        r#"struct Foo {
+            count: u8,
+            @hook(parse_cstring, String) @cache body: [u8],
+        }"#,
+    );
+    assert!(
+        err.to_string()
+            .contains("@cache(value) is not yet supported")
+    );
+}
+#[test]
+fn cache_with_unknown_arg_is_rejected() {
+    let err = generate_err(
+        r#"struct Foo {
+            count: u8,
+            @hook(parse_cstring, String) @cache(bogus) body: [u8],
+        }"#,
+    );
+    assert!(
+        err.to_string()
+            .contains("@cache arguments must be 'len' or 'value'")
+    );
+}
+#[test]
+fn cache_len_on_fixed_offset_is_ignored() {
+    let code = generate("struct Foo { count: u8, @cache(len) value: u16 }");
+    assert!(!code.contains("value_end_cache"));
+    assert!(code.contains("fn value(&self) -> u16"));
+}

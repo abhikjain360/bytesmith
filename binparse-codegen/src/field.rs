@@ -51,6 +51,8 @@ pub enum Error {
     NonLiteralConstraint,
     #[error("validations are not supported on conditional fields")]
     ValidationOnConditional,
+    #[error("@cache(value) is not yet supported; use @cache(len)")]
+    CacheValueUnsupported,
 }
 
 impl FieldAccum {
@@ -228,7 +230,12 @@ pub(crate) fn generate<'a>(
         }
     };
 
+    if attrs.cache_value {
+        return Err(Error::CacheValueUnsupported);
+    }
+
     let (vis, dead_code) = getter_visibility(&attrs);
+    let mut propagated_offset = end_offset.clone();
     field_accum.offset_getter = match &end_offset {
         GeneratedLen::Fixed(total_len) => {
             let total_byte = total_len.byte;
@@ -237,6 +244,28 @@ pub(crate) fn generate<'a>(
                 #dead_code
                 #vis fn #offset_getter_fn_name(&self) -> binparse::Len {
                     binparse::Len { byte: #total_byte, bit: #total_bit }
+                }
+            }
+        }
+        GeneratedLen::Dynamic(total_len) if attrs.cache_len => {
+            let cache_ident = format_ident!("{}_end_cache", ast.name);
+            struct_accum.cache_field_defs.extend(quote! {
+                #cache_ident: ::std::cell::Cell<Option<binparse::Len>>,
+            });
+            struct_accum.cache_inits.extend(quote! {
+                #cache_ident: ::std::cell::Cell::new(None),
+            });
+            propagated_offset =
+                GeneratedLen::Dynamic(quote! { self.#offset_getter_fn_name() });
+            quote! {
+                #dead_code
+                #vis fn #offset_getter_fn_name(&self) -> binparse::Len {
+                    if let Some(cached) = self.#cache_ident.get() {
+                        return cached;
+                    }
+                    let value = { #total_len };
+                    self.#cache_ident.set(Some(value));
+                    value
                 }
             }
         }
@@ -373,7 +402,7 @@ pub(crate) fn generate<'a>(
         }),
     }
 
-    struct_accum.offset = end_offset;
+    struct_accum.offset = propagated_offset;
     struct_accum
         .field_definitions
         .extend(field_accum.definitions);
