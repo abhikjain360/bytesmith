@@ -25,16 +25,16 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 
 ### Validation
 
-- [ ] `@validate(expr)` attribute for field constraints
-- [ ] `@range(min, max)` for numeric bounds
-- [ ] Return `ParseError::ValidationFailed` on violation
-- [ ] Magic number validation: `magic = 0x89504E47` (PNG signature)
+- [x] `@validate(expr)` attribute for field constraints
+- [x] `@range(min, max)` for numeric bounds
+- [x] Return `ParseError::ValidationFailed` on violation
+- [x] Magic number validation: `magic = 0x89504E47` (PNG signature)
 
 ### Alignment & Padding
 
-- [ ] `@align(N)` - ensure field starts at N-byte boundary
-- [ ] `@pad(N)` - skip N bytes
-- [ ] `@pad_to(N)` - pad until offset is multiple of N
+- [x] `@align(N)` - ensure field starts at N-byte boundary
+- [x] `@pad(N)` - skip N bytes
+- [x] `@pad_to(N)` - pad until offset is multiple of N
 
 ---
 
@@ -42,9 +42,9 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 
 ### No-Panic Guarantee
 
-- [ ] All slice accesses bounds-checked at parse time
-- [ ] No `.unwrap()` in generated code (use `?` propagation)
-- [ ] Prove via `#[cfg(test)]` + `panic = "abort"` + fuzzing
+- [x] All slice accesses bounds-checked at parse time
+- [x] No `.unwrap()` in generated code (use `?` propagation)
+- [x] Prove via `#[cfg(test)]` + `panic = "abort"` + fuzzing
 - [ ] Document which error conditions are possible
 
 ### Compile-Time Verification
@@ -57,8 +57,8 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 
 - [ ] Generate `Arbitrary` impl for each struct
 - [ ] Generate `proptest` strategies
-- [ ] Roundtrip property: `parse(serialize(x)) == x`
-- [ ] Crash-resistance property: any `&[u8]` either parses or returns error
+- [x] Roundtrip property: `parse(serialize(x)) == x`
+- [x] Crash-resistance property: any `&[u8]` either parses or returns error
 
 ---
 
@@ -66,10 +66,10 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 
 ### Serialization (Write Path)
 
-- [ ] Generate `fn serialize(&self, buf: &mut Vec<u8>)`
-- [ ] Or zerocopy writer: `fn write_to(&self, buf: &mut [u8]) -> usize`
-- [ ] Endianness-aware writing
-- [ ] Same hooks work for both parse and serialize
+- [x] Generate `fn serialize(&self, buf: &mut Vec<u8>)`
+- [x] Or zerocopy writer: `fn write_to(&self, buf: &mut [u8]) -> usize`
+- [x] Endianness-aware writing
+- [x] Same hooks work for both parse and serialize
 
 ### Cross-Language Generation
 
@@ -83,7 +83,7 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 - [ ] Generate valid packet examples from spec
 - [ ] Generate edge cases (max lengths, boundary values)
 - [ ] Generate invalid packets (truncated, bad magic, overflow)
-- [ ] Snapshot tests for generated code
+- [x] Snapshot tests for generated code
 
 ### Documentation Generation
 
@@ -125,7 +125,7 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 
 - [ ] Tree-sitter grammar for syntax highlighting
 - [ ] LSP server for go-to-definition, hover info
-- [ ] Diagnostics (unknown types, invalid attributes)
+- [x] Diagnostics (unknown types, invalid attributes)
 - [ ] Auto-complete for attribute names
 
 ### Debug Visualization
@@ -141,26 +141,30 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 ### Compile-Time Optimization
 
 - [ ] Inline small field accessors
-- [ ] Const-evaluate fixed offsets
+- [x] Const-evaluate fixed offsets
 - [ ] Avoid redundant bounds checks
 
 ### Runtime Optimization
 
 - [ ] SIMD for array parsing where applicable
 - [ ] Batch validation (check total length once upfront)
-- [ ] Zero-allocation iterators (already have this)
+- [x] Zero-allocation iterators (already have this)
 
 ---
 
 ## Immediate Priorities
 
-| Priority | Feature               | Rationale                         |
-| -------- | --------------------- | --------------------------------- |
-| P0       | Hooks for VarInt      | Unlocks MQTT, Protobuf, WebSocket |
-| P0       | Consume-rest arrays   | Unlocks variable payloads         |
-| P1       | Serialization         | Symmetry; proves spec is complete |
-| P1       | No-panic guarantee    | Key differentiator from AI        |
-| P2       | Fuzzing integration   | Proves correctness at scale       |
-| P2       | Validation attributes | Catches bad data early            |
-| P3       | Cross-language        | Multiplies value of each spec     |
-| P3       | Documentation gen     | Specs become source of truth      |
+> Status: all P0–P2 items below have shipped (VarInt hooks, consume-rest arrays,
+> serialization/write path, no-panic invariant, fuzzing, validation). Remaining
+> work is the P3 tier plus the unchecked items in the sections above.
+
+| Priority | Feature               | Rationale                         | Status |
+| -------- | --------------------- | --------------------------------- | ------ |
+| P0       | Hooks for VarInt      | Unlocks MQTT, Protobuf, WebSocket | done   |
+| P0       | Consume-rest arrays   | Unlocks variable payloads         | done   |
+| P1       | Serialization         | Symmetry; proves spec is complete | done   |
+| P1       | No-panic guarantee    | Key differentiator from AI        | done   |
+| P2       | Fuzzing integration   | Proves correctness at scale       | done   |
+| P2       | Validation attributes | Catches bad data early            | done   |
+| P3       | Cross-language        | Multiplies value of each spec     | todo   |
+| P3       | Documentation gen     | Specs become source of truth      | todo   |
