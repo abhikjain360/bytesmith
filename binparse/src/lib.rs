@@ -105,14 +105,30 @@ pub enum ParseError {
 
 pub type ParseResult<T> = std::result::Result<T, ParseError>;
 
-/// Context passed to write hooks: `fn(V, &mut [u8], WriteHookContext<'_>) -> WriteResult<usize>`.
+/// Context passed to write hooks: `fn(V, dst: &mut [u8], WriteHookContext<'_>) -> WriteResult<usize>`.
 ///
-/// The mutable slice given to the hook spans from the field's start to the end
-/// of the destination buffer; the returned `usize` is the number of bytes
-/// written from the field's start. `written` is the destination prefix already
-/// filled (`dst[..offset]`) and `offset` the field's byte offset within the
-/// full buffer, so hooks for back-referencing formats (e.g. DNS name
-/// compression) can scan earlier bytes. The symmetric dual of [`HookContext`].
+/// The full destination buffer is split at `offset` (the field's byte offset)
+/// into two disjoint halves: the hook's `dst` argument and `written`.
+///
+/// ```text
+///  full destination buffer
+///  ┌───────────────────────────┬───────────────────────────────┐
+///  │ written (&[u8])           │ dst (&mut [u8])               │
+///  │ bytes from earlier fields │ field start ──▶ end of buffer │
+///  └───────────────────────────┴───────────────────────────────┘
+///  0                           offset                          len
+/// ```
+///
+/// | | `dst` (2nd arg) | `written` |
+/// |---|---|---|
+/// | range | `buf[offset..]` | `buf[..offset]` |
+/// | access | `&mut` — write here | `&` — read only |
+/// | holds | this field + later bytes | already-serialized earlier fields |
+///
+/// The returned `usize` is the byte count written from `dst`'s start (the field
+/// offset). Back-referencing formats (e.g. DNS name compression) scan `written`
+/// for an earlier copy and use `offset` to compute the absolute pointer, since
+/// `written` starts at buffer position 0. The symmetric dual of [`HookContext`].
 #[derive(Debug, Clone, Copy)]
 pub struct WriteHookContext<'a> {
     pub offset: usize,
@@ -156,10 +172,7 @@ impl Mul<usize> for Len {
     fn mul(self, rhs: usize) -> Self::Output {
         let bit = self.bit.saturating_mul(rhs);
         Self {
-            byte: self
-                .byte
-                .saturating_mul(rhs)
-                .saturating_add(bit / 8),
+            byte: self.byte.saturating_mul(rhs).saturating_add(bit / 8),
             bit: bit % 8,
         }
     }
@@ -231,7 +244,13 @@ mod tests {
             byte: usize::MAX / 2,
             bit: 0,
         };
-        assert_eq!(big * 4, Len { byte: usize::MAX, bit: 0 });
+        assert_eq!(
+            big * 4,
+            Len {
+                byte: usize::MAX,
+                bit: 0
+            }
+        );
         assert_eq!(max.bits(), usize::MAX);
         assert_eq!(max.byte_ceil(), usize::MAX);
     }
