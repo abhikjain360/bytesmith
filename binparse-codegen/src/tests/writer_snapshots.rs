@@ -321,6 +321,46 @@ fn writer_hook_len_without_write_hook_errors() {
 }
 
 #[test]
+fn writer_content_hook() {
+    assert_generated_writers_eq(
+        r#"struct Msg {
+            count: u8,
+            @hook(binparse.hooks.length_prefixed_bytes, &'a [u8]) @write_hook(binparse.hooks.write_length_prefixed_bytes, binparse.hooks.length_prefixed_bytes_len) body: [u8],
+        }"#,
+        "writer_content_hook",
+    );
+}
+
+#[test]
+fn writer_content_hook_without_width_skipped() {
+    let code = generate_writers(
+        r#"struct Msg {
+            count: u8,
+            @hook(binparse.hooks.length_prefixed_bytes, &'a [u8]) @write_hook(binparse.hooks.write_length_prefixed_bytes) body: [u8],
+        }"#,
+    );
+    syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
+    assert!(!code.contains("MsgWriter"));
+}
+
+#[test]
+fn writer_content_hook_without_write_hook_errors() {
+    let err = generate_writers_err(
+        r#"struct Msg {
+            count: u8,
+            @hook(binparse.hooks.length_prefixed_bytes, &'a [u8]) body: [u8],
+        }"#,
+    );
+    assert!(
+        matches!(
+            err,
+            Error::Writer(crate::writer::Error::MissingWriteHook { .. })
+        ),
+        "expected MissingWriteHook, got {err:?}"
+    );
+}
+
+#[test]
 fn writer_mid_struct_union_skipped() {
     let code = generate_writers(
         r#"@endian(big) struct Packet {

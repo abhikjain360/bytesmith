@@ -105,6 +105,20 @@ pub enum ParseError {
 
 pub type ParseResult<T> = std::result::Result<T, ParseError>;
 
+/// Context passed to write hooks: `fn(V, &mut [u8], WriteHookContext<'_>) -> WriteResult<usize>`.
+///
+/// The mutable slice given to the hook spans from the field's start to the end
+/// of the destination buffer; the returned `usize` is the number of bytes
+/// written from the field's start. `written` is the destination prefix already
+/// filled (`dst[..offset]`) and `offset` the field's byte offset within the
+/// full buffer, so hooks for back-referencing formats (e.g. DNS name
+/// compression) can scan earlier bytes. The symmetric dual of [`HookContext`].
+#[derive(Debug, Clone, Copy)]
+pub struct WriteHookContext<'a> {
+    pub offset: usize,
+    pub written: &'a [u8],
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum WriteError {

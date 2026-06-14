@@ -436,6 +436,40 @@ struct VarFrame {
 }
 
 #[test]
+fn generated_writer_content_hook_round_trips() {
+    let dsl = r#"
+struct Msg {
+    count: u8,
+    @hook(binparse.hooks.length_prefixed_bytes, &'a [u8]) @write_hook(binparse.hooks.write_length_prefixed_bytes, binparse.hooks.length_prefixed_bytes_len) body: [u8],
+}
+"#;
+    let test_body = r#"
+        let content = MsgContent { count: 0x09, body: b"payload" };
+        assert_eq!(MsgWriter::encoded_len(&content), 1 + 1 + 7);
+
+        let bytes = MsgWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x09, 0x07, b'p', b'a', b'y', b'l', b'o', b'a', b'd']);
+
+        let (msg, _) = Msg::parse(&bytes).unwrap();
+        assert_eq!(msg.count(), 0x09);
+        assert_eq!(msg.body().unwrap(), b"payload");
+
+        let empty = MsgContent { count: 0x00, body: b"" };
+        let bytes = MsgWriter::to_vec(&empty);
+        assert_eq!(bytes, vec![0x00, 0x00]);
+        let (msg, _) = Msg::parse(&bytes).unwrap();
+        assert_eq!(msg.body().unwrap(), b"");
+
+        let mut small = [0u8; 3];
+        assert!(matches!(
+            MsgWriter::write_into(&mut small, &content),
+            Err(binparse::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("content-hook", dsl, test_body);
+}
+
+#[test]
 fn generated_writer_union_connect_variant_round_trips() {
     let dsl = r#"
 @endian(big)

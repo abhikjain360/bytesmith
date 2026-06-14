@@ -1,4 +1,4 @@
-use crate::{HookContext, ParseError, ParseResult, WriteError, WriteResult};
+use crate::{HookContext, ParseError, ParseResult, WriteError, WriteHookContext, WriteResult};
 
 pub fn cstring(data: &[u8], _ctx: HookContext<'_>) -> ParseResult<(String, usize)> {
     match data.iter().position(|&b| b == 0) {
@@ -121,6 +121,55 @@ pub fn leb128_unsigned_len(value: u64) -> usize {
     n
 }
 
+pub fn length_prefixed_bytes<'a>(
+    _data: &[u8],
+    ctx: HookContext<'a>,
+) -> ParseResult<(&'a [u8], usize)> {
+    let Some(&len) = ctx.enclosing.get(ctx.offset) else {
+        return Err(ParseError::NotEnoughData {
+            expected: ctx.offset + 1,
+            got: ctx.enclosing.len(),
+        });
+    };
+    let start = ctx.offset + 1;
+    let end = start + usize::from(len);
+    if ctx.enclosing.len() < end {
+        return Err(ParseError::NotEnoughData {
+            expected: end,
+            got: ctx.enclosing.len(),
+        });
+    }
+    Ok((&ctx.enclosing[start..end], 1 + usize::from(len)))
+}
+
+pub fn write_length_prefixed_bytes(
+    value: &[u8],
+    dst: &mut [u8],
+    _ctx: WriteHookContext<'_>,
+) -> WriteResult<usize> {
+    if value.len() > usize::from(u8::MAX) {
+        return Err(WriteError::ValueTooLarge {
+            field: "length_prefixed_bytes",
+            value: value.len(),
+            max: usize::from(u8::MAX),
+        });
+    }
+    let need = 1 + value.len();
+    if dst.len() < need {
+        return Err(WriteError::NotEnoughSpace {
+            expected: need,
+            got: dst.len(),
+        });
+    }
+    dst[0] = value.len() as u8;
+    dst[1..need].copy_from_slice(value);
+    Ok(need)
+}
+
+pub fn length_prefixed_bytes_len(value: &[u8]) -> usize {
+    1 + value.len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,6 +179,13 @@ mod tests {
             field: "Test.field",
             offset: 0,
             enclosing: data,
+        }
+    }
+
+    fn wctx() -> WriteHookContext<'static> {
+        WriteHookContext {
+            offset: 0,
+            written: &[],
         }
     }
 
@@ -335,6 +391,31 @@ mod tests {
             assert_eq!(decoded, value);
             assert_eq!(consumed, written);
         }
+    }
+
+    #[test]
+    fn test_length_prefixed_bytes_round_trip() {
+        for payload in [&b""[..], &b"x"[..], &b"hello world"[..]] {
+            let mut buf = [0u8; 256];
+            let written =
+                write_length_prefixed_bytes(payload, &mut buf, wctx()).unwrap();
+            assert_eq!(written, length_prefixed_bytes_len(payload));
+            let (decoded, consumed) =
+                length_prefixed_bytes(&buf[..written], ctx(&buf[..written])).unwrap();
+            assert_eq!(decoded, payload);
+            assert_eq!(consumed, written);
+        }
+    }
+
+    #[test]
+    fn test_length_prefixed_bytes_not_enough_space() {
+        assert_eq!(
+            write_length_prefixed_bytes(b"abc", &mut [0u8; 2], wctx()),
+            Err(WriteError::NotEnoughSpace {
+                expected: 4,
+                got: 2
+            })
+        );
     }
 
     #[test]
