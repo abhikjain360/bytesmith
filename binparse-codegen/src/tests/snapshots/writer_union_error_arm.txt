@@ -55,6 +55,15 @@ impl<'a> ConnectWriter<'a> {
         }
         Ok(Self { data })
     }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
     pub fn set_keep_alive(&mut self, value: u16) -> &mut Self {
         self.data[0usize..2usize].copy_from_slice(&value.to_be_bytes());
         self

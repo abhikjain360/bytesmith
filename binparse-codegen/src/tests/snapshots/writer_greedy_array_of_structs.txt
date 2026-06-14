@@ -282,6 +282,15 @@ impl<'a> PairWriter<'a> {
         }
         Ok(Self { data })
     }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
     pub fn set_a(&mut self, value: u8) -> &mut Self {
         self.data[0usize] = value;
         self
@@ -585,6 +594,25 @@ impl<'a> RecWriter<'a> {
         1usize + lens.items * 3usize
     }
     pub fn new(data: &'a mut [u8], lens: RecLens) -> ::binparse::WriteResult<Self> {
+        let need = Self::encoded_len(&lens);
+        if data.len() < need {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: need,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data, lens })
+    }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        let lens = {
+            let (view, _) = Rec::parse(data)
+                .map_err(|_| ::binparse::WriteError::InvalidContent)?;
+            let region_bytes = view.items_end_offset().byte
+                - view.items_start_offset().byte;
+            RecLens {
+                items: region_bytes / 3usize,
+            }
+        };
         let need = Self::encoded_len(&lens);
         if data.len() < need {
             return Err(::binparse::WriteError::NotEnoughSpace {

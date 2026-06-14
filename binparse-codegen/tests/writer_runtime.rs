@@ -1769,3 +1769,115 @@ struct Sk {
     "#;
     run_round_trip("skip", dsl, test_body);
 }
+
+#[test]
+fn generated_writer_over_fixed_edits_in_place() {
+    let dsl = r#"
+@endian(big)
+struct P {
+    a: u8,
+    b: u16,
+    c: u32,
+}
+"#;
+    let test_body = r#"
+        let mut buf = PWriter::to_vec(&PContent { a: 0x11, b: 0x2233, c: 0x44556677 });
+        assert!(PWriter::writer_over(&mut [0u8; 3]).is_err());
+
+        {
+            let mut w = PWriter::writer_over(&mut buf).unwrap();
+            w.set_b(0xBEEF);
+        }
+        let (p, _) = P::parse(&buf).unwrap();
+        assert_eq!(p.a(), 0x11);
+        assert_eq!(p.b(), 0xBEEF);
+        assert_eq!(p.c(), 0x44556677);
+    "#;
+    run_round_trip("writer-over-fixed", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_over_dynamic_tail_edits_in_place() {
+    let dsl = r#"
+struct Frame {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+}
+"#;
+    let test_body = r#"
+        let mut buf = FrameWriter::to_vec(&FrameContent {
+            kind: 7,
+            payload: &[1, 2, 3, 4],
+        });
+        let original_len = buf[1];
+
+        {
+            let mut w = FrameWriter::writer_over(&mut buf).unwrap();
+            w.set_kind(9);
+            w.payload_mut().copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
+        }
+        assert_eq!(buf[1], original_len);
+        let (f, _) = Frame::parse(&buf).unwrap();
+        assert_eq!(f.kind(), 9);
+        let payload: Vec<u8> = f.payload().unwrap().map(|b| b.unwrap()).collect();
+        assert_eq!(payload, vec![0xAA, 0xBB, 0xCC, 0xDD]);
+    "#;
+    run_round_trip("writer-over-dynamic-tail", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_over_forward_trailer_edits_in_place() {
+    let dsl = r#"
+@endian(big)
+struct Frame {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+    crc: u16,
+    tail: u8,
+}
+"#;
+    let test_body = r#"
+        let mut buf = FrameWriter::to_vec(&FrameContent {
+            kind: 1,
+            payload: &[0x10, 0x20, 0x30],
+            crc: 0xABCD,
+            tail: 0xEE,
+        });
+
+        {
+            let mut w = FrameWriter::writer_over(&mut buf).unwrap();
+            w.set_kind(2);
+            w.payload_mut()[1] = 0x99;
+            w.set_crc(0x1234);
+            w.set_tail(0x77);
+        }
+        let (f, _) = Frame::parse(&buf).unwrap();
+        assert_eq!(f.kind(), 2);
+        let payload: Vec<u8> = f.payload().unwrap().map(|b| b.unwrap()).collect();
+        assert_eq!(payload, vec![0x10, 0x99, 0x30]);
+        assert_eq!(f.crc(), 0x1234);
+        assert_eq!(f.tail(), 0x77);
+    "#;
+    run_round_trip("writer-over-forward-trailer", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_over_rejects_invalid_buffer() {
+    let dsl = r#"
+struct Frame {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+}
+"#;
+    let test_body = r#"
+        let mut buf = [0u8, 3u8, 0u8];
+        assert!(matches!(
+            FrameWriter::writer_over(&mut buf),
+            Err(binparse::WriteError::InvalidContent)
+        ));
+    "#;
+    run_round_trip("writer-over-invalid", dsl, test_body);
+}

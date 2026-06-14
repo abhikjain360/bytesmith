@@ -1852,6 +1852,48 @@ fn bitfield_attrs_supported(attrs: &ParsedAttrs<'_>) -> bool {
     struct_attrs_supported(attrs)
 }
 
+fn writer_over_fixed() -> TokenStream {
+    quote! {
+        pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+            if data.len() < Self::SIZE {
+                return Err(::binparse::WriteError::NotEnoughSpace {
+                    expected: Self::SIZE,
+                    got: data.len(),
+                });
+            }
+            Ok(Self { data })
+        }
+    }
+}
+
+fn writer_over_dynamic(
+    name: &str,
+    region_field: &syn::Ident,
+    lens_init: TokenStream,
+) -> TokenStream {
+    let reader_name = format_ident!("{}", name);
+    let start_off = format_ident!("{}_start_offset", region_field);
+    let end_off = format_ident!("{}_end_offset", region_field);
+    quote! {
+        pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+            let lens = {
+                let (view, _) = #reader_name::parse(data)
+                    .map_err(|_| ::binparse::WriteError::InvalidContent)?;
+                let region_bytes = view.#end_off().byte - view.#start_off().byte;
+                #lens_init
+            };
+            let need = Self::encoded_len(&lens);
+            if data.len() < need {
+                return Err(::binparse::WriteError::NotEnoughSpace {
+                    expected: need,
+                    got: data.len(),
+                });
+            }
+            Ok(Self { data, lens })
+        }
+    }
+}
+
 fn emit_fixed(name: &str, fields: &[WriterField]) -> (TokenStream, Option<usize>) {
     let writer_name = format_ident!("{}Writer", name);
     let content_name = format_ident!("{}Content", name);
@@ -1865,6 +1907,8 @@ fn emit_fixed(name: &str, fields: &[WriterField]) -> (TokenStream, Option<usize>
         .map(fixed_field_setter);
 
     let write_calls = fields.iter().map(fixed_field_write_call);
+
+    let writer_over = writer_over_fixed();
 
     let content_fields = fields
         .iter()
@@ -1892,6 +1936,8 @@ fn emit_fixed(name: &str, fields: &[WriterField]) -> (TokenStream, Option<usize>
                 }
                 Ok(Self { data })
             }
+
+            #writer_over
 
             #(#setters)*
 
@@ -2036,6 +2082,8 @@ fn emit_fixed_padded(name: &str, fields: &[PaddedField]) -> (TokenStream, Option
         }
     });
 
+    let writer_over = writer_over_fixed();
+
     let content_fields = fields
         .iter()
         .filter(|pf| !pf.skip && !matches!(pf.field.kind, FieldKind::Constant { .. }))
@@ -2062,6 +2110,8 @@ fn emit_fixed_padded(name: &str, fields: &[PaddedField]) -> (TokenStream, Option
                 }
                 Ok(Self { data })
             }
+
+            #writer_over
 
             #(#setters)*
 
@@ -2203,6 +2253,12 @@ fn emit_dynamic_tail(name: &str, fields: &[WriterField], tail: &DynamicTail) -> 
             quote! { pub #field_name: #ty }
         });
 
+    let writer_over = writer_over_dynamic(
+        name,
+        array_field,
+        quote! { #lens_name { #array_field: region_bytes } },
+    );
+
     quote! {
         #[derive(Clone, Copy)]
         pub struct #lens_name {
@@ -2238,6 +2294,8 @@ fn emit_dynamic_tail(name: &str, fields: &[WriterField], tail: &DynamicTail) -> 
                 me.write_len();
                 Ok(me)
             }
+
+            #writer_over
 
             #write_len
 
@@ -2355,6 +2413,12 @@ fn emit_dynamic_tail_open(
             quote! { pub #field_name: #ty }
         });
 
+    let writer_over = writer_over_dynamic(
+        name,
+        array_field,
+        quote! { #lens_name { #array_field: region_bytes } },
+    );
+
     quote! {
         #[derive(Clone, Copy)]
         pub struct #lens_name {
@@ -2381,6 +2445,8 @@ fn emit_dynamic_tail_open(
                 }
                 Ok(Self { data, lens })
             }
+
+            #writer_over
 
             #(#setters)*
 
@@ -2495,6 +2561,12 @@ fn emit_greedy_struct_tail(name: &str, tail: &GreedyStructTail) -> TokenStream {
             quote! { pub #field_name: #ty }
         });
 
+    let writer_over = writer_over_dynamic(
+        name,
+        array_field,
+        quote! { #lens_name { #array_field: region_bytes / #size } },
+    );
+
     quote! {
         #[derive(Clone, Copy)]
         pub struct #lens_name {
@@ -2521,6 +2593,8 @@ fn emit_greedy_struct_tail(name: &str, tail: &GreedyStructTail) -> TokenStream {
                 }
                 Ok(Self { data, lens })
             }
+
+            #writer_over
 
             #(#setters)*
 
@@ -3686,6 +3760,16 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
         ),
     };
 
+    let writer_over_lens_init = match &layout.region_kind {
+        RegionKind::Bytes | RegionKind::StructRef { .. } => {
+            quote! { #lens_name { #region_field: region_bytes } }
+        }
+        RegionKind::ArrayOfStructs { size, .. } => {
+            quote! { #lens_name { #region_field: region_bytes / #size } }
+        }
+    };
+    let writer_over = writer_over_dynamic(name, region_field, writer_over_lens_init);
+
     quote! {
         #[derive(Clone, Copy)]
         pub struct #lens_name {
@@ -3721,6 +3805,8 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
                 me.write_len();
                 Ok(me)
             }
+
+            #writer_over
 
             #write_len
 

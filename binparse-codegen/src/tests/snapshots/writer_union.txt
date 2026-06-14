@@ -70,6 +70,15 @@ impl<'a> ConnackWriter<'a> {
         }
         Ok(Self { data })
     }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
     pub fn set_ack(&mut self, value: u8) -> &mut Self {
         self.data[0usize] = value;
         self
@@ -97,6 +106,15 @@ impl<'a> ConnackWriter<'a> {
 impl<'a> ConnectWriter<'a> {
     pub const SIZE: usize = 2usize;
     pub fn new(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
         if data.len() < Self::SIZE {
             return Err(::binparse::WriteError::NotEnoughSpace {
                 expected: Self::SIZE,

@@ -253,6 +253,15 @@ impl<'a> InnerWriter<'a> {
         }
         Ok(Self { data })
     }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
     pub fn set_a(&mut self, value: u8) -> &mut Self {
         self.data[0usize] = value;
         self
@@ -600,6 +609,15 @@ impl<'a> Outer<'a> {
 impl<'a> OuterWriter<'a> {
     pub const SIZE: usize = 5usize;
     pub fn new(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
         if data.len() < Self::SIZE {
             return Err(::binparse::WriteError::NotEnoughSpace {
                 expected: Self::SIZE,

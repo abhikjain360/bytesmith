@@ -1,25 +1,25 @@
 #[allow(non_camel_case_types)]
-pub struct Frame_payload_Iterator<'a> {
+pub struct Msg_body_Iterator<'a> {
     idx: usize,
     count: usize,
     data: &'a [u8],
 }
 
 #[derive(Clone, Copy)]
-pub struct FrameLens {
-    pub payload: usize,
+pub struct MsgLens {
+    pub body: usize,
 }
 
-impl<'a> ::binparse::Dissect<'a> for Frame<'a> {
+impl<'a> ::binparse::Dissect<'a> for Msg<'a> {
     fn field_tree(&self) -> ::binparse::FieldNode<'a> {
-        Frame::field_tree(self)
+        Msg::field_tree(self)
     }
     fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
-        Frame::handoff(self)
+        Msg::handoff(self)
     }
 }
 
-impl<'a> ::std::iter::Iterator for Frame_payload_Iterator<'a> {
+impl<'a> ::std::iter::Iterator for Msg_body_Iterator<'a> {
     type Item = ::binparse::ParseResult<u8>;
     fn next(&mut self) -> std::option::Option<Self::Item> {
         if self.idx == self.count {
@@ -32,16 +32,18 @@ impl<'a> ::std::iter::Iterator for Frame_payload_Iterator<'a> {
     }
 }
 
-impl<'a> Frame<'a> {
+impl<'a> Msg<'a> {
     pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
         let me = Self { data };
         me.kind_fatal_check()?;
         me.kind_recoverable_check()?;
         me.len_fatal_check()?;
         me.len_recoverable_check()?;
-        me.payload_fatal_check()?;
-        me.payload_recoverable_check()?;
-        let len = me.payload_end_offset();
+        me.body_fatal_check()?;
+        me.body_recoverable_check()?;
+        me.crc_fatal_check()?;
+        me.crc_recoverable_check()?;
+        let len = me.crc_end_offset();
         if len.bit != 0 {
             return Err(::binparse::ParseError::UnalignedLength(len));
         }
@@ -65,12 +67,16 @@ impl<'a> Frame<'a> {
         }
         {
             let me = self;
-            children.push(me.payload_present_node());
+            children.push(me.body_present_node());
+        }
+        {
+            let me = self;
+            children.push(me.crc_present_node());
         }
         let mut root = ::binparse::FieldNode::new(
-                "Frame",
-                "Frame",
-                0usize..self.payload_end_offset().bits(),
+                "Msg",
+                "Msg",
+                0usize..self.crc_end_offset().bits(),
                 ::binparse::Value::Struct,
             )
             .with_children(children);
@@ -158,13 +164,13 @@ impl<'a> Frame<'a> {
             }
         }
         if fatal.is_none() {
-            match me.payload_fatal_check() {
+            match me.body_fatal_check() {
                 Err(error) => {
-                    let start = me.payload_start_offset().bits();
+                    let start = me.body_start_offset().bits();
                     children
                         .push(
                             ::binparse::FieldNode::new(
-                                    "payload",
+                                    "body",
                                     "[u8]",
                                     start..start,
                                     ::binparse::Value::Opaque,
@@ -174,13 +180,13 @@ impl<'a> Frame<'a> {
                     fatal = Some(error);
                 }
                 Ok(()) => {
-                    match me.payload_recoverable_check() {
+                    match me.body_recoverable_check() {
                         Err(error) => {
-                            let bit_range = me.payload_bit_range();
+                            let bit_range = me.body_bit_range();
                             children
                                 .push(
                                     ::binparse::FieldNode::new(
-                                            "payload",
+                                            "body",
                                             "[u8]",
                                             bit_range,
                                             ::binparse::Value::Opaque,
@@ -189,7 +195,45 @@ impl<'a> Frame<'a> {
                                 );
                         }
                         Ok(()) => {
-                            children.push(me.payload_present_node());
+                            children.push(me.body_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.crc_fatal_check() {
+                Err(error) => {
+                    let start = me.crc_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "crc",
+                                    "u16",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.crc_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.crc_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "crc",
+                                            "u16",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.crc_present_node());
                         }
                     }
                 }
@@ -197,8 +241,8 @@ impl<'a> Frame<'a> {
         }
         let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
         let mut root = ::binparse::FieldNode::new(
-                "Frame",
-                "Frame",
+                "Msg",
+                "Msg",
                 0usize..root_end,
                 ::binparse::Value::Struct,
             )
@@ -301,11 +345,11 @@ impl<'a> Frame<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn payload_present_node(&self) -> ::binparse::FieldNode<'a> {
-        let bit_range = self.payload_bit_range();
+    fn body_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.body_bit_range();
         {
             let mut elem_nodes = ::std::vec::Vec::new();
-            if let Ok(iter) = self.payload() {
+            if let Ok(iter) = self.body() {
                 let mut start = bit_range.start;
                 for (i, elem) in iter.enumerate() {
                     let end = start.saturating_add(8usize);
@@ -338,7 +382,7 @@ impl<'a> Frame<'a> {
                 }
             }
             ::binparse::FieldNode::new(
-                    "payload",
+                    "body",
                     "[u8]",
                     bit_range.clone(),
                     ::binparse::Value::Array,
@@ -347,14 +391,14 @@ impl<'a> Frame<'a> {
         }
     }
     #[allow(clippy::identity_op)]
-    pub fn payload(&self) -> ::binparse::ParseResult<Frame_payload_Iterator<'a>> {
-        Ok(Frame_payload_Iterator {
+    pub fn body(&self) -> ::binparse::ParseResult<Msg_body_Iterator<'a>> {
+        Ok(Msg_body_Iterator {
             idx: 0,
             count: self.len() as usize,
             data: &self.data[2usize..],
         })
     }
-    pub fn payload_end_offset(&self) -> binparse::Len {
+    pub fn body_end_offset(&self) -> binparse::Len {
         ::binparse::Len {
             byte: 2usize,
             bit: 0usize,
@@ -366,16 +410,16 @@ impl<'a> Frame<'a> {
                 } * (self.len() as usize)
             })
     }
-    pub fn payload_start_offset(&self) -> binparse::Len {
+    pub fn body_start_offset(&self) -> binparse::Len {
         self.len_end_offset()
     }
-    pub fn payload_bit_range(&self) -> ::core::ops::Range<usize> {
-        self.payload_start_offset().bits()..self.payload_end_offset().bits()
+    pub fn body_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.body_start_offset().bits()..self.body_end_offset().bits()
     }
     #[allow(dead_code)]
-    fn payload_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn body_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
         {
-            let len = self.payload_end_offset();
+            let len = self.body_end_offset();
             let expected = len.byte_ceil();
             if self.data.len() < expected {
                 return Err(::binparse::ParseError::NotEnoughData {
@@ -387,16 +431,87 @@ impl<'a> Frame<'a> {
         Ok(())
     }
     #[allow(dead_code)]
-    fn payload_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+    fn body_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn crc_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.crc_bit_range();
+        ::binparse::FieldNode::new(
+            "crc",
+            "u16",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.crc())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn crc(&self) -> u16 {
+        {
+            let offset = ::binparse::Len {
+                byte: 2usize,
+                bit: 0usize,
+            }
+                + ({
+                    ::binparse::Len {
+                        byte: 1usize,
+                        bit: 0usize,
+                    } * (self.len() as usize)
+                });
+            debug_assert!(offset.bit == 0, "primitive requires byte alignment");
+            let start = offset.byte;
+            let end = start + 2usize;
+            u16::from_be_bytes(self.data[start..end].try_into().unwrap())
+        }
+    }
+    pub fn crc_end_offset(&self) -> binparse::Len {
+        ::binparse::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+            + ({
+                ::binparse::Len {
+                    byte: 2usize,
+                    bit: 0usize,
+                }
+                    + ({
+                        ::binparse::Len {
+                            byte: 1usize,
+                            bit: 0usize,
+                        } * (self.len() as usize)
+                    })
+            })
+    }
+    pub fn crc_start_offset(&self) -> binparse::Len {
+        self.body_end_offset()
+    }
+    pub fn crc_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.crc_start_offset().bits()..self.crc_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn crc_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.crc_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn crc_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
         Ok(())
     }
 }
 
-impl<'a> FrameWriter<'a> {
-    pub fn encoded_len(lens: &FrameLens) -> usize {
-        2usize + lens.payload
+impl<'a> MsgWriter<'a> {
+    pub fn encoded_len(lens: &MsgLens) -> usize {
+        2usize + lens.body + 2usize
     }
-    pub fn new(data: &'a mut [u8], lens: FrameLens) -> ::binparse::WriteResult<Self> {
+    pub fn new(data: &'a mut [u8], lens: MsgLens) -> ::binparse::WriteResult<Self> {
         let need = Self::encoded_len(&lens);
         if data.len() < need {
             return Err(::binparse::WriteError::NotEnoughSpace {
@@ -404,10 +519,10 @@ impl<'a> FrameWriter<'a> {
                 got: data.len(),
             });
         }
-        if lens.payload > (u8::MAX as usize) {
+        if lens.body > (u8::MAX as usize) {
             return Err(::binparse::WriteError::ValueTooLarge {
-                field: "Frame.len",
-                value: lens.payload,
+                field: "Msg.len",
+                value: lens.body,
                 max: u8::MAX as usize,
             });
         }
@@ -417,11 +532,11 @@ impl<'a> FrameWriter<'a> {
     }
     pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
         let lens = {
-            let (view, _) = Frame::parse(data)
+            let (view, _) = Msg::parse(data)
                 .map_err(|_| ::binparse::WriteError::InvalidContent)?;
-            let region_bytes = view.payload_end_offset().byte
-                - view.payload_start_offset().byte;
-            FrameLens { payload: region_bytes }
+            let region_bytes = view.body_end_offset().byte
+                - view.body_start_offset().byte;
+            MsgLens { body: region_bytes }
         };
         let need = Self::encoded_len(&lens);
         if data.len() < need {
@@ -433,51 +548,64 @@ impl<'a> FrameWriter<'a> {
         Ok(Self { data, lens })
     }
     fn write_len(&mut self) {
-        self.data[1usize] = self.lens.payload as u8;
+        self.data[1usize] = self.lens.body as u8;
     }
     pub fn set_kind(&mut self, value: u8) -> &mut Self {
         self.data[0usize] = value;
         self
     }
-    pub fn payload_mut(&mut self) -> &mut [u8] {
+    pub fn body_mut(&mut self) -> &mut [u8] {
         let off = 2usize;
-        &mut self.data[off..off + self.lens.payload]
+        &mut self.data[off..off + self.lens.body]
+    }
+    pub fn set_crc(&mut self, value: u16) -> &mut Self {
+        let base = 2usize + self.lens.body;
+        let trailer = &mut self.data[base..];
+        trailer[0usize..2usize].copy_from_slice(&value.to_be_bytes());
+        self
     }
     pub fn write_into(
         data: &'a mut [u8],
-        content: &FrameContent,
+        content: &MsgContent,
     ) -> ::binparse::WriteResult<usize> {
-        let lens = FrameLens {
-            payload: content.payload.len(),
+        let lens = MsgLens {
+            body: content.body.len(),
         };
         let need = Self::encoded_len(&lens);
         let mut w = Self::new(data, lens)?;
         w.set_kind(content.kind);
-        w.payload_mut().copy_from_slice(content.payload);
+        w.body_mut().copy_from_slice(content.body);
+        let trailer_base = 2usize + w.lens.body;
+        {
+            let value: u16 = content.crc;
+            let trailer = &mut w.data[trailer_base..];
+            trailer[0usize..2usize].copy_from_slice(&value.to_be_bytes());
+        }
         Ok(need)
     }
-    pub fn to_vec(content: &FrameContent) -> ::std::vec::Vec<u8> {
-        let lens = FrameLens {
-            payload: content.payload.len(),
+    pub fn to_vec(content: &MsgContent) -> ::std::vec::Vec<u8> {
+        let lens = MsgLens {
+            body: content.body.len(),
         };
         let mut buf = ::std::vec![0u8; Self::encoded_len(& lens)];
-        let _ = FrameWriter::write_into(&mut buf, content);
+        let _ = MsgWriter::write_into(&mut buf, content);
         buf
     }
 }
 
-pub struct Frame<'a> {
+pub struct Msg<'a> {
     #[allow(dead_code)]
     data: &'a [u8],
 }
 
-pub struct FrameContent<'a> {
+pub struct MsgContent<'a> {
     pub kind: u8,
-    pub payload: &'a [u8],
+    pub body: &'a [u8],
+    pub crc: u16,
 }
 
-pub struct FrameWriter<'a> {
+pub struct MsgWriter<'a> {
     data: &'a mut [u8],
-    lens: FrameLens,
+    lens: MsgLens,
 }
 

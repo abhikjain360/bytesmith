@@ -488,3 +488,32 @@ fn writer_struct_len_skipped() {
     syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
     assert!(!code.contains("FooWriter"));
 }
+
+#[test]
+fn writer_over_dynamic_region() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Msg { kind: u8, len: u8, body: [u8; len], crc: u16 }"#,
+        "writer_over_dynamic_region",
+    );
+}
+
+#[test]
+fn writer_over_union_not_emitted() {
+    let code = generate_writers(
+        r#"@endian(big) struct Packet {
+            kind: u8,
+            body: union(kind) {
+                1 => Connect { keep_alive: u16 },
+                2 => Connack { ack: u8 },
+                _ => Unknown { },
+            },
+        }"#,
+    );
+    syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
+    let items = normalized_items(&code);
+    let packet_impl = items
+        .iter()
+        .find(|item| item.contains("impl") && item.contains("PacketWriter"))
+        .expect("PacketWriter impl should be emitted");
+    assert!(!packet_impl.contains("writer_over"));
+}

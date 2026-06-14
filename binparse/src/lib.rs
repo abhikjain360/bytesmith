@@ -130,6 +130,8 @@ pub enum WriteError {
         value: usize,
         max: usize,
     },
+    #[error("buffer does not contain a valid packet")]
+    InvalidContent,
 }
 
 pub type WriteResult<T> = std::result::Result<T, WriteError>;

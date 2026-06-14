@@ -216,6 +216,15 @@ impl<'a> LeSamplesWriter<'a> {
         }
         Ok(Self { data })
     }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
     pub fn set_data(&mut self, value: [u32; 2usize]) -> &mut Self {
         for __i in 0..2usize {
             let __start = __i * 4usize;

@@ -1068,6 +1068,23 @@ impl<'a> VlanWriter<'a> {
         }
         Ok(Self { data, lens })
     }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        let lens = {
+            let (view, _) = Vlan::parse(data)
+                .map_err(|_| ::binparse::WriteError::InvalidContent)?;
+            let region_bytes = view.payload_end_offset().byte
+                - view.payload_start_offset().byte;
+            VlanLens { payload: region_bytes }
+        };
+        let need = Self::encoded_len(&lens);
+        if data.len() < need {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: need,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data, lens })
+    }
     pub fn dst_mut(&mut self) -> &mut [u8] {
         &mut self.data[0usize..6usize]
     }

@@ -420,6 +420,15 @@ impl<'a> IpWriter<'a> {
         }
         Ok(Self { data })
     }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
     pub fn set_version(&mut self, value: u8) -> &mut Self {
         self.data[0usize] = (self.data[0usize] & 15u8) | ((value & 15u8) << 4usize);
         self

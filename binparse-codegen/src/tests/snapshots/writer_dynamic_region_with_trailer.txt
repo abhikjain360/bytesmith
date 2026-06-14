@@ -655,6 +655,23 @@ impl<'a> FrameWriter<'a> {
         me.write_len();
         Ok(me)
     }
+    pub fn writer_over(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        let lens = {
+            let (view, _) = Frame::parse(data)
+                .map_err(|_| ::binparse::WriteError::InvalidContent)?;
+            let region_bytes = view.payload_end_offset().byte
+                - view.payload_start_offset().byte;
+            FrameLens { payload: region_bytes }
+        };
+        let need = Self::encoded_len(&lens);
+        if data.len() < need {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: need,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data, lens })
+    }
     fn write_len(&mut self) {
         self.data[1usize] = self.lens.payload as u8;
     }
