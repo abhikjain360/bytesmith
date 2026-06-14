@@ -227,6 +227,15 @@ struct WLenTail {
     payload: [u8; len],
 }
 
+@endian(big)
+struct WLenMid {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+    crc: u16,
+    tail: u8,
+}
+
 struct WVarint {
     tag: u8,
     @hook(read_leb128, u64) @write_hook(binparse.hooks.write_leb128_unsigned, binparse.hooks.leb128_unsigned_len) len: [u8],

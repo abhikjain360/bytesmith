@@ -148,6 +148,34 @@ fuzz_target!(|data: &[u8]| {
     }
 
     {
+        let payload = c.slice(u8::MAX as usize);
+        let crc = c.u16();
+        let tail = c.byte();
+        let content = WLenMidContent {
+            kind: c.byte(),
+            payload,
+            crc,
+            tail,
+        };
+        let lens = WLenMidLens {
+            payload: payload.len(),
+        };
+        let bytes = WLenMidWriter::to_vec(&content);
+        let mut buf = vec![0u8; WLenMidWriter::encoded_len(&lens)];
+        WLenMidWriter::write_into(&mut buf, &content).unwrap();
+        assert_eq!(bytes, buf);
+        let (p, _) = WLenMid::parse(&bytes).unwrap();
+        assert_eq!(p.kind(), content.kind);
+        assert_eq!(usize::from(p.len()), payload.len());
+        assert_eq!(
+            p.payload().unwrap().collect::<binparse::ParseResult<Vec<u8>>>().unwrap(),
+            payload.to_vec()
+        );
+        assert_eq!(p.crc(), crc);
+        assert_eq!(p.tail(), tail);
+    }
+
+    {
         let body = c.slice(64);
         let content = WVarintContent {
             tag: c.byte(),

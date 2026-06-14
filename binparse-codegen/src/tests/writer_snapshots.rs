@@ -65,6 +65,14 @@ fn writer_dynamic_tail() {
 }
 
 #[test]
+fn writer_dynamic_region_with_trailer() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Frame { kind: u8, len: u8, payload: [u8; len], crc: u16, tail: u8 }"#,
+        "writer_dynamic_region_with_trailer",
+    );
+}
+
+#[test]
 fn writer_varint_hook_tail() {
     assert_generated_writers_eq(
         r#"struct VarFrame {

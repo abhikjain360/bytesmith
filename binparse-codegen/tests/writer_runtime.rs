@@ -656,3 +656,124 @@ struct Msg {
     "#;
     run_round_trip("dynamic-tail-u16-be", dsl, test_body);
 }
+
+#[test]
+fn generated_writer_dynamic_region_with_fixed_trailer_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Frame {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+    crc: u16,
+    tail: u8,
+}
+"#;
+    let test_body = r#"
+        let content = FrameContent { kind: 0x09, payload: b"hello", crc: 0xBEEF, tail: 0x7F };
+        assert_eq!(FrameWriter::encoded_len(&FrameLens { payload: 5 }), 10);
+        let bytes = FrameWriter::to_vec(&content);
+        assert_eq!(
+            bytes,
+            vec![0x09, 0x05, b'h', b'e', b'l', b'l', b'o', 0xBE, 0xEF, 0x7F]
+        );
+
+        let (frame, rem) = Frame::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(frame.kind(), 0x09);
+        assert_eq!(frame.len(), 5);
+        assert_eq!(
+            frame.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"hello".to_vec()
+        );
+        assert_eq!(frame.crc(), 0xBEEF);
+        assert_eq!(frame.tail(), 0x7F);
+
+        let lens = FrameLens { payload: 5 };
+        let mut buf = vec![0u8; FrameWriter::encoded_len(&lens)];
+        let mut w = FrameWriter::new(&mut buf, lens).unwrap();
+        w.set_kind(0x09);
+        w.payload_mut().copy_from_slice(b"world");
+        w.set_crc(0xBEEF);
+        w.set_tail(0x7F);
+        let (frame, _) = Frame::parse(&buf).unwrap();
+        assert_eq!(frame.kind(), 0x09);
+        assert_eq!(frame.len(), 5);
+        assert_eq!(
+            frame.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"world".to_vec()
+        );
+        assert_eq!(frame.crc(), 0xBEEF);
+        assert_eq!(frame.tail(), 0x7F);
+
+        let empty = FrameContent { kind: 1, payload: b"", crc: 0x0102, tail: 0x03 };
+        let bytes = FrameWriter::to_vec(&empty);
+        assert_eq!(bytes, vec![0x01, 0x00, 0x01, 0x02, 0x03]);
+        let (frame, _) = Frame::parse(&bytes).unwrap();
+        assert_eq!(frame.len(), 0);
+        assert_eq!(frame.crc(), 0x0102);
+        assert_eq!(frame.tail(), 0x03);
+
+        assert!(matches!(
+            FrameWriter::new(&mut [0u8; 3], FrameLens { payload: 5 }),
+            Err(binparse::WriteError::NotEnoughSpace { .. })
+        ));
+        assert!(matches!(
+            FrameWriter::new(&mut [0u8; 600], FrameLens { payload: 300 }),
+            Err(binparse::WriteError::ValueTooLarge { .. })
+        ));
+    "#;
+    run_round_trip("dynamic-region-fixed-trailer", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_dynamic_region_u16_with_array_trailer_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Msg {
+    ver: u8,
+    rlen: u16,
+    region: [u8; rlen],
+    footer: [u8; 4],
+    checksum: u16,
+}
+"#;
+    let test_body = r#"
+        let region = vec![0xAAu8; 300];
+        let content = MsgContent {
+            ver: 0x01,
+            region: &region,
+            footer: [0xDE, 0xAD, 0xBE, 0xEF],
+            checksum: 0x1234,
+        };
+        let lens = MsgLens { region: 300 };
+        assert_eq!(MsgWriter::encoded_len(&lens), 3 + 300 + 6);
+
+        let bytes = MsgWriter::to_vec(&content);
+        assert_eq!(bytes.len(), 309);
+        assert_eq!(&bytes[1..3], &[0x01, 0x2c]);
+        assert_eq!(&bytes[303..307], &[0xDE, 0xAD, 0xBE, 0xEF]);
+        assert_eq!(&bytes[307..309], &[0x12, 0x34]);
+
+        let (msg, rem) = Msg::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(msg.ver(), 1);
+        assert_eq!(msg.rlen(), 300);
+        assert_eq!(
+            msg.region().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            region
+        );
+        assert_eq!(
+            msg.footer().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![0xDE, 0xAD, 0xBE, 0xEF]
+        );
+        assert_eq!(msg.checksum(), 0x1234);
+
+        let mut big = vec![0u8; 80000];
+        assert!(matches!(
+            MsgWriter::new(&mut big, MsgLens { region: 70000 }),
+            Err(binparse::WriteError::ValueTooLarge { .. })
+        ));
+    "#;
+    run_round_trip("dynamic-region-array-trailer", dsl, test_body);
+}
