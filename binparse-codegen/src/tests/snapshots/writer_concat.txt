@@ -1,0 +1,421 @@
+impl<'a> ::binparse::Dissect<'a> for WithConcat<'a> {
+    fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        WithConcat::field_tree(self)
+    }
+    fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        WithConcat::handoff(self)
+    }
+}
+
+impl<'a> WithConcat<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError> {
+        let me = Self { data };
+        me.tag_fatal_check()?;
+        me.tag_recoverable_check()?;
+        me.combo_fatal_check()?;
+        me.combo_recoverable_check()?;
+        me.trailer_fatal_check()?;
+        me.trailer_recoverable_check()?;
+        let len = me.trailer_end_offset();
+        if len.bit != 0 {
+            return Err(::binparse::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::binparse::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&self) -> ::binparse::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = self;
+            children.push(me.tag_present_node());
+        }
+        {
+            let me = self;
+            children.push(me.combo_present_node());
+        }
+        {
+            let me = self;
+            children.push(me.trailer_present_node());
+        }
+        let mut root = ::binparse::FieldNode::new(
+                "WithConcat",
+                "WithConcat",
+                0usize..self.trailer_end_offset().bits(),
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::binparse::FieldNode<'a> {
+        let me = Self { data };
+        let mut children: ::std::vec::Vec<::binparse::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::binparse::ParseError> = None;
+        if fatal.is_none() {
+            match me.tag_fatal_check() {
+                Err(error) => {
+                    let start = me.tag_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "tag",
+                                    "u8",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.tag_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.tag_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "tag",
+                                            "u8",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.tag_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.combo_fatal_check() {
+                Err(error) => {
+                    let start = me.combo_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "combo",
+                                    "concat",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.combo_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.combo_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "combo",
+                                            "concat",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.combo_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.trailer_fatal_check() {
+                Err(error) => {
+                    let start = me.trailer_start_offset().bits();
+                    children
+                        .push(
+                            ::binparse::FieldNode::new(
+                                    "trailer",
+                                    "u8",
+                                    start..start,
+                                    ::binparse::Value::Opaque,
+                                )
+                                .with_status(::binparse::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.trailer_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.trailer_bit_range();
+                            children
+                                .push(
+                                    ::binparse::FieldNode::new(
+                                            "trailer",
+                                            "u8",
+                                            bit_range,
+                                            ::binparse::Value::Opaque,
+                                        )
+                                        .with_status(::binparse::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.trailer_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::binparse::FieldNode::new(
+                "WithConcat",
+                "WithConcat",
+                0usize..root_end,
+                ::binparse::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::binparse::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&self) -> Option<::binparse::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn tag_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.tag_bit_range();
+        ::binparse::FieldNode::new(
+            "tag",
+            "u8",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.tag())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn tag(&self) -> u8 {
+        self.data[0usize]
+    }
+    pub fn tag_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+    }
+    pub fn tag_start_offset(&self) -> binparse::Len {
+        binparse::Len::ZERO
+    }
+    pub fn tag_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.tag_start_offset().bits()..self.tag_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn tag_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.tag_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn tag_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn combo_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.combo_bit_range();
+        {
+            let mut item_nodes = ::std::vec::Vec::new();
+            {
+                let bit_range = 8usize..16usize;
+                item_nodes
+                    .push(
+                        ::binparse::FieldNode::new(
+                            "combo_0",
+                            "u8",
+                            bit_range.clone(),
+                            ::binparse::Value::UInt(u128::from(self.combo_0())),
+                        ),
+                    );
+            }
+            {
+                let bit_range = 16usize..32usize;
+                item_nodes
+                    .push(
+                        ::binparse::FieldNode::new(
+                            "combo_1",
+                            "u16",
+                            bit_range.clone(),
+                            ::binparse::Value::UInt(u128::from(self.combo_1())),
+                        ),
+                    );
+            }
+            ::binparse::FieldNode::new(
+                    "combo",
+                    "concat",
+                    bit_range.clone(),
+                    ::binparse::Value::Struct,
+                )
+                .with_children(item_nodes)
+        }
+    }
+    #[allow(clippy::identity_op)]
+    pub fn combo_0(&self) -> u8 {
+        self.data[1usize]
+    }
+    #[allow(clippy::identity_op)]
+    pub fn combo_1(&self) -> u16 {
+        u16::from_be_bytes(self.data[2usize..4usize].try_into().unwrap())
+    }
+    #[allow(clippy::identity_op)]
+    pub fn combo(&self) -> (u8, u16) {
+        (self.combo_0(), self.combo_1())
+    }
+    pub fn combo_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 4usize,
+            bit: 0usize,
+        }
+    }
+    pub fn combo_start_offset(&self) -> binparse::Len {
+        self.tag_end_offset()
+    }
+    pub fn combo_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.combo_start_offset().bits()..self.combo_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn combo_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.combo_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn combo_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn trailer_present_node(&self) -> ::binparse::FieldNode<'a> {
+        let bit_range = self.trailer_bit_range();
+        ::binparse::FieldNode::new(
+            "trailer",
+            "u8",
+            bit_range.clone(),
+            ::binparse::Value::UInt(u128::from(self.trailer())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn trailer(&self) -> u8 {
+        self.data[4usize]
+    }
+    pub fn trailer_end_offset(&self) -> binparse::Len {
+        binparse::Len {
+            byte: 5usize,
+            bit: 0usize,
+        }
+    }
+    pub fn trailer_start_offset(&self) -> binparse::Len {
+        self.combo_end_offset()
+    }
+    pub fn trailer_bit_range(&self) -> ::core::ops::Range<usize> {
+        self.trailer_start_offset().bits()..self.trailer_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn trailer_fatal_check(&self) -> Result<(), ::binparse::ParseError> {
+        {
+            let len = self.trailer_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::binparse::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn trailer_recoverable_check(&self) -> Result<(), ::binparse::ParseError> {
+        Ok(())
+    }
+}
+
+impl<'a> WithConcatWriter<'a> {
+    pub const SIZE: usize = 5usize;
+    pub fn new(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::binparse::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn set_tag(&mut self, value: u8) -> &mut Self {
+        self.data[0usize] = value;
+        self
+    }
+    pub fn set_combo(&mut self, value: (u8, u16)) -> &mut Self {
+        {
+            let value = value.0;
+            self.data[1usize] = value;
+        }
+        {
+            let value = value.1;
+            self.data[2usize..4usize].copy_from_slice(&value.to_be_bytes());
+        }
+        self
+    }
+    pub fn set_trailer(&mut self, value: u8) -> &mut Self {
+        self.data[4usize] = value;
+        self
+    }
+    pub fn write_into(
+        data: &'a mut [u8],
+        content: &WithConcatContent,
+    ) -> ::binparse::WriteResult<usize> {
+        let mut w = Self::new(data)?;
+        w.set_tag(content.tag);
+        w.set_combo(content.combo);
+        w.set_trailer(content.trailer);
+        Ok(Self::SIZE)
+    }
+    pub fn to_vec(content: &WithConcatContent) -> ::std::vec::Vec<u8> {
+        let mut buf = ::std::vec![0u8; Self::SIZE];
+        let _ = WithConcatWriter::write_into(&mut buf, content);
+        buf
+    }
+}
+
+pub struct WithConcat<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
+pub struct WithConcatContent {
+    pub tag: u8,
+    pub combo: (u8, u16),
+    pub trailer: u8,
+}
+
+pub struct WithConcatWriter<'a> {
+    data: &'a mut [u8],
+}
+

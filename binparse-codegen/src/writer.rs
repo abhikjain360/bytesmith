@@ -33,6 +33,15 @@ enum FieldKind {
         name: syn::Ident,
         size: usize,
     },
+    MultiByteArray {
+        primitive: ast::Primitive,
+        endian: Endian,
+        count: usize,
+    },
+    Concat {
+        items: Vec<WriterField>,
+        bytes: usize,
+    },
     Constant {
         value: usize,
         primitive: Option<ast::Primitive>,
@@ -152,6 +161,7 @@ struct ForwardLayout {
 
 enum Layout {
     Fixed { fields: Vec<WriterField> },
+    FixedPadded { fields: Vec<PaddedField> },
     DynamicTail { fields: Vec<WriterField>, tail: DynamicTail },
     DynamicTailHook { fields: Vec<WriterField>, tail: DynamicTailHook },
     DynamicTailOpen { fields: Vec<WriterField>, tail: DynamicTailOpen },
@@ -168,6 +178,7 @@ pub(crate) fn generate(
 ) -> Result<(TokenStream, Option<usize>), Error> {
     Ok(match classify(ast, writer_sizes)? {
         Some(Layout::Fixed { fields }) => emit_fixed(ast.name, &fields),
+        Some(Layout::FixedPadded { fields }) => emit_fixed_padded(ast.name, &fields),
         Some(Layout::DynamicTail { fields, tail }) => {
             (emit_dynamic_tail(ast.name, &fields, &tail), None)
         }
@@ -221,6 +232,10 @@ fn classify(
         return Ok(Some(Layout::LenUnion(layout)));
     }
 
+    if let Some(fields) = classify_padded_fixed(ast, struct_inherited, writer_sizes) {
+        return Ok(Some(Layout::FixedPadded { fields }));
+    }
+
     let mut fields = Vec::with_capacity(ast.items.len());
     let mut bit_offset = 0usize;
     let mut pending_hook_len: Option<PendingHookLen> = None;
@@ -268,9 +283,54 @@ fn classify(
                 let bit_order = field_attrs.merge_inherited(struct_inherited).bit_order;
                 FieldKind::BitField { width, bit_order }
             }
+            ast::FieldValue::Type(ast::Type::Concat(items)) => {
+                if !field_attrs_supported(&field_attrs) {
+                    return Ok(None);
+                }
+                if !bit_offset.is_multiple_of(8) {
+                    return Ok(None);
+                }
+                let Some((concat_items, concat_bits)) =
+                    classify_concat_items(items, struct_inherited)
+                else {
+                    return Ok(None);
+                };
+                fields.push(WriterField {
+                    name: format_ident!("{}", field.name),
+                    kind: FieldKind::Concat {
+                        items: concat_items,
+                        bytes: concat_bits / 8,
+                    },
+                    bit_offset,
+                });
+                bit_offset += concat_bits;
+                continue;
+            }
             ast::FieldValue::Type(ast::Type::Array(array)) => {
                 if !bit_offset.is_multiple_of(8) {
                     return Ok(None);
+                }
+                if let ast::ArrayElemType::Primitive(prim) = array.elem_ty
+                    && !matches!(prim, ast::Primitive::U8)
+                    && field_attrs_supported(&field_attrs)
+                    && let Some(size) = array.size.as_ref()
+                    && let Some(count) = expr::lower(size, ExprType::Numeric, &[])
+                        .ok()
+                        .and_then(|lowered| lowered.const_value)
+                {
+                    let endian = field_attrs.merge_inherited(struct_inherited).endian;
+                    let (len, _) = crate::match_primitive(&prim);
+                    fields.push(WriterField {
+                        name: format_ident!("{}", field.name),
+                        kind: FieldKind::MultiByteArray {
+                            primitive: prim,
+                            endian,
+                            count,
+                        },
+                        bit_offset,
+                    });
+                    bit_offset += count * len.byte * 8;
+                    continue;
                 }
                 if !matches!(
                     array.elem_ty,
@@ -299,6 +359,9 @@ fn classify(
                     if index != last_index {
                         return Ok(None);
                     }
+                    if !fields_all_simple(&fields) {
+                        return Ok(None);
+                    }
                     let tail = DynamicTailOpen {
                         array_field: format_ident!("{}", field.name),
                         prefix_size: bit_offset / 8,
@@ -324,6 +387,9 @@ fn classify(
                     continue;
                 }
                 if index != last_index {
+                    return Ok(None);
+                }
+                if !fields_all_simple(&fields) {
                     return Ok(None);
                 }
                 if let Some(pending) = &pending_hook_len
@@ -370,6 +436,9 @@ fn classify(
                 if !bit_offset.is_multiple_of(8) {
                     return Ok(None);
                 }
+                if !fields_all_simple(&fields) {
+                    return Ok(None);
+                }
                 return classify_union(
                     union,
                     field.name,
@@ -403,6 +472,8 @@ fn classify(
             FieldKind::Primitive { .. }
             | FieldKind::ByteArray { .. }
             | FieldKind::StructRef { .. }
+            | FieldKind::MultiByteArray { .. }
+            | FieldKind::Concat { .. }
             | FieldKind::Constant { .. } => unreachable!(),
         };
         fields.push(WriterField {
@@ -723,6 +794,8 @@ fn lower_condition(expr: &ast::Expr<'_>, prefix_fields: &[WriterField]) -> Optio
                 }
                 FieldKind::ByteArray { .. }
                 | FieldKind::StructRef { .. }
+                | FieldKind::MultiByteArray { .. }
+                | FieldKind::Concat { .. }
                 | FieldKind::Constant { .. } => None,
             }
         }
@@ -885,6 +958,187 @@ fn classify_fixed_field(
     }
 }
 
+struct PaddedField {
+    field: WriterField,
+    skip: bool,
+}
+
+fn classify_field_type(
+    field: &ast::Field<'_>,
+    field_attrs: &ParsedAttrs<'_>,
+    bit_offset: usize,
+    struct_inherited: Inherited,
+    writer_sizes: &HashMap<&str, usize>,
+) -> Option<(FieldKind, usize)> {
+    match &field.value {
+        ast::FieldValue::Type(ast::Type::Primitive(primitive)) => {
+            if !bit_offset.is_multiple_of(8) {
+                return None;
+            }
+            let endian = field_attrs.merge_inherited(struct_inherited).endian;
+            let (len, _) = crate::match_primitive(primitive);
+            Some((
+                FieldKind::Primitive {
+                    primitive: *primitive,
+                    endian,
+                },
+                len.byte * 8,
+            ))
+        }
+        ast::FieldValue::Type(ast::Type::BitField(width)) => {
+            let width = *width as usize;
+            if !(1..=7).contains(&width) {
+                return None;
+            }
+            let bit_order = field_attrs.merge_inherited(struct_inherited).bit_order;
+            Some((FieldKind::BitField { width, bit_order }, width))
+        }
+        ast::FieldValue::Type(ast::Type::Array(array)) => {
+            if !bit_offset.is_multiple_of(8) {
+                return None;
+            }
+            let size = array.size.as_ref()?;
+            let count = expr::lower(size, ExprType::Numeric, &[])
+                .ok()
+                .and_then(|lowered| lowered.const_value)?;
+            match array.elem_ty {
+                ast::ArrayElemType::Primitive(ast::Primitive::U8) => {
+                    Some((FieldKind::ByteArray { len: count }, count * 8))
+                }
+                ast::ArrayElemType::Primitive(prim) => {
+                    let endian = field_attrs.merge_inherited(struct_inherited).endian;
+                    let (len, _) = crate::match_primitive(&prim);
+                    Some((
+                        FieldKind::MultiByteArray {
+                            primitive: prim,
+                            endian,
+                            count,
+                        },
+                        count * len.byte * 8,
+                    ))
+                }
+                ast::ArrayElemType::BitField(_) | ast::ArrayElemType::StructRef(_) => None,
+            }
+        }
+        ast::FieldValue::Type(ast::Type::StructRef(child_name)) => {
+            if !bit_offset.is_multiple_of(8) {
+                return None;
+            }
+            let size = writer_sizes.get(child_name).copied()?;
+            Some((
+                FieldKind::StructRef {
+                    name: format_ident!("{}Writer", child_name),
+                    size,
+                },
+                size * 8,
+            ))
+        }
+        ast::FieldValue::Type(ast::Type::Concat(items)) => {
+            if !bit_offset.is_multiple_of(8) {
+                return None;
+            }
+            let (concat_items, concat_bits) = classify_concat_items(items, struct_inherited)?;
+            Some((
+                FieldKind::Concat {
+                    items: concat_items,
+                    bytes: concat_bits / 8,
+                },
+                concat_bits,
+            ))
+        }
+        ast::FieldValue::Constraint(ast::Expr::Literal(ast::Literal::Int(lit))) => {
+            constant_field_kind(lit, bit_offset, field_attrs.merge_inherited(struct_inherited))
+        }
+        _ => None,
+    }
+}
+
+fn padded_attrs_supported(attrs: &ParsedAttrs<'_>) -> bool {
+    let ParsedAttrs {
+        endian: _,
+        bit_order: _,
+        hook,
+        check: _,
+        range: _,
+        until,
+        greedy,
+        max_iter,
+        skip: _,
+        pad: _,
+        pad_to: _,
+        align: _,
+        len,
+        discriminator: _,
+        payload: _,
+        cache_len: _,
+        cache_value: _,
+    } = attrs;
+    hook.is_none() && until.is_none() && !greedy && max_iter.is_none() && len.is_none()
+}
+
+fn classify_padded_fixed(
+    ast: &ast::Struct,
+    struct_inherited: Inherited,
+    writer_sizes: &HashMap<&str, usize>,
+) -> Option<Vec<PaddedField>> {
+    let mut fields = Vec::with_capacity(ast.items.len());
+    let mut bit_offset = 0usize;
+    let mut uses_layout = false;
+
+    for item in &ast.items {
+        let ast::StructItem::Field(field) = item else {
+            return None;
+        };
+        let field_attrs = ParsedAttrs::parse(&field.attributes).ok()?;
+        if !padded_attrs_supported(&field_attrs) {
+            return None;
+        }
+
+        if let Some(pad) = field_attrs.pad {
+            uses_layout = true;
+            bit_offset += pad * 8;
+        }
+        if let Some(pad_to) = field_attrs.pad_to {
+            uses_layout = true;
+            let len = binparse::Len {
+                byte: bit_offset / 8,
+                bit: bit_offset % 8,
+            }
+            .pad_to(pad_to);
+            bit_offset = len.bits();
+        }
+        if let Some(align) = field_attrs.align {
+            uses_layout = true;
+            if !bit_offset.is_multiple_of(8) || !(bit_offset / 8).is_multiple_of(align) {
+                return None;
+            }
+        }
+        if field_attrs.skip {
+            uses_layout = true;
+        }
+
+        let (kind, width) =
+            classify_field_type(field, &field_attrs, bit_offset, struct_inherited, writer_sizes)?;
+        fields.push(PaddedField {
+            field: WriterField {
+                name: format_ident!("{}", field.name),
+                kind,
+                bit_offset,
+            },
+            skip: field_attrs.skip,
+        });
+        bit_offset += width;
+    }
+
+    if !uses_layout {
+        return None;
+    }
+    if !bit_offset.is_multiple_of(8) {
+        return None;
+    }
+    Some(fields)
+}
+
 fn classify_fixed_items(
     items: &[ast::StructItem<'_>],
     struct_inherited: Inherited,
@@ -907,6 +1161,108 @@ fn classify_fixed_items(
     Some(fields)
 }
 
+fn fields_all_simple(fields: &[WriterField]) -> bool {
+    fields
+        .iter()
+        .all(|f| !matches!(f.kind, FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. }))
+}
+
+fn classify_concat_items(
+    items: &[ast::ConcatItem<'_>],
+    struct_inherited: Inherited,
+) -> Option<(Vec<WriterField>, usize)> {
+    let mut fields = Vec::with_capacity(items.len());
+    let mut bit_offset = 0usize;
+    for (i, item) in items.iter().enumerate() {
+        let item_attrs = ParsedAttrs::parse(&item.attributes).ok()?;
+        let item_inherited = item_attrs.merge_inherited(struct_inherited);
+        let name = format_ident!("item{}", i);
+        match &item.ty {
+            ast::Type::Primitive(primitive) => {
+                if !field_attrs_supported(&item_attrs) {
+                    return None;
+                }
+                if !bit_offset.is_multiple_of(8) {
+                    return None;
+                }
+                let (len, _) = crate::match_primitive(primitive);
+                fields.push(WriterField {
+                    name,
+                    kind: FieldKind::Primitive {
+                        primitive: *primitive,
+                        endian: item_inherited.endian,
+                    },
+                    bit_offset,
+                });
+                bit_offset += len.byte * 8;
+            }
+            ast::Type::BitField(width) => {
+                let width = *width as usize;
+                if !(1..=7).contains(&width) {
+                    return None;
+                }
+                if !bitfield_attrs_supported(&item_attrs) {
+                    return None;
+                }
+                fields.push(WriterField {
+                    name,
+                    kind: FieldKind::BitField {
+                        width,
+                        bit_order: item_inherited.bit_order,
+                    },
+                    bit_offset,
+                });
+                bit_offset += width;
+            }
+            ast::Type::Array(array) => {
+                if !field_attrs_supported(&item_attrs) {
+                    return None;
+                }
+                if !bit_offset.is_multiple_of(8) {
+                    return None;
+                }
+                let size = array.size.as_ref()?;
+                let count = expr::lower(size, ExprType::Numeric, &[])
+                    .ok()
+                    .and_then(|lowered| lowered.const_value)?;
+                match array.elem_ty {
+                    ast::ArrayElemType::Primitive(ast::Primitive::U8) => {
+                        fields.push(WriterField {
+                            name,
+                            kind: FieldKind::ByteArray { len: count },
+                            bit_offset,
+                        });
+                        bit_offset += count * 8;
+                    }
+                    ast::ArrayElemType::Primitive(prim) => {
+                        let (len, _) = crate::match_primitive(&prim);
+                        fields.push(WriterField {
+                            name,
+                            kind: FieldKind::MultiByteArray {
+                                primitive: prim,
+                                endian: item_inherited.endian,
+                                count,
+                            },
+                            bit_offset,
+                        });
+                        bit_offset += count * len.byte * 8;
+                    }
+                    ast::ArrayElemType::BitField(_) | ast::ArrayElemType::StructRef(_) => {
+                        return None;
+                    }
+                }
+            }
+            ast::Type::StructRef(_)
+            | ast::Type::Concat(_)
+            | ast::Type::Union(_) => return None,
+        }
+    }
+    if !bit_offset.is_multiple_of(8) {
+        return None;
+    }
+    Some((fields, bit_offset))
+}
+
 fn union_disc_field(prefix_fields: &[WriterField], disc_name: &str) -> Option<WriterField> {
     let disc = prefix_fields.iter().find(|f| f.name == disc_name)?;
     match &disc.kind {
@@ -926,9 +1282,11 @@ fn union_disc_field(prefix_fields: &[WriterField], disc_name: &str) -> Option<Wr
             },
             bit_offset: disc.bit_offset,
         }),
-        FieldKind::ByteArray { .. } | FieldKind::StructRef { .. } | FieldKind::Constant { .. } => {
-            None
-        }
+        FieldKind::ByteArray { .. }
+        | FieldKind::StructRef { .. }
+        | FieldKind::MultiByteArray { .. }
+        | FieldKind::Concat { .. }
+        | FieldKind::Constant { .. } => None,
     }
 }
 
@@ -1449,60 +1807,9 @@ fn emit_fixed(name: &str, fields: &[WriterField]) -> (TokenStream, Option<usize>
     let setters = fields
         .iter()
         .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
-        .map(|field| match &field.kind {
-            FieldKind::ByteArray { len } => {
-                let accessor_name = format_ident!("{}_mut", field.name);
-                let offset = field.bit_offset / 8;
-                let end = offset + len;
-                quote! {
-                    pub fn #accessor_name(&mut self) -> &mut [u8] {
-                        &mut self.data[#offset..#end]
-                    }
-                }
-            }
-            FieldKind::StructRef { name: child_writer, size } => {
-                let accessor_name = format_ident!("{}_mut", field.name);
-                let offset = field.bit_offset / 8;
-                let end = offset + size;
-                quote! {
-                    pub fn #accessor_name(&mut self) -> #child_writer<'_> {
-                        #child_writer { data: &mut self.data[#offset..#end] }
-                    }
-                }
-            }
-            FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
-                let setter_name = format_ident!("set_{}", field.name);
-                let ty = field_type(field);
-                let body = setter_body(field);
-                quote! {
-                    pub fn #setter_name(&mut self, value: #ty) -> &mut Self {
-                        #body
-                        self
-                    }
-                }
-            }
-            FieldKind::Constant { .. } => unreachable!(),
-        });
+        .map(fixed_field_setter);
 
-    let write_calls = fields.iter().map(|field| {
-        let field_name = &field.name;
-        match &field.kind {
-            FieldKind::ByteArray { .. } => {
-                let accessor_name = format_ident!("{}_mut", field.name);
-                quote! { w.#accessor_name().copy_from_slice(&content.#field_name); }
-            }
-            FieldKind::StructRef { name: child_writer, size } => {
-                let offset = field.bit_offset / 8;
-                let end = offset + size;
-                quote! { #child_writer::write_into(&mut w.data[#offset..#end], &content.#field_name)?; }
-            }
-            FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
-                let setter_name = format_ident!("set_{}", field.name);
-                quote! { w.#setter_name(content.#field_name); }
-            }
-            FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
-        }
-    });
+    let write_calls = fields.iter().map(fixed_field_write_call);
 
     let content_fields = fields
         .iter()
@@ -1535,6 +1842,177 @@ fn emit_fixed(name: &str, fields: &[WriterField]) -> (TokenStream, Option<usize>
 
             pub fn write_into(data: &'a mut [u8], content: &#content_name) -> ::binparse::WriteResult<usize> {
                 let mut w = Self::new(data)?;
+                #(#write_calls)*
+                Ok(Self::SIZE)
+            }
+
+            pub fn to_vec(content: &#content_name) -> ::std::vec::Vec<u8> {
+                let mut buf = ::std::vec![0u8; Self::SIZE];
+                let _ = #writer_name::write_into(&mut buf, content);
+                buf
+            }
+        }
+
+        pub struct #content_name {
+            #(#content_fields),*
+        }
+    };
+    (tokens, Some(size))
+}
+
+fn fixed_field_setter(field: &WriterField) -> TokenStream {
+    match &field.kind {
+        FieldKind::ByteArray { len } => {
+            let accessor_name = format_ident!("{}_mut", field.name);
+            let offset = field.bit_offset / 8;
+            let end = offset + len;
+            quote! {
+                pub fn #accessor_name(&mut self) -> &mut [u8] {
+                    &mut self.data[#offset..#end]
+                }
+            }
+        }
+        FieldKind::StructRef { name: child_writer, size } => {
+            let accessor_name = format_ident!("{}_mut", field.name);
+            let offset = field.bit_offset / 8;
+            let end = offset + size;
+            quote! {
+                pub fn #accessor_name(&mut self) -> #child_writer<'_> {
+                    #child_writer { data: &mut self.data[#offset..#end] }
+                }
+            }
+        }
+        FieldKind::MultiByteArray {
+            primitive,
+            endian,
+            count,
+        } => {
+            let setter_name = format_ident!("set_{}", field.name);
+            let ty = field_type(field);
+            let body = multibyte_setter_body(
+                primitive,
+                *endian,
+                *count,
+                field.bit_offset / 8,
+                &quote! { value },
+                &quote! { self.data },
+            );
+            quote! {
+                pub fn #setter_name(&mut self, value: #ty) -> &mut Self {
+                    #body
+                    self
+                }
+            }
+        }
+        FieldKind::Concat { items, .. } => {
+            let setter_name = format_ident!("set_{}", field.name);
+            let ty = field_type(field);
+            let body = concat_setter_body(
+                items,
+                field.bit_offset / 8,
+                &quote! { value },
+                &quote! { self.data },
+            );
+            quote! {
+                pub fn #setter_name(&mut self, value: #ty) -> &mut Self {
+                    #body
+                    self
+                }
+            }
+        }
+        FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
+            let setter_name = format_ident!("set_{}", field.name);
+            let ty = field_type(field);
+            let body = setter_body(field);
+            quote! {
+                pub fn #setter_name(&mut self, value: #ty) -> &mut Self {
+                    #body
+                    self
+                }
+            }
+        }
+        FieldKind::Constant { .. } => unreachable!(),
+    }
+}
+
+fn fixed_field_write_call(field: &WriterField) -> TokenStream {
+    let field_name = &field.name;
+    match &field.kind {
+        FieldKind::ByteArray { .. } => {
+            let accessor_name = format_ident!("{}_mut", field.name);
+            quote! { w.#accessor_name().copy_from_slice(&content.#field_name); }
+        }
+        FieldKind::StructRef { name: child_writer, size } => {
+            let offset = field.bit_offset / 8;
+            let end = offset + size;
+            quote! { #child_writer::write_into(&mut w.data[#offset..#end], &content.#field_name)?; }
+        }
+        FieldKind::Primitive { .. }
+        | FieldKind::BitField { .. }
+        | FieldKind::MultiByteArray { .. }
+        | FieldKind::Concat { .. } => {
+            let setter_name = format_ident!("set_{}", field.name);
+            quote! { w.#setter_name(content.#field_name); }
+        }
+        FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
+    }
+}
+
+fn emit_fixed_padded(name: &str, fields: &[PaddedField]) -> (TokenStream, Option<usize>) {
+    let writer_name = format_ident!("{}Writer", name);
+    let content_name = format_ident!("{}Content", name);
+
+    let size = fields
+        .iter()
+        .map(|pf| (pf.field.bit_offset + field_bit_width(&pf.field)) / 8)
+        .max()
+        .unwrap_or(0);
+
+    let setters = fields
+        .iter()
+        .filter(|pf| !pf.skip && !matches!(pf.field.kind, FieldKind::Constant { .. }))
+        .map(|pf| fixed_field_setter(&pf.field));
+
+    let write_calls = fields.iter().filter(|pf| !pf.skip).map(|pf| {
+        if matches!(pf.field.kind, FieldKind::Constant { .. }) {
+            constant_write_call(&pf.field, &quote! { w.data })
+        } else {
+            fixed_field_write_call(&pf.field)
+        }
+    });
+
+    let content_fields = fields
+        .iter()
+        .filter(|pf| !pf.skip && !matches!(pf.field.kind, FieldKind::Constant { .. }))
+        .map(|pf| {
+            let field_name = &pf.field.name;
+            let ty = field_type(&pf.field);
+            quote! { pub #field_name: #ty }
+        });
+
+    let tokens = quote! {
+        pub struct #writer_name<'a> {
+            data: &'a mut [u8],
+        }
+
+        impl<'a> #writer_name<'a> {
+            pub const SIZE: usize = #size;
+
+            pub fn new(data: &'a mut [u8]) -> ::binparse::WriteResult<Self> {
+                if data.len() < Self::SIZE {
+                    return Err(::binparse::WriteError::NotEnoughSpace {
+                        expected: Self::SIZE,
+                        got: data.len(),
+                    });
+                }
+                Ok(Self { data })
+            }
+
+            #(#setters)*
+
+            pub fn write_into(data: &'a mut [u8], content: &#content_name) -> ::binparse::WriteResult<usize> {
+                let mut w = Self::new(data)?;
+                w.data[..Self::SIZE].fill(0);
                 #(#write_calls)*
                 Ok(Self::SIZE)
             }
@@ -1630,7 +2108,9 @@ fn emit_dynamic_tail(name: &str, fields: &[WriterField], tail: &DynamicTail) -> 
                     }
                 }
             }
-            FieldKind::Constant { .. } => unreachable!(),
+            FieldKind::MultiByteArray { .. }
+            | FieldKind::Concat { .. }
+            | FieldKind::Constant { .. } => unreachable!(),
         });
 
     let write_calls = fields
@@ -1652,6 +2132,7 @@ fn emit_dynamic_tail(name: &str, fields: &[WriterField], tail: &DynamicTail) -> 
                     let setter_name = format_ident!("set_{}", field.name);
                     quote! { w.#setter_name(content.#field_name); }
                 }
+                FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
                 FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
             }
         });
@@ -1784,7 +2265,9 @@ fn emit_dynamic_tail_open(
                     }
                 }
             }
-            FieldKind::Constant { .. } => unreachable!(),
+            FieldKind::MultiByteArray { .. }
+            | FieldKind::Concat { .. }
+            | FieldKind::Constant { .. } => unreachable!(),
         });
 
     let write_calls = fields.iter().map(|field| {
@@ -1803,6 +2286,7 @@ fn emit_dynamic_tail_open(
                 let setter_name = format_ident!("set_{}", field.name);
                 quote! { w.#setter_name(content.#field_name); }
             }
+            FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
             FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
         }
     });
@@ -1921,7 +2405,9 @@ fn emit_greedy_struct_tail(name: &str, tail: &GreedyStructTail) -> TokenStream {
                     }
                 }
             }
-            FieldKind::Constant { .. } => unreachable!(),
+            FieldKind::MultiByteArray { .. }
+            | FieldKind::Concat { .. }
+            | FieldKind::Constant { .. } => unreachable!(),
         });
 
     let write_calls = fields.iter().map(|field| {
@@ -1940,6 +2426,7 @@ fn emit_greedy_struct_tail(name: &str, tail: &GreedyStructTail) -> TokenStream {
                 let setter_name = format_ident!("set_{}", field.name);
                 quote! { w.#setter_name(content.#field_name); }
             }
+            FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
             FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
         }
     });
@@ -2062,6 +2549,7 @@ fn branch_write_calls<'a>(
                     }
                 }
             }
+            FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
             FieldKind::Constant { .. } => {
                 let body = constant_write_call(field, &quote! { branch });
                 quote! {
@@ -2120,7 +2608,9 @@ fn emit_conditional(name: &str, layout: &ConditionalLayout) -> TokenStream {
                     }
                 }
             }
-            FieldKind::Constant { .. } => unreachable!(),
+            FieldKind::MultiByteArray { .. }
+            | FieldKind::Concat { .. }
+            | FieldKind::Constant { .. } => unreachable!(),
         });
 
     let prefix_write_calls = layout.prefix_fields.iter().map(|field| {
@@ -2139,6 +2629,7 @@ fn emit_conditional(name: &str, layout: &ConditionalLayout) -> TokenStream {
                 let setter_name = format_ident!("set_{}", field.name);
                 quote! { w.#setter_name(content.#field_name); }
             }
+            FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
             FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
         }
     });
@@ -2270,7 +2761,9 @@ fn emit_dynamic_tail_hook(
                     }
                 }
             }
-            FieldKind::Constant { .. } => unreachable!(),
+            FieldKind::MultiByteArray { .. }
+            | FieldKind::Concat { .. }
+            | FieldKind::Constant { .. } => unreachable!(),
         });
 
     let write_calls = fields.iter().map(|field| {
@@ -2289,6 +2782,7 @@ fn emit_dynamic_tail_hook(
                 let setter_name = format_ident!("set_{}", field.name);
                 quote! { w.#setter_name(content.#field_name); }
             }
+            FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
             FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
         }
     });
@@ -2421,7 +2915,9 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
                     }
                 }
             }
-            FieldKind::Constant { .. } => unreachable!(),
+            FieldKind::MultiByteArray { .. }
+            | FieldKind::Concat { .. }
+            | FieldKind::Constant { .. } => unreachable!(),
         });
 
     let prefix_write_calls = layout
@@ -2444,6 +2940,7 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
                     let setter_name = format_ident!("set_{}", field.name);
                     quote! { w.#setter_name(content.#field_name); }
                 }
+                FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
                 FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
             }
         });
@@ -2596,7 +3093,9 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
                     }
                 }
             }
-            FieldKind::Constant { .. } => unreachable!(),
+            FieldKind::MultiByteArray { .. }
+            | FieldKind::Concat { .. }
+            | FieldKind::Constant { .. } => unreachable!(),
         });
 
     let prefix_write_calls = union
@@ -2619,6 +3118,7 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
                     let setter_name = format_ident!("set_{}", field.name);
                     quote! { w.#setter_name(content.#field_name); }
                 }
+                FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
                 FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
             }
         });
@@ -2830,7 +3330,9 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
                     }
                 }
             }
-            FieldKind::Constant { .. } => unreachable!(),
+            FieldKind::MultiByteArray { .. }
+            | FieldKind::Concat { .. }
+            | FieldKind::Constant { .. } => unreachable!(),
         });
 
     let trailer_setters = layout
@@ -2875,7 +3377,9 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
                         }
                     }
                 }
-                FieldKind::Constant { .. } => unreachable!(),
+                FieldKind::MultiByteArray { .. }
+                | FieldKind::Concat { .. }
+                | FieldKind::Constant { .. } => unreachable!(),
             }
         });
 
@@ -2899,6 +3403,7 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
                     let setter_name = format_ident!("set_{}", field.name);
                     quote! { w.#setter_name(content.#field_name); }
                 }
+                FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
                 FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
             }
         });
@@ -2935,6 +3440,7 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
                     }
                 }
             }
+            FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
             FieldKind::Constant { .. } => {
                 let body = constant_write_call(field, &quote! { trailer });
                 quote! {
@@ -3139,6 +3645,16 @@ fn field_type(field: &WriterField) -> TokenStream {
             let content = content_name_from_writer(name);
             quote! { #content }
         }
+        FieldKind::MultiByteArray {
+            primitive, count, ..
+        } => {
+            let ty = crate::match_primitive(primitive).1;
+            quote! { [#ty; #count] }
+        }
+        FieldKind::Concat { items, .. } => {
+            let tys = items.iter().map(field_type);
+            quote! { ( #(#tys,)* ) }
+        }
         FieldKind::Constant { .. } => unreachable!(),
     }
 }
@@ -3149,6 +3665,10 @@ fn field_bit_width(field: &WriterField) -> usize {
         FieldKind::BitField { width, .. } => *width,
         FieldKind::ByteArray { len } => *len * 8,
         FieldKind::StructRef { size, .. } => *size * 8,
+        FieldKind::MultiByteArray {
+            primitive, count, ..
+        } => crate::match_primitive(primitive).0.byte * count * 8,
+        FieldKind::Concat { bytes, .. } => *bytes * 8,
         FieldKind::Constant { width, .. } => *width,
     }
 }
@@ -3208,10 +3728,94 @@ fn setter_body_into(field: &WriterField, target: &TokenStream) -> TokenStream {
         FieldKind::BitField { width, bit_order } => {
             bitfield_setter_body(*width, *bit_order, field.bit_offset, target)
         }
-        FieldKind::ByteArray { .. } | FieldKind::StructRef { .. } | FieldKind::Constant { .. } => {
+        FieldKind::ByteArray { .. }
+        | FieldKind::StructRef { .. }
+        | FieldKind::MultiByteArray { .. }
+        | FieldKind::Concat { .. }
+        | FieldKind::Constant { .. } => {
             unreachable!()
         }
     }
+}
+
+fn multibyte_setter_body(
+    primitive: &ast::Primitive,
+    endian: Endian,
+    count: usize,
+    base: usize,
+    value: &TokenStream,
+    target: &TokenStream,
+) -> TokenStream {
+    let (len, _) = crate::match_primitive(primitive);
+    let elem = len.byte;
+    let base_prefix = if base == 0 {
+        quote! {}
+    } else {
+        quote! { #base + }
+    };
+    let single_byte = crate::single_byte_read(primitive);
+    if let Some(read) = single_byte {
+        let cast = if read.is_empty() {
+            quote! {}
+        } else {
+            quote! { as u8 }
+        };
+        quote! {
+            for (__i, __v) in #value.iter().enumerate() {
+                #target[#base_prefix __i] = (*__v) #cast;
+            }
+        }
+    } else {
+        let to_bytes = match endian {
+            Endian::Big => quote! { to_be_bytes },
+            Endian::Little => quote! { to_le_bytes },
+        };
+        quote! {
+            for __i in 0..#count {
+                let __start = #base_prefix __i * #elem;
+                #target[__start..__start + #elem]
+                    .copy_from_slice(&#value[__i].#to_bytes());
+            }
+        }
+    }
+}
+
+fn concat_setter_body(
+    items: &[WriterField],
+    base_bytes: usize,
+    value: &TokenStream,
+    target: &TokenStream,
+) -> TokenStream {
+    let base_bits = base_bytes * 8;
+    let writes = items.iter().enumerate().map(|(i, item)| {
+        let index = proc_macro2::Literal::usize_unsuffixed(i);
+        let elem = quote! { #value.#index };
+        let abs_bits = base_bits + item.bit_offset;
+        match &item.kind {
+            FieldKind::Primitive { primitive, endian } => {
+                let body = primitive_setter_body(primitive, *endian, abs_bits / 8, target);
+                quote! { { let value = #elem; #body } }
+            }
+            FieldKind::BitField { width, bit_order } => {
+                let body = bitfield_setter_body(*width, *bit_order, abs_bits, target);
+                quote! { { let value = #elem; #body } }
+            }
+            FieldKind::ByteArray { len } => {
+                let start = abs_bits / 8;
+                let end = start + len;
+                quote! { #target[#start..#end].copy_from_slice(&#elem); }
+            }
+            FieldKind::MultiByteArray {
+                primitive,
+                endian,
+                count,
+            } => multibyte_setter_body(primitive, *endian, *count, abs_bits / 8, &elem, target),
+            FieldKind::StructRef { .. } | FieldKind::Concat { .. } | FieldKind::Constant { .. } => {
+                unreachable!()
+            }
+        }
+    });
+    quote! { #(#writes)* }
 }
 
 fn primitive_setter_body(

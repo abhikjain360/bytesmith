@@ -1530,3 +1530,208 @@ struct Packet {
     "#;
     run_round_trip("union-error-arm", dsl, test_body);
 }
+
+#[test]
+fn generated_writer_multibyte_array_big_endian_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Samples {
+    count: u8,
+    data: [u16; 4],
+    crc: u16,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(SamplesWriter::SIZE, 11);
+
+        let content = SamplesContent {
+            count: 4,
+            data: [0x1122, 0x3344, 0x5566, 0x7788],
+            crc: 0xABCD,
+        };
+        let bytes = SamplesWriter::to_vec(&content);
+        assert_eq!(
+            bytes,
+            vec![4, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0xAB, 0xCD]
+        );
+        let (p, _) = Samples::parse(&bytes).unwrap();
+        assert_eq!(p.count(), 4);
+        assert_eq!(p.crc(), 0xABCD);
+        assert_eq!(
+            p.data().unwrap().collect::<Result<Vec<u16>, _>>().unwrap(),
+            vec![0x1122, 0x3344, 0x5566, 0x7788]
+        );
+    "#;
+    run_round_trip("multibyte-array-be", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_multibyte_array_little_endian_round_trips() {
+    let dsl = r#"
+struct LeSamples {
+    @endian(little) data: [u32; 2],
+}
+"#;
+    let test_body = r#"
+        assert_eq!(LeSamplesWriter::SIZE, 8);
+
+        let content = LeSamplesContent { data: [0x11223344, 0x55667788] };
+        let bytes = LeSamplesWriter::to_vec(&content);
+        assert_eq!(
+            bytes,
+            vec![0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55]
+        );
+        let (p, _) = LeSamples::parse(&bytes).unwrap();
+        assert_eq!(
+            p.data().unwrap().collect::<Result<Vec<u32>, _>>().unwrap(),
+            vec![0x11223344, 0x55667788]
+        );
+    "#;
+    run_round_trip("multibyte-array-le", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_concat_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct WithConcat {
+    tag: u8,
+    combo: concat(u8, u16),
+    trailer: u8,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(WithConcatWriter::SIZE, 5);
+
+        let content = WithConcatContent {
+            tag: 0xAA,
+            combo: (0x42, 0x1234),
+            trailer: 0xBB,
+        };
+        let bytes = WithConcatWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0xAA, 0x42, 0x12, 0x34, 0xBB]);
+        let (p, _) = WithConcat::parse(&bytes).unwrap();
+        assert_eq!(p.tag(), 0xAA);
+        assert_eq!(p.trailer(), 0xBB);
+        assert_eq!(p.combo(), (0x42, 0x1234));
+    "#;
+    run_round_trip("concat-tuple", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_concat_bitfield_nibbles_round_trips() {
+    let dsl = r#"
+struct Nib {
+    combo: concat(b<4>, b<4>),
+    tail: u8,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(NibWriter::SIZE, 2);
+
+        let content = NibContent { combo: (0xA, 0x5), tail: 0xFF };
+        let bytes = NibWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0xA5, 0xFF]);
+        let (p, _) = Nib::parse(&bytes).unwrap();
+        assert_eq!(p.combo(), (0xA, 0x5));
+        assert_eq!(p.tail(), 0xFF);
+    "#;
+    run_round_trip("concat-nibbles", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_pad_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Padded {
+    a: u8,
+    @pad(2) b: u16,
+    c: u8,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(PaddedWriter::SIZE, 6);
+
+        let mut buf = [0xFFu8; 6];
+        let written = PaddedWriter::write_into(
+            &mut buf,
+            &PaddedContent { a: 0x11, b: 0x2233, c: 0x44 },
+        )
+        .unwrap();
+        assert_eq!(written, 6);
+        assert_eq!(buf, [0x11, 0x00, 0x00, 0x22, 0x33, 0x44]);
+        let (p, _) = Padded::parse(&buf).unwrap();
+        assert_eq!(p.a(), 0x11);
+        assert_eq!(p.b(), 0x2233);
+        assert_eq!(p.c(), 0x44);
+    "#;
+    run_round_trip("pad", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_pad_to_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Aligned {
+    a: u8,
+    @pad_to(4) b: u32,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(AlignedWriter::SIZE, 8);
+
+        let mut buf = [0xFFu8; 8];
+        AlignedWriter::write_into(&mut buf, &AlignedContent { a: 0x11, b: 0x22334455 })
+            .unwrap();
+        assert_eq!(buf, [0x11, 0x00, 0x00, 0x00, 0x22, 0x33, 0x44, 0x55]);
+        let (p, _) = Aligned::parse(&buf).unwrap();
+        assert_eq!(p.a(), 0x11);
+        assert_eq!(p.b(), 0x22334455);
+    "#;
+    run_round_trip("pad-to", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_align_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Al {
+    a: u16,
+    @align(2) b: u16,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(AlWriter::SIZE, 4);
+
+        let content = AlContent { a: 0x1122, b: 0x3344 };
+        let bytes = AlWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x11, 0x22, 0x33, 0x44]);
+        let (p, _) = Al::parse(&bytes).unwrap();
+        assert_eq!(p.a(), 0x1122);
+        assert_eq!(p.b(), 0x3344);
+    "#;
+    run_round_trip("align", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_skip_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Sk {
+    a: u8,
+    @skip reserved: u16,
+    b: u8,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(SkWriter::SIZE, 4);
+
+        let mut buf = [0xFFu8; 4];
+        SkWriter::write_into(&mut buf, &SkContent { a: 0x11, b: 0x22 }).unwrap();
+        assert_eq!(buf, [0x11, 0x00, 0x00, 0x22]);
+        let (p, _) = Sk::parse(&buf).unwrap();
+        assert_eq!(p.a(), 0x11);
+        assert_eq!(p.b(), 0x22);
+    "#;
+    run_round_trip("skip", dsl, test_body);
+}

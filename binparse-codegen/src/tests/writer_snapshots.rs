@@ -344,3 +344,107 @@ fn writer_until_tail_skipped() {
     syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
     assert!(!code.contains("ListingWriter"));
 }
+
+#[test]
+fn writer_multibyte_array() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Samples { count: u8, data: [u16; 4], crc: u16 }"#,
+        "writer_multibyte_array",
+    );
+}
+
+#[test]
+fn writer_multibyte_array_little_endian() {
+    assert_generated_writers_eq(
+        r#"struct LeSamples { @endian(little) data: [u32; 2] }"#,
+        "writer_multibyte_array_little_endian",
+    );
+}
+
+#[test]
+fn writer_multibyte_array_dynamic_count_skipped() {
+    let code = generate_writers(r#"struct Foo { n: u8, data: [u16; n] }"#);
+    syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
+    assert!(!code.contains("FooWriter"));
+}
+
+#[test]
+fn writer_concat() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct WithConcat { tag: u8, combo: concat(u8, u16), trailer: u8 }"#,
+        "writer_concat",
+    );
+}
+
+#[test]
+fn writer_concat_bitfield_nibbles() {
+    assert_generated_writers_eq(
+        r#"struct Nib { combo: concat(b<4>, b<4>), tail: u8 }"#,
+        "writer_concat_bitfield_nibbles",
+    );
+}
+
+#[test]
+fn writer_concat_subbyte_start_skipped() {
+    let code = generate_writers(
+        r#"struct Foo { flags: b<3>, fragment_offset: concat(b<5>, u8) }"#,
+    );
+    syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
+    assert!(!code.contains("FooWriter"));
+}
+
+#[test]
+fn writer_concat_multibyte_item() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Mix { tag: u8, combo: concat([u8; 2], u16), trailer: u8 }"#,
+        "writer_concat_multibyte_item",
+    );
+}
+
+#[test]
+fn writer_concat_struct_ref_item_skipped() {
+    let code = generate_writers(
+        r#"struct Inner { a: u8 } struct Foo { combo: concat(u8, Inner) }"#,
+    );
+    syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
+    assert!(!code.contains("FooWriter"));
+}
+
+#[test]
+fn writer_pad() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Padded { a: u8, @pad(2) b: u16, c: u8 }"#,
+        "writer_pad",
+    );
+}
+
+#[test]
+fn writer_pad_to() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Aligned { a: u8, @pad_to(4) b: u32 }"#,
+        "writer_pad_to",
+    );
+}
+
+#[test]
+fn writer_align() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Al { a: u16, @align(2) b: u16 }"#,
+        "writer_align",
+    );
+}
+
+#[test]
+fn writer_skip() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Sk { a: u8, @skip reserved: u16, b: u8 }"#,
+        "writer_skip",
+    );
+}
+
+#[test]
+fn writer_struct_len_skipped() {
+    let code = generate_writers(r#"@len(8) struct Foo { a: u8, b: u16 }"#);
+    syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
+    assert!(!code.contains("FooWriter"));
+}
