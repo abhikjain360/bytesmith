@@ -285,6 +285,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "binparse-cli"
+version = "0.1.0"
+dependencies = [
+ "binparse-codegen",
+ "binparse-dsl-parse",
+ "clap",
+]
+
+[[package]]
 name = "binparse-codegen"
 version = "0.1.0"
 dependencies = [

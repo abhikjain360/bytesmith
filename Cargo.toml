@@ -4,6 +4,7 @@ members = [
     "binparse-dsl",
     "binparse-dsl-parse",
     "binparse-codegen",
+    "binparse-cli",
     "binparse",
     "binparse-protocols",
     "binparse-bench",
