@@ -141,8 +141,12 @@ fn dns_parses_with_compression() {
     ];
     let (dns, rem) = Dns::parse(&packet).unwrap();
     assert!(rem.is_empty());
-    assert_eq!(dns.qname().unwrap(), vec![b"example".to_vec(), b"com".to_vec()]);
-    assert_eq!(dns.aname().unwrap(), vec![b"example".to_vec(), b"com".to_vec()]);
+    let qlabels: Vec<&[u8]> = dns.qname().unwrap().labels().collect();
+    assert_eq!(qlabels, vec![b"example".as_slice(), b"com".as_slice()]);
+    // `aname` is a compression pointer back to `qname`; the lazy iterator
+    // follows it and yields the same labels with no allocation.
+    let alabels: Vec<&[u8]> = dns.aname().unwrap().labels().collect();
+    assert_eq!(alabels, vec![b"example".as_slice(), b"com".as_slice()]);
 }
 
 #[cfg(feature = "tls")]
