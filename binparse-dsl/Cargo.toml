@@ -3,8 +3,12 @@ name = "binparse-dsl"
 description = "AST definitions for the binparse DSL"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 repository.workspace = true
+readme.workspace = true
 license.workspace = true
+keywords = ["binary", "parser", "dsl", "ast", "codegen"]
+categories = ["parsing", "parser-implementations"]
 
 [lib]
 path = "src/lib.rs"

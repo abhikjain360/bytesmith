@@ -3,8 +3,12 @@ name = "binparse-dsl-parse"
 description = "Parser from binparse DSL source into the binparse-dsl AST with diagnostics"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 repository.workspace = true
+readme.workspace = true
 license.workspace = true
+keywords = ["binary", "parser", "dsl", "codegen", "winnow"]
+categories = ["parsing", "parser-implementations"]
 
 [dependencies]
 binparse-dsl = { path = "../binparse-dsl", version = "0.1.0" }

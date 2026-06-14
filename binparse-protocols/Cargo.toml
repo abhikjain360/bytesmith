@@ -3,8 +3,12 @@ name = "binparse-protocols"
 description = "Feature-gated zero-copy parsers for common network protocols, generated from binparse DSL specs"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 repository.workspace = true
+readme.workspace = true
 license.workspace = true
+keywords = ["network", "protocols", "parser", "zero-copy", "packet"]
+categories = ["parsing", "network-programming", "encoding"]
 
 [dependencies]
 binparse = { path = "../binparse", version = "0.1.0" }
