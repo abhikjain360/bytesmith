@@ -695,6 +695,79 @@ pub fn parse_str(src: &str) -> Result<Vec<ast::Definition<'_>>, String> {
     parse_str_located(src).map_err(|e| report_error(src, e.offset, e.message))
 }
 
+/// Parse with error recovery: instead of bailing on the first failure, collect
+/// an error per broken definition and resynchronise at the next top-level
+/// definition boundary, returning every definition that did parse plus every
+/// error. Intended for editor diagnostics where surfacing all problems at once
+/// is more useful than stopping at the first.
+pub fn parse_str_recover(src: &str) -> (Vec<ast::Definition<'_>>, Vec<ParseError>) {
+    let mut defs = Vec::new();
+    let mut errors = Vec::new();
+    let mut pos = 0;
+
+    while pos < src.len() {
+        let mut input = LocatingSlice::new(&src[pos..]);
+        let _ = ws(&mut input);
+        let def_start = src.len() - input.len();
+        if def_start >= src.len() {
+            break;
+        }
+
+        match definition.parse_next(&mut input) {
+            Ok(def) => {
+                defs.push(def);
+                pos = src.len() - input.len();
+            }
+            Err(e) => {
+                let offset = (src.len() - input.len()).min(src.len());
+                errors.push(ParseError {
+                    offset,
+                    message: err_mode_message(e),
+                });
+                match next_definition_start(src, def_start + 1) {
+                    Some(next) => pos = next,
+                    None => break,
+                }
+            }
+        }
+    }
+
+    (defs, errors)
+}
+
+fn err_mode_message(e: ErrMode<ContextError>) -> String {
+    let msg = match e {
+        ErrMode::Backtrack(c) | ErrMode::Cut(c) => c.to_string(),
+        ErrMode::Incomplete(_) => String::new(),
+    };
+    if msg.is_empty() {
+        "parse error".to_string()
+    } else {
+        msg
+    }
+}
+
+fn next_definition_start(src: &str, from: usize) -> Option<usize> {
+    let bytes = src.as_bytes();
+    src.char_indices().filter(|&(i, _)| i >= from).find_map(|(i, _)| {
+        let kw_len = if src[i..].starts_with("struct") {
+            6
+        } else if src[i..].starts_with("error") {
+            5
+        } else {
+            return None;
+        };
+        let prev_ok = i == 0 || !is_ident_byte(bytes[i - 1]);
+        let after = i + kw_len;
+        let after_ok = after >= src.len() || !is_ident_byte(bytes[after]);
+        (prev_ok && after_ok).then_some(i)
+    })
+}
+
+fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

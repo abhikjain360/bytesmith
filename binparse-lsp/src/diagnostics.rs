@@ -8,12 +8,13 @@ const SOURCE: &str = "binparse";
 /// failure as LSP diagnostics. This is the whole wrapper: it reuses the error
 /// reporting already produced by `binparse-dsl-parse` and `binparse-codegen`.
 pub fn compute(text: &str) -> Vec<Diagnostic> {
-    let defs = match binparse_dsl_parse::parse_str_located(text) {
-        Ok(defs) => defs,
-        Err(e) => {
-            return vec![diagnostic(span_range(text, e.offset), e.message)];
-        }
-    };
+    let (defs, errors) = binparse_dsl_parse::parse_str_recover(text);
+    if !errors.is_empty() {
+        return errors
+            .into_iter()
+            .map(|e| diagnostic(span_range(text, e.offset), e.message))
+            .collect();
+    }
 
     match CodeGen::generate(&defs) {
         Ok(_) => Vec::new(),
@@ -111,5 +112,14 @@ mod tests {
         let diags = compute(src);
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].range.start.line, 1);
+    }
+
+    #[test]
+    fn multiple_parse_errors_recovered() {
+        let src = "struct A { x: }\nstruct B { y: }";
+        let diags = compute(src);
+        assert_eq!(diags.len(), 2);
+        assert_eq!(diags[0].range.start.line, 0);
+        assert_eq!(diags[1].range.start.line, 1);
     }
 }
