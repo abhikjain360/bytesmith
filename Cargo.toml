@@ -6,6 +6,7 @@ members = [
     "binparse-codegen",
     "binparse",
     "binparse-protocols",
+    "binparse-bench",
 ]
 
 [workspace.package]
