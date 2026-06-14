@@ -109,8 +109,37 @@ struct ConditionalLayout {
 struct UnionVariantInfo {
     name: syn::Ident,
     reader_variant: syn::Ident,
-    fields: Vec<WriterField>,
+    body: VariantBody,
     disc_values: Option<Vec<proc_macro2::Literal>>,
+}
+
+enum VariantBody {
+    Fixed { fields: Vec<WriterField> },
+    Dynamic(VariantLayout),
+}
+
+struct VariantLayout {
+    segments: Vec<VariantSegment>,
+}
+
+enum VariantSegment {
+    FixedRun {
+        fields: Vec<WriterField>,
+        bytes: usize,
+    },
+    DynRegion {
+        region_field: syn::Ident,
+        derived_len: Option<DerivedLen>,
+    },
+}
+
+struct DerivedLen {
+    len_field_str: String,
+    len_primitive: ast::Primitive,
+    len_endian: Endian,
+    len_offset_in_run: usize,
+    run_index: usize,
+    len_adjust: LenAdjust,
 }
 
 struct UnionLayout {
@@ -1240,6 +1269,115 @@ fn classify_fixed_items(
     Some(fields)
 }
 
+fn classify_variant_layout(
+    inline: &ast::NamedInlineStruct<'_>,
+    struct_inherited: Inherited,
+    writer_sizes: &HashMap<&str, usize>,
+) -> Option<VariantLayout> {
+    let last_index = inline.items.len().checked_sub(1)?;
+    let mut segments: Vec<VariantSegment> = Vec::new();
+    let mut cur_run: Vec<WriterField> = Vec::new();
+    let mut cur_run_bits = 0usize;
+
+    for (index, item) in inline.items.iter().enumerate() {
+        let ast::StructItem::Field(field) = item else {
+            return None;
+        };
+        let field_attrs = ParsedAttrs::parse(&field.attributes).ok()?;
+
+        if let ast::FieldValue::Type(ast::Type::Array(array)) = &field.value
+            && matches!(
+                array.elem_ty,
+                ast::ArrayElemType::Primitive(ast::Primitive::U8)
+            )
+        {
+            if let Some(size) = array.size.as_ref() {
+                if expr::lower(size, ExprType::Numeric, &[])
+                    .ok()
+                    .and_then(|lowered| lowered.const_value)
+                    .is_none()
+                {
+                    if !field_attrs_supported(&field_attrs) {
+                        return None;
+                    }
+                    let (len_field_str, len_adjust) = affine_size_shape(size)?;
+                    if !cur_run_bits.is_multiple_of(8) {
+                        return None;
+                    }
+                    let run_index = segments.len();
+                    let run_fields = std::mem::take(&mut cur_run);
+                    let run_bytes = cur_run_bits / 8;
+                    let len_field = run_fields.iter().find(|f| f.name == len_field_str)?;
+                    let (len_primitive, len_endian) = forward_len_field(len_field)?;
+                    let len_offset_in_run = len_field.bit_offset / 8;
+                    segments.push(VariantSegment::FixedRun {
+                        fields: run_fields,
+                        bytes: run_bytes,
+                    });
+                    cur_run_bits = 0;
+                    segments.push(VariantSegment::DynRegion {
+                        region_field: format_ident!("{}", field.name),
+                        derived_len: Some(DerivedLen {
+                            len_field_str: len_field_str.to_string(),
+                            len_primitive,
+                            len_endian,
+                            len_offset_in_run,
+                            run_index,
+                            len_adjust,
+                        }),
+                    });
+                    continue;
+                }
+            } else if index == last_index
+                && field_attrs.greedy
+                && field_attrs.until.is_none()
+                && field_attrs.hook.is_none()
+                && field_attrs.max_iter.is_none()
+            {
+                if !cur_run_bits.is_multiple_of(8) {
+                    return None;
+                }
+                if !cur_run.is_empty() {
+                    segments.push(VariantSegment::FixedRun {
+                        fields: std::mem::take(&mut cur_run),
+                        bytes: cur_run_bits / 8,
+                    });
+                    cur_run_bits = 0;
+                }
+                segments.push(VariantSegment::DynRegion {
+                    region_field: format_ident!("{}", field.name),
+                    derived_len: None,
+                });
+                continue;
+            }
+        }
+
+        let (writer_field, width) =
+            classify_fixed_field(field, cur_run_bits, struct_inherited, writer_sizes)?;
+        cur_run.push(writer_field);
+        cur_run_bits += width;
+    }
+
+    if !cur_run_bits.is_multiple_of(8) {
+        return None;
+    }
+    if !cur_run.is_empty() {
+        segments.push(VariantSegment::FixedRun {
+            fields: cur_run,
+            bytes: cur_run_bits / 8,
+        });
+    }
+
+    if !segments
+        .iter()
+        .any(|s| matches!(s, VariantSegment::DynRegion { .. }))
+    {
+        return None;
+    }
+
+    Some(VariantLayout { segments })
+}
+
 fn fields_all_simple(fields: &[WriterField]) -> bool {
     fields.iter().all(|f| {
         !matches!(
@@ -1492,23 +1630,89 @@ fn variant_disc_writes(
     }
 }
 
+fn variant_is_dynamic(variant: &UnionVariantInfo) -> bool {
+    matches!(variant.body, VariantBody::Dynamic(_))
+}
+
+fn variants_any_dynamic(variants: &[UnionVariantInfo]) -> bool {
+    variants.iter().any(variant_is_dynamic)
+}
+
+fn body_lifetime(variants: &[UnionVariantInfo]) -> TokenStream {
+    if variants_any_dynamic(variants) {
+        quote! { <'a> }
+    } else {
+        quote! {}
+    }
+}
+
+fn emit_variant_entity(variant: &UnionVariantInfo) -> TokenStream {
+    match &variant.body {
+        VariantBody::Fixed { fields } => emit_fixed(&variant.name.to_string(), fields).0,
+        VariantBody::Dynamic(layout) => emit_variant_writer(&variant.name.to_string(), layout),
+    }
+}
+
 fn union_variant_decl(variant: &UnionVariantInfo, discs: &[WriterField]) -> TokenStream {
     let reader_variant = &variant.reader_variant;
     let variant_content = format_ident!("{}Content", variant.name);
+    let content_ty = if variant_is_dynamic(variant) {
+        quote! { #variant_content<'a> }
+    } else {
+        quote! { #variant_content }
+    };
     if variant.disc_values.is_none() {
         let disc_ty = field_type(&discs[0]);
-        quote! { #reader_variant { discriminant: #disc_ty, content: #variant_content } }
+        quote! { #reader_variant { discriminant: #disc_ty, content: #content_ty } }
     } else {
-        quote! { #reader_variant(#variant_content) }
+        quote! { #reader_variant(#content_ty) }
     }
 }
 
 fn union_variant_size_pat(body_enum: &syn::Ident, variant: &UnionVariantInfo) -> TokenStream {
     let reader_variant = &variant.reader_variant;
     if variant.disc_values.is_none() {
-        quote! { #body_enum::#reader_variant { .. } }
+        if variant_is_dynamic(variant) {
+            quote! { #body_enum::#reader_variant { content, .. } }
+        } else {
+            quote! { #body_enum::#reader_variant { .. } }
+        }
+    } else if variant_is_dynamic(variant) {
+        quote! { #body_enum::#reader_variant(c) }
     } else {
         quote! { #body_enum::#reader_variant(_) }
+    }
+}
+
+fn variant_size_arm(body_enum: &syn::Ident, variant: &UnionVariantInfo) -> TokenStream {
+    let variant_writer = format_ident!("{}Writer", variant.name);
+    let pat = union_variant_size_pat(body_enum, variant);
+    match &variant.body {
+        VariantBody::Fixed { .. } => quote! { #pat => #variant_writer::SIZE },
+        VariantBody::Dynamic(_) => {
+            let bind = if variant.disc_values.is_none() {
+                quote! { content }
+            } else {
+                quote! { c }
+            };
+            quote! { #pat => #variant_writer::encoded_len(#bind) }
+        }
+    }
+}
+
+fn variant_region_len(variant: &UnionVariantInfo, c: &TokenStream) -> TokenStream {
+    let variant_writer = format_ident!("{}Writer", variant.name);
+    match &variant.body {
+        VariantBody::Fixed { .. } => quote! { let region_len = #variant_writer::SIZE; },
+        VariantBody::Dynamic(_) => quote! { let region_len = #variant_writer::encoded_len(#c); },
+    }
+}
+
+fn variant_region_len_expr(variant: &UnionVariantInfo, c: &TokenStream) -> TokenStream {
+    let variant_writer = format_ident!("{}Writer", variant.name);
+    match &variant.body {
+        VariantBody::Fixed { .. } => quote! { #variant_writer::SIZE },
+        VariantBody::Dynamic(_) => quote! { #variant_writer::encoded_len(#c) },
     }
 }
 
@@ -1566,16 +1770,25 @@ fn push_union_variant(
         Ok(attrs) if struct_attrs_supported(&attrs) => attrs.merge_inherited(struct_inherited),
         _ => return if is_wildcard || lenient { Some(()) } else { None },
     };
-    let Some(fields) = classify_fixed_items(&inline.items, variant_inherited, writer_sizes) else {
-        return if is_wildcard || lenient { Some(()) } else { None };
+    let body = match classify_fixed_items(&inline.items, variant_inherited, writer_sizes) {
+        Some(fields) => {
+            if is_wildcard && (fields.is_empty() || !wildcard_writable) {
+                return Some(());
+            }
+            VariantBody::Fixed { fields }
+        }
+        None => match (lenient && (!is_wildcard || wildcard_writable))
+            .then(|| classify_variant_layout(inline, variant_inherited, writer_sizes))
+            .flatten()
+        {
+            Some(layout) => VariantBody::Dynamic(layout),
+            None => return if is_wildcard || lenient { Some(()) } else { None },
+        },
     };
-    if is_wildcard && (fields.is_empty() || !wildcard_writable) {
-        return Some(());
-    }
     variants.push(UnionVariantInfo {
         name: format_ident!("{}", inline.name),
         reader_variant: format_ident!("{}", inline.name),
-        fields,
+        body,
         disc_values,
     });
     Some(())
@@ -2041,6 +2254,242 @@ fn writer_over_dynamic(
                 });
             }
             Ok(Self { data, lens })
+        }
+    }
+}
+
+fn emit_variant_writer(name: &str, layout: &VariantLayout) -> TokenStream {
+    let writer_name = format_ident!("{}Writer", name);
+    let content_name = format_ident!("{}Content", name);
+
+    let region_fields: Vec<&syn::Ident> = layout
+        .segments
+        .iter()
+        .filter_map(|s| match s {
+            VariantSegment::DynRegion { region_field, .. } => Some(region_field),
+            VariantSegment::FixedRun { .. } => None,
+        })
+        .collect();
+
+    let region_locals = region_fields.iter().enumerate().map(|(i, region_field)| {
+        let local = format_ident!("r{}", i);
+        quote! { let #local = content.#region_field.len(); }
+    });
+    let region_locals: TokenStream = region_locals.collect();
+
+    let derived_len_for_run = |run_index: usize| -> Option<(usize, &DerivedLen)> {
+        let mut ri = 0usize;
+        for s in &layout.segments {
+            if let VariantSegment::DynRegion {
+                derived_len: Some(d),
+                ..
+            } = s
+            {
+                if d.run_index == run_index {
+                    return Some((ri, d));
+                }
+            }
+            if let VariantSegment::DynRegion { .. } = s {
+                ri += 1;
+            }
+        }
+        None
+    };
+
+    let len_field_names: Vec<&str> = layout
+        .segments
+        .iter()
+        .filter_map(|s| match s {
+            VariantSegment::DynRegion {
+                derived_len: Some(d),
+                ..
+            } => Some(d.len_field_str.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    let encoded_len_terms: Vec<TokenStream> = layout
+        .segments
+        .iter()
+        .scan(0usize, |ri, s| {
+            Some(match s {
+                VariantSegment::FixedRun { bytes, .. } => quote! { #bytes },
+                VariantSegment::DynRegion { .. } => {
+                    let local = format_ident!("r{}", *ri);
+                    *ri += 1;
+                    quote! { #local }
+                }
+            })
+        })
+        .collect();
+
+    let mut write_body = TokenStream::new();
+    let mut run_index = 0usize;
+    let mut ri = 0usize;
+    for segment in &layout.segments {
+        match segment {
+            VariantSegment::FixedRun { fields, bytes } => {
+                let field_writes = fields.iter().filter_map(|field| {
+                    if len_field_names.iter().any(|n| field.name == *n) {
+                        return None;
+                    }
+                    let field_name = &field.name;
+                    Some(match &field.kind {
+                        FieldKind::ByteArray { len } => {
+                            let offset = field.bit_offset / 8;
+                            let end = offset + len;
+                            quote! {
+                                data[base + #offset..base + #end]
+                                    .copy_from_slice(&content.#field_name);
+                            }
+                        }
+                        FieldKind::StructRef { name: child_writer, size } => {
+                            let offset = field.bit_offset / 8;
+                            let end = offset + size;
+                            quote! {
+                                #child_writer::write_into(
+                                    &mut data[base + #offset..base + #end],
+                                    &content.#field_name,
+                                )?;
+                            }
+                        }
+                        FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
+                            let ty = field_type(field);
+                            let body = setter_body_into(field, &quote! { run });
+                            quote! {
+                                {
+                                    let value: #ty = content.#field_name;
+                                    let run = &mut data[base..];
+                                    #body
+                                }
+                            }
+                        }
+                        FieldKind::MultiByteArray { .. } | FieldKind::Concat { .. } => unreachable!(),
+                        FieldKind::Constant { .. } => {
+                            let body = constant_write_call(field, &quote! { run });
+                            quote! {
+                                {
+                                    let run = &mut data[base..];
+                                    #body
+                                }
+                            }
+                        }
+                    })
+                });
+                let field_writes: TokenStream = field_writes.collect();
+
+                let len_write = match derived_len_for_run(run_index) {
+                    Some((region_idx, derived)) => {
+                        let region_local = format_ident!("r{}", region_idx);
+                        let len_ty = crate::match_primitive(&derived.len_primitive).1;
+                        let len_field_qualified = format!("{}.{}", name, derived.len_field_str);
+                        let len_offset = derived.len_offset_in_run;
+                        let len_value =
+                            len_value_expr(&quote! { #region_local }, derived.len_adjust);
+                        let check = quote! {
+                            let len_field_value = #len_value;
+                            if len_field_value > (#len_ty::MAX as usize) {
+                                return Err(::binparse::WriteError::ValueTooLarge {
+                                    field: #len_field_qualified,
+                                    value: len_field_value,
+                                    max: #len_ty::MAX as usize,
+                                });
+                            }
+                        };
+                        let single_byte = crate::single_byte_read(&derived.len_primitive);
+                        if single_byte.is_some() {
+                            quote! {
+                                #check
+                                data[base + #len_offset] = len_field_value as #len_ty;
+                            }
+                        } else {
+                            let (len, _) = crate::match_primitive(&derived.len_primitive);
+                            let end = len_offset + len.byte;
+                            let to_bytes = match derived.len_endian {
+                                Endian::Big => quote! { to_be_bytes },
+                                Endian::Little => quote! { to_le_bytes },
+                            };
+                            quote! {
+                                #check
+                                data[base + #len_offset..base + #end]
+                                    .copy_from_slice(&(len_field_value as #len_ty).#to_bytes());
+                            }
+                        }
+                    }
+                    None => TokenStream::new(),
+                };
+
+                write_body.extend(quote! {
+                    #field_writes
+                    #len_write
+                    base += #bytes;
+                });
+                run_index += 1;
+            }
+            VariantSegment::DynRegion { region_field, .. } => {
+                let local = format_ident!("r{}", ri);
+                write_body.extend(quote! {
+                    data[base..base + #local].copy_from_slice(content.#region_field);
+                    base += #local;
+                });
+                ri += 1;
+                run_index += 1;
+            }
+        }
+    }
+
+    let content_fields = layout.segments.iter().flat_map(|s| match s {
+        VariantSegment::FixedRun { fields, .. } => fields
+            .iter()
+            .filter(|field| {
+                !matches!(field.kind, FieldKind::Constant { .. })
+                    && !len_field_names.iter().any(|n| field.name == *n)
+            })
+            .map(|field| {
+                let field_name = &field.name;
+                let ty = field_type(field);
+                quote! { pub #field_name: #ty }
+            })
+            .collect::<Vec<_>>(),
+        VariantSegment::DynRegion { region_field, .. } => {
+            vec![quote! { pub #region_field: &'a [u8] }]
+        }
+    });
+
+    quote! {
+        pub struct #writer_name<'a> {
+            data: &'a mut [u8],
+        }
+
+        impl<'a> #writer_name<'a> {
+            pub fn encoded_len(content: &#content_name) -> usize {
+                #region_locals
+                0usize #(+ #encoded_len_terms)*
+            }
+
+            pub fn write_into(data: &'a mut [u8], content: &#content_name) -> ::binparse::WriteResult<usize> {
+                #region_locals
+                let need = 0usize #(+ #encoded_len_terms)*;
+                if data.len() < need {
+                    return Err(::binparse::WriteError::NotEnoughSpace {
+                        expected: need,
+                        got: data.len(),
+                    });
+                }
+                let mut base = 0usize;
+                #write_body
+                Ok(need)
+            }
+
+            pub fn to_vec(content: &#content_name) -> ::std::vec::Vec<u8> {
+                let mut buf = ::std::vec![0u8; Self::encoded_len(content)];
+                let _ = #writer_name::write_into(&mut buf, content);
+                buf
+            }
+        }
+
+        pub struct #content_name<'a> {
+            #(#content_fields,)*
         }
     }
 }
@@ -3339,11 +3788,11 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
 
     let prefix_size = layout.prefix_size;
     let discs = &layout.discs;
+    let body_lt = body_lifetime(&layout.variants);
 
     let mut variant_entities = TokenStream::new();
     for variant in &layout.variants {
-        let (tokens, _) = emit_fixed(&variant.name.to_string(), &variant.fields);
-        variant_entities.extend(tokens);
+        variant_entities.extend(emit_variant_entity(variant));
     }
 
     let enum_variants = layout
@@ -3434,11 +3883,10 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
             quote! { pub #field_name: #ty }
         });
 
-    let encoded_len_arms = layout.variants.iter().map(|variant| {
-        let variant_writer = format_ident!("{}Writer", variant.name);
-        let pat = union_variant_size_pat(&body_enum, variant);
-        quote! { #pat => #variant_writer::SIZE }
-    });
+    let encoded_len_arms = layout
+        .variants
+        .iter()
+        .map(|variant| variant_size_arm(&body_enum, variant));
 
     let disc_target = quote! { w.data };
 
@@ -3446,10 +3894,11 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
         let variant_writer = format_ident!("{}Writer", variant.name);
         let (pat, c, disc_writes) =
             union_variant_write_pat(&body_enum, variant, discs, &disc_target);
+        let region_len_expr = variant_region_len_expr(variant, &c);
         quote! {
             #pat => {
                 #disc_writes
-                let end = #prefix_size + #variant_writer::SIZE;
+                let end = #prefix_size + #region_len_expr;
                 #variant_writer::write_into(&mut w.data[#prefix_size..end], #c)?;
             }
         }
@@ -3458,7 +3907,7 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
     quote! {
         #variant_entities
 
-        pub enum #body_enum {
+        pub enum #body_enum #body_lt {
             #(#enum_variants),*
         }
 
@@ -3467,7 +3916,7 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
         }
 
         impl<'a> #writer_name<'a> {
-            pub fn encoded_len(content: &#content_name) -> usize {
+            pub fn encoded_len(content: &#content_name #body_lt) -> usize {
                 #prefix_size + match &content.#body_field {
                     #(#encoded_len_arms),*
                 }
@@ -3475,7 +3924,7 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
 
             #(#prefix_setters)*
 
-            pub fn write_into(data: &'a mut [u8], content: &#content_name) -> ::binparse::WriteResult<usize> {
+            pub fn write_into(data: &'a mut [u8], content: &#content_name #body_lt) -> ::binparse::WriteResult<usize> {
                 let need = Self::encoded_len(content);
                 if data.len() < need {
                     return Err(::binparse::WriteError::NotEnoughSpace {
@@ -3491,16 +3940,16 @@ fn emit_union(name: &str, layout: &UnionLayout) -> TokenStream {
                 Ok(need)
             }
 
-            pub fn to_vec(content: &#content_name) -> ::std::vec::Vec<u8> {
+            pub fn to_vec(content: &#content_name #body_lt) -> ::std::vec::Vec<u8> {
                 let mut buf = ::std::vec![0u8; Self::encoded_len(content)];
                 let _ = #writer_name::write_into(&mut buf, content);
                 buf
             }
         }
 
-        pub struct #content_name {
+        pub struct #content_name #body_lt {
             #(#content_fields,)*
-            pub #body_field: #body_enum,
+            pub #body_field: #body_enum #body_lt,
         }
     }
 }
@@ -3519,11 +3968,11 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
     let len_field_str = &layout.len_field_str;
     let len_ty = crate::match_primitive(&layout.len_primitive).1;
     let len_field_qualified = format!("{}.{}", name, len_field_str);
+    let body_lt = body_lifetime(&union.variants);
 
     let mut variant_entities = TokenStream::new();
     for variant in &union.variants {
-        let (tokens, _) = emit_fixed(&variant.name.to_string(), &variant.fields);
-        variant_entities.extend(tokens);
+        variant_entities.extend(emit_variant_entity(variant));
     }
 
     let enum_variants = union
@@ -3618,11 +4067,10 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
             quote! { pub #field_name: #ty }
         });
 
-    let encoded_len_arms = union.variants.iter().map(|variant| {
-        let variant_writer = format_ident!("{}Writer", variant.name);
-        let pat = union_variant_size_pat(&body_enum, variant);
-        quote! { #pat => #variant_writer::SIZE }
-    });
+    let encoded_len_arms = union
+        .variants
+        .iter()
+        .map(|variant| variant_size_arm(&body_enum, variant));
 
     let disc_target = quote! { w.data };
 
@@ -3664,10 +4112,11 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
         let variant_writer = format_ident!("{}Writer", variant.name);
         let (pat, c, disc_writes) =
             union_variant_write_pat(&body_enum, variant, discs, &disc_target);
+        let region_len = variant_region_len(variant, &c);
         quote! {
             #pat => {
                 #disc_writes
-                let region_len = #variant_writer::SIZE;
+                #region_len
                 #write_len
                 let end = #region_offset + region_len;
                 #variant_writer::write_into(&mut w.data[#region_offset..end], #c)?;
@@ -3678,7 +4127,7 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
     quote! {
         #variant_entities
 
-        pub enum #body_enum {
+        pub enum #body_enum #body_lt {
             #(#enum_variants),*
         }
 
@@ -3687,7 +4136,7 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
         }
 
         impl<'a> #writer_name<'a> {
-            pub fn encoded_len(content: &#content_name) -> usize {
+            pub fn encoded_len(content: &#content_name #body_lt) -> usize {
                 #prefix_size + match &content.#body_field {
                     #(#encoded_len_arms),*
                 }
@@ -3695,7 +4144,7 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
 
             #(#prefix_setters)*
 
-            pub fn write_into(data: &'a mut [u8], content: &#content_name) -> ::binparse::WriteResult<usize> {
+            pub fn write_into(data: &'a mut [u8], content: &#content_name #body_lt) -> ::binparse::WriteResult<usize> {
                 let need = Self::encoded_len(content);
                 if data.len() < need {
                     return Err(::binparse::WriteError::NotEnoughSpace {
@@ -3711,16 +4160,16 @@ fn emit_len_union(name: &str, layout: &LenUnionLayout) -> TokenStream {
                 Ok(need)
             }
 
-            pub fn to_vec(content: &#content_name) -> ::std::vec::Vec<u8> {
+            pub fn to_vec(content: &#content_name #body_lt) -> ::std::vec::Vec<u8> {
                 let mut buf = ::std::vec![0u8; Self::encoded_len(content)];
                 let _ = #writer_name::write_into(&mut buf, content);
                 buf
             }
         }
 
-        pub struct #content_name {
+        pub struct #content_name #body_lt {
             #(#content_fields,)*
-            pub #body_field: #body_enum,
+            pub #body_field: #body_enum #body_lt,
         }
     }
 }
@@ -3738,11 +4187,11 @@ fn emit_len_union_hook(name: &str, layout: &LenUnionHookLayout) -> TokenStream {
     let encode_fn = &layout.encode_fn;
     let width_fn = &layout.width_fn;
     let return_ty = &layout.return_ty;
+    let body_lt = body_lifetime(&union.variants);
 
     let mut variant_entities = TokenStream::new();
     for variant in &union.variants {
-        let (tokens, _) = emit_fixed(&variant.name.to_string(), &variant.fields);
-        variant_entities.extend(tokens);
+        variant_entities.extend(emit_variant_entity(variant));
     }
 
     let enum_variants = union
@@ -3833,11 +4282,10 @@ fn emit_len_union_hook(name: &str, layout: &LenUnionHookLayout) -> TokenStream {
             quote! { pub #field_name: #ty }
         });
 
-    let encoded_len_arms = union.variants.iter().map(|variant| {
-        let variant_writer = format_ident!("{}Writer", variant.name);
-        let pat = union_variant_size_pat(&body_enum, variant);
-        quote! { #pat => #variant_writer::SIZE }
-    });
+    let encoded_len_arms = union
+        .variants
+        .iter()
+        .map(|variant| variant_size_arm(&body_enum, variant));
 
     let disc_target = quote! { w.data };
     let len_value = len_value_expr(&quote! { region_len }, layout.len_adjust);
@@ -3846,10 +4294,11 @@ fn emit_len_union_hook(name: &str, layout: &LenUnionHookLayout) -> TokenStream {
         let variant_writer = format_ident!("{}Writer", variant.name);
         let (pat, c, disc_writes) =
             union_variant_write_pat(&body_enum, variant, discs, &disc_target);
+        let region_len = variant_region_len(variant, &c);
         quote! {
             #pat => {
                 #disc_writes
-                let region_len = #variant_writer::SIZE;
+                #region_len
                 let len_value = #len_value;
                 let len_width = #encode_fn(len_value as #return_ty, &mut w.data[#prefix_size..])?;
                 let region_off = #prefix_size + len_width;
@@ -3862,7 +4311,7 @@ fn emit_len_union_hook(name: &str, layout: &LenUnionHookLayout) -> TokenStream {
     quote! {
         #variant_entities
 
-        pub enum #body_enum {
+        pub enum #body_enum #body_lt {
             #(#enum_variants),*
         }
 
@@ -3871,7 +4320,7 @@ fn emit_len_union_hook(name: &str, layout: &LenUnionHookLayout) -> TokenStream {
         }
 
         impl<'a> #writer_name<'a> {
-            pub fn encoded_len(content: &#content_name) -> usize {
+            pub fn encoded_len(content: &#content_name #body_lt) -> usize {
                 let region_len = match &content.#body_field {
                     #(#encoded_len_arms),*
                 };
@@ -3881,7 +4330,7 @@ fn emit_len_union_hook(name: &str, layout: &LenUnionHookLayout) -> TokenStream {
 
             #(#prefix_setters)*
 
-            pub fn write_into(data: &'a mut [u8], content: &#content_name) -> ::binparse::WriteResult<usize> {
+            pub fn write_into(data: &'a mut [u8], content: &#content_name #body_lt) -> ::binparse::WriteResult<usize> {
                 let need = Self::encoded_len(content);
                 if data.len() < need {
                     return Err(::binparse::WriteError::NotEnoughSpace {
@@ -3897,16 +4346,16 @@ fn emit_len_union_hook(name: &str, layout: &LenUnionHookLayout) -> TokenStream {
                 Ok(need)
             }
 
-            pub fn to_vec(content: &#content_name) -> ::std::vec::Vec<u8> {
+            pub fn to_vec(content: &#content_name #body_lt) -> ::std::vec::Vec<u8> {
                 let mut buf = ::std::vec![0u8; Self::encoded_len(content)];
                 let _ = #writer_name::write_into(&mut buf, content);
                 buf
             }
         }
 
-        pub struct #content_name {
+        pub struct #content_name #body_lt {
             #(#content_fields,)*
-            pub #body_field: #body_enum,
+            pub #body_field: #body_enum #body_lt,
         }
     }
 }
