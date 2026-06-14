@@ -361,6 +361,180 @@ fn v3_publish_write(c: &mut Criterion) {
     g.finish();
 }
 
+fn v5_connack_write(c: &mut Criterion) {
+    use binparse_protocols::mqtt_v5::{
+        ConnackContent, MqttPacketBodyContent, MqttPacketContent, MqttPacketWriter,
+    };
+
+    let content = MqttPacketContent {
+        flags: 0,
+        body: MqttPacketBodyContent::Connack(ConnackContent {
+            ack_flags: 0,
+            reason_code: 0,
+            properties: &[0x21, 0x00, 0x14],
+        }),
+    };
+    assert_eq!(MqttPacketWriter::to_vec(&content), MQTT_V5_CONNACK);
+
+    {
+        use mqttbytes::v5::{ConnAck, ConnAckProperties, ConnectReturnCode};
+        let pkt = ConnAck {
+            session_present: false,
+            code: ConnectReturnCode::Success,
+            properties: Some(ConnAckProperties {
+                receive_max: Some(20),
+                ..ConnAckProperties::new()
+            }),
+        };
+        let mut buf = BytesMut::new();
+        pkt.write(&mut buf).unwrap();
+        if buf.as_ref() != MQTT_V5_CONNACK {
+            eprintln!(
+                "mqtt_v5_connack_write: mqttbytes_0.6 output differs from fixture: {:02x?} vs {:02x?}",
+                buf.as_ref(),
+                MQTT_V5_CONNACK
+            );
+        }
+    }
+    {
+        use rumqttc_v5_next::mqttbytes::v5;
+        let pkt = v5::ConnAck {
+            session_present: false,
+            code: v5::ConnectReturnCode::Success,
+            properties: Some(v5::ConnAckProperties {
+                session_expiry_interval: None,
+                receive_max: Some(20),
+                max_qos: None,
+                retain_available: None,
+                max_packet_size: None,
+                assigned_client_identifier: None,
+                topic_alias_max: None,
+                reason_string: None,
+                user_properties: Vec::new(),
+                wildcard_subscription_available: None,
+                subscription_identifiers_available: None,
+                shared_subscription_available: None,
+                server_keep_alive: None,
+                response_information: None,
+                server_reference: None,
+                authentication_method: None,
+                authentication_data: None,
+            }),
+        };
+        let mut buf = BytesMut::new();
+        pkt.write(&mut buf).unwrap();
+        if buf.as_ref() != MQTT_V5_CONNACK {
+            eprintln!(
+                "mqtt_v5_connack_write: rumqttc_v5_next output differs from fixture: {:02x?} vs {:02x?}",
+                buf.as_ref(),
+                MQTT_V5_CONNACK
+            );
+        }
+    }
+    {
+        use rumqttd::protocol::{ConnAck, ConnAckProperties, ConnectReturnCode, Packet, Protocol, v5::V5};
+        let connack = ConnAck {
+            session_present: false,
+            code: ConnectReturnCode::Success,
+        };
+        let props = ConnAckProperties {
+            receive_max: Some(20),
+            ..Default::default()
+        };
+        let pkt = Packet::ConnAck(connack, Some(props));
+        let mut buf = BytesMut::new();
+        V5.write(pkt, &mut buf).unwrap();
+        if buf.as_ref() != MQTT_V5_CONNACK {
+            eprintln!(
+                "mqtt_v5_connack_write: rumqttd_0.20 output differs from fixture: {:02x?} vs {:02x?}",
+                buf.as_ref(),
+                MQTT_V5_CONNACK
+            );
+        }
+    }
+
+    let mut g = c.benchmark_group("mqtt_v5_connack_write");
+    g.bench_function("binparse", |b| {
+        b.iter(|| black_box(MqttPacketWriter::to_vec(black_box(&content))))
+    });
+    g.bench_function("mqttbytes_0.6", |b| {
+        use mqttbytes::v5::{ConnAck, ConnAckProperties, ConnectReturnCode};
+        b.iter_batched(
+            || ConnAck {
+                session_present: false,
+                code: ConnectReturnCode::Success,
+                properties: Some(ConnAckProperties {
+                    receive_max: Some(20),
+                    ..ConnAckProperties::new()
+                }),
+            },
+            |pkt| {
+                let mut buf = BytesMut::new();
+                pkt.write(&mut buf).unwrap();
+                black_box(buf)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    g.bench_function("rumqttc_v5_next", |b| {
+        use rumqttc_v5_next::mqttbytes::v5;
+        b.iter_batched(
+            || v5::ConnAck {
+                session_present: false,
+                code: v5::ConnectReturnCode::Success,
+                properties: Some(v5::ConnAckProperties {
+                    session_expiry_interval: None,
+                    receive_max: Some(20),
+                    max_qos: None,
+                    retain_available: None,
+                    max_packet_size: None,
+                    assigned_client_identifier: None,
+                    topic_alias_max: None,
+                    reason_string: None,
+                    user_properties: Vec::new(),
+                    wildcard_subscription_available: None,
+                    subscription_identifiers_available: None,
+                    shared_subscription_available: None,
+                    server_keep_alive: None,
+                    response_information: None,
+                    server_reference: None,
+                    authentication_method: None,
+                    authentication_data: None,
+                }),
+            },
+            |pkt| {
+                let mut buf = BytesMut::new();
+                pkt.write(&mut buf).unwrap();
+                black_box(buf)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    g.bench_function("rumqttd_0.20", |b| {
+        use rumqttd::protocol::{ConnAck, ConnAckProperties, ConnectReturnCode, Packet, Protocol, v5::V5};
+        b.iter_batched(
+            || {
+                let connack = ConnAck {
+                    session_present: false,
+                    code: ConnectReturnCode::Success,
+                };
+                let props = ConnAckProperties {
+                    receive_max: Some(20),
+                    ..Default::default()
+                };
+                Packet::ConnAck(connack, Some(props))
+            },
+            |pkt| {
+                let mut buf = BytesMut::new();
+                V5.write(pkt, &mut buf).unwrap();
+                black_box(buf)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    g.finish();
+}
+
 fn v5_connack(c: &mut Criterion) {
     use binparse_protocols::mqtt_v5::{MqttPacket, MqttPacket_body};
     let mut g = c.benchmark_group("mqtt_v5_connack");
@@ -415,6 +589,7 @@ criterion_group!(
     v3_publish,
     v5_connack,
     v3_connect_write,
-    v3_publish_write
+    v3_publish_write,
+    v5_connack_write
 );
 criterion_main!(benches);
