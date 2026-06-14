@@ -134,21 +134,24 @@ impl<'a> CodeGen<'a> {
                 }
             };
 
-            definition_order.push(s.name);
+            definition_order.push(s.name.text);
             let mut new_s = Todo::new(s);
             find_dependencies(&s.items, &mut new_s.dependencies);
 
             if new_s.dependencies.is_empty() {
-                roots.push(s.name);
+                roots.push(s.name.text);
             } else {
                 for dependency in &new_s.dependencies {
-                    reverse_deps.entry(*dependency).or_default().insert(s.name);
+                    reverse_deps
+                        .entry(*dependency)
+                        .or_default()
+                        .insert(s.name.text);
                 }
             }
 
-            if structs.insert(s.name, new_s).is_some() {
+            if structs.insert(s.name.text, new_s).is_some() {
                 return Err(Error::DuplicateStruct {
-                    name: s.name.to_owned(),
+                    name: s.name.text.to_owned(),
                 });
             }
         }
@@ -253,19 +256,19 @@ fn generate_error_enum(variants: &[ast::ErrorVariant<'_>]) -> Result<TokenStream
         if variant.name == "Parse" {
             return Err(Error::ReservedErrorVariant);
         }
-        if !seen.insert(variant.name) {
+        if !seen.insert(variant.name.text) {
             return Err(Error::DuplicateErrorVariant {
-                name: variant.name.to_string(),
+                name: variant.name.text.to_string(),
             });
         }
-        let name = format_ident!("{}", variant.name);
-        let name_str = variant.name;
+        let name = format_ident!("{}", variant.name.text);
+        let name_str = variant.name.text;
         if variant.fields.is_empty() {
             enum_variants.extend(quote! { #name, });
             name_arms.extend(quote! { Error::#name => #name_str, });
         } else {
             let fields = variant.fields.iter().map(|(field_name, primitive)| {
-                let field_ident = format_ident!("{}", field_name);
+                let field_ident = format_ident!("{}", field_name.text);
                 let ty = match_primitive(primitive).1;
                 quote! { #field_ident: #ty }
             });
@@ -313,22 +316,26 @@ fn find_dependencies<'a>(
 }
 
 fn find_type_dependencies<'a>(ty: &ast::Type<'a>, dependencies: &mut HashSet<&'a str>) {
-    match ty {
-        ast::Type::StructRef(name) => {
-            dependencies.insert(name);
+    match &ty.kind {
+        ast::TypeKind::StructRef(name) => {
+            dependencies.insert(name.text);
         }
-        ast::Type::Array(ast::ArrayType {
-            elem_ty: ast::ArrayElemType::StructRef(name),
+        ast::TypeKind::Array(ast::ArrayType {
+            elem_ty:
+                ast::ArrayElemType {
+                    kind: ast::ArrayElemTypeKind::StructRef(name),
+                    ..
+                },
             ..
         }) => {
-            dependencies.insert(name);
+            dependencies.insert(name.text);
         }
-        ast::Type::Concat(items) => {
+        ast::TypeKind::Concat(items) => {
             for item in items {
                 find_type_dependencies(&item.ty, dependencies);
             }
         }
-        ast::Type::Union(union) => {
+        ast::TypeKind::Union(union) => {
             for variant in &union.variants {
                 if let ast::UnionBody::NamedInline(inline_struct) = &variant.body {
                     find_dependencies(&inline_struct.items, dependencies);

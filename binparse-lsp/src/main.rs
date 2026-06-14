@@ -3,6 +3,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server, jsonrpc::Result};
 
 mod diagnostics;
+mod semantic_tokens;
 
 struct Backend {
     client: Client,
@@ -25,6 +26,16 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
+                semantic_tokens_provider: Some(
+                    SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        SemanticTokensOptions {
+                            legend: semantic_tokens::legend(),
+                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                            range: Some(false),
+                            work_done_progress_options: Default::default(),
+                        },
+                    ),
+                ),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -67,6 +78,23 @@ impl LanguageServer for Backend {
         if let Some(text) = text {
             self.refresh(params.text_document.uri, text, None).await;
         }
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        let Some(text) = self
+            .documents
+            .get(&params.text_document.uri)
+            .map(|t| t.clone())
+        else {
+            return Ok(None);
+        };
+        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+            result_id: None,
+            data: semantic_tokens::compute(&text),
+        })))
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {

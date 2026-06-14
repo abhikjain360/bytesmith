@@ -259,32 +259,32 @@ pub(crate) fn generate(
     writer_sizes: &HashMap<&str, usize>,
 ) -> Result<(TokenStream, Option<usize>), Error> {
     Ok(match classify(ast, writer_sizes)? {
-        Some(Layout::Fixed { fields }) => emit_fixed(ast.name, &fields),
-        Some(Layout::FixedPadded { fields }) => emit_fixed_padded(ast.name, &fields),
+        Some(Layout::Fixed { fields }) => emit_fixed(ast.name.text, &fields),
+        Some(Layout::FixedPadded { fields }) => emit_fixed_padded(ast.name.text, &fields),
         Some(Layout::DynamicTail { fields, tail }) => {
-            (emit_dynamic_tail(ast.name, &fields, &tail), None)
+            (emit_dynamic_tail(ast.name.text, &fields, &tail), None)
         }
         Some(Layout::DynamicTailHook { fields, tail }) => {
-            (emit_dynamic_tail_hook(ast.name, &fields, &tail), None)
+            (emit_dynamic_tail_hook(ast.name.text, &fields, &tail), None)
         }
         Some(Layout::ContentHook { fields, hook }) => {
-            (emit_content_hook(ast.name, &fields, &hook), None)
+            (emit_content_hook(ast.name.text, &fields, &hook), None)
         }
         Some(Layout::ContentHookNoWidth { fields, hook }) => {
-            (emit_content_hook_no_width(ast.name, &fields, &hook), None)
+            (emit_content_hook_no_width(ast.name.text, &fields, &hook), None)
         }
         Some(Layout::DynamicTailOpen { fields, tail }) => {
-            (emit_dynamic_tail_open(ast.name, &fields, &tail), None)
+            (emit_dynamic_tail_open(ast.name.text, &fields, &tail), None)
         }
-        Some(Layout::Union(layout)) => (emit_union(ast.name, &layout), None),
-        Some(Layout::Forward(layout)) => (emit_forward(ast.name, &layout), None),
-        Some(Layout::LenUnion(layout)) => (emit_len_union(ast.name, &layout), None),
-        Some(Layout::LenUnionHook(layout)) => (emit_len_union_hook(ast.name, &layout), None),
+        Some(Layout::Union(layout)) => (emit_union(ast.name.text, &layout), None),
+        Some(Layout::Forward(layout)) => (emit_forward(ast.name.text, &layout), None),
+        Some(Layout::LenUnion(layout)) => (emit_len_union(ast.name.text, &layout), None),
+        Some(Layout::LenUnionHook(layout)) => (emit_len_union_hook(ast.name.text, &layout), None),
         Some(Layout::GreedyStructTail(layout)) => {
-            (emit_greedy_struct_tail(ast.name, &layout), None)
+            (emit_greedy_struct_tail(ast.name.text, &layout), None)
         }
-        Some(Layout::Conditional(layout)) => (emit_conditional(ast.name, &layout), None),
-        Some(Layout::MultiRegion(layout)) => (emit_multi_region(ast.name, &layout), None),
+        Some(Layout::Conditional(layout)) => (emit_conditional(ast.name.text, &layout), None),
+        Some(Layout::MultiRegion(layout)) => (emit_multi_region(ast.name.text, &layout), None),
         None => (TokenStream::new(), None),
     })
 }
@@ -361,7 +361,10 @@ fn classify(
             return Ok(None);
         };
         let kind = match &field.value {
-            ast::FieldValue::Type(ast::Type::Primitive(primitive)) => {
+            ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Primitive(primitive),
+                ..
+            }) => {
                 if !field_attrs_supported(&field_attrs) {
                     return Ok(None);
                 }
@@ -375,14 +378,17 @@ fn classify(
                     endian,
                 };
                 fields.push(WriterField {
-                    name: format_ident!("{}", field.name),
+                    name: format_ident!("{}", field.name.text),
                     kind,
                     bit_offset,
                 });
                 bit_offset += len.byte * 8;
                 continue;
             }
-            ast::FieldValue::Type(ast::Type::BitField(width)) => {
+            ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::BitField(width),
+                ..
+            }) => {
                 let width = *width as usize;
                 if !(1..=7).contains(&width) {
                     return Ok(None);
@@ -393,7 +399,10 @@ fn classify(
                 let bit_order = field_attrs.merge_inherited(struct_inherited).bit_order;
                 FieldKind::BitField { width, bit_order }
             }
-            ast::FieldValue::Type(ast::Type::Concat(items)) => {
+            ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Concat(items),
+                ..
+            }) => {
                 if !field_attrs_supported(&field_attrs) {
                     return Ok(None);
                 }
@@ -406,7 +415,7 @@ fn classify(
                     return Ok(None);
                 };
                 fields.push(WriterField {
-                    name: format_ident!("{}", field.name),
+                    name: format_ident!("{}", field.name.text),
                     kind: FieldKind::Concat {
                         items: concat_items,
                         bytes: concat_bits / 8,
@@ -416,11 +425,14 @@ fn classify(
                 bit_offset += concat_bits;
                 continue;
             }
-            ast::FieldValue::Type(ast::Type::Array(array)) => {
+            ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Array(array),
+                ..
+            }) => {
                 if !bit_offset.is_multiple_of(8) {
                     return Ok(None);
                 }
-                if let ast::ArrayElemType::Primitive(prim) = array.elem_ty
+                if let ast::ArrayElemTypeKind::Primitive(prim) = array.elem_ty.kind
                     && !matches!(prim, ast::Primitive::U8)
                     && field_attrs_supported(&field_attrs)
                     && let Some(size) = array.size.as_ref()
@@ -431,7 +443,7 @@ fn classify(
                     let endian = field_attrs.merge_inherited(struct_inherited).endian;
                     let (len, _) = crate::match_primitive(&prim);
                     fields.push(WriterField {
-                        name: format_ident!("{}", field.name),
+                        name: format_ident!("{}", field.name.text),
                         kind: FieldKind::MultiByteArray {
                             primitive: prim,
                             endian,
@@ -443,8 +455,8 @@ fn classify(
                     continue;
                 }
                 if !matches!(
-                    array.elem_ty,
-                    ast::ArrayElemType::Primitive(ast::Primitive::U8)
+                    array.elem_ty.kind,
+                    ast::ArrayElemTypeKind::Primitive(ast::Primitive::U8)
                 ) {
                     return Ok(None);
                 }
@@ -474,7 +486,7 @@ fn classify(
                         return Ok(None);
                     }
                     let tail = DynamicTailOpen {
-                        array_field: format_ident!("{}", field.name),
+                        array_field: format_ident!("{}", field.name.text),
                         prefix_size: bit_offset / 8,
                     };
                     return Ok(Some(Layout::DynamicTailOpen { fields, tail }));
@@ -490,7 +502,7 @@ fn classify(
                     .and_then(|lowered| lowered.const_value)
                 {
                     fields.push(WriterField {
-                        name: format_ident!("{}", field.name),
+                        name: format_ident!("{}", field.name.text),
                         kind: FieldKind::ByteArray { len },
                         bit_offset,
                     });
@@ -504,30 +516,38 @@ fn classify(
                     return Ok(None);
                 }
                 if let Some(pending) = &pending_hook_len
-                    && size_path_matches(size, pending.field.name)
+                    && size_path_matches(size, pending.field.name.text)
                 {
-                    return classify_dynamic_tail_hook(ast.name, field.name, pending, fields);
+                    return classify_dynamic_tail_hook(
+                        ast.name.text,
+                        field.name.text,
+                        pending,
+                        fields,
+                    );
                 }
-                let Some(tail) = classify_dynamic_tail(size, field.name, bit_offset, &fields)
+                let Some(tail) = classify_dynamic_tail(size, field.name.text, bit_offset, &fields)
                 else {
                     return Ok(None);
                 };
                 return Ok(Some(Layout::DynamicTail { fields, tail }));
             }
-            ast::FieldValue::Type(ast::Type::StructRef(child_name)) => {
+            ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::StructRef(child_name),
+                ..
+            }) => {
                 if !field_attrs_supported(&field_attrs) {
                     return Ok(None);
                 }
                 if !bit_offset.is_multiple_of(8) {
                     return Ok(None);
                 }
-                let Some(size) = writer_sizes.get(child_name).copied() else {
+                let Some(size) = writer_sizes.get(child_name.text).copied() else {
                     return Ok(None);
                 };
                 fields.push(WriterField {
-                    name: format_ident!("{}", field.name),
+                    name: format_ident!("{}", field.name.text),
                     kind: FieldKind::StructRef {
-                        name: format_ident!("{}Writer", child_name),
+                        name: format_ident!("{}Writer", child_name.text),
                         size,
                     },
                     bit_offset,
@@ -535,7 +555,10 @@ fn classify(
                 bit_offset += size * 8;
                 continue;
             }
-            ast::FieldValue::Type(ast::Type::Union(union)) => {
+            ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Union(union),
+                ..
+            }) => {
                 if index != last_index {
                     return Ok(None);
                 }
@@ -547,7 +570,7 @@ fn classify(
                 }
                 if let Some(pending) = pending_hook_len.as_ref() {
                     return classify_len_union_hook(
-                        ast.name,
+                        ast.name.text,
                         union,
                         field,
                         pending,
@@ -562,14 +585,17 @@ fn classify(
                 }
                 return classify_union(
                     union,
-                    field.name,
+                    field.name.text,
                     fields,
                     bit_offset,
                     struct_inherited,
                     writer_sizes,
                 );
             }
-            ast::FieldValue::Constraint(ast::Expr::Literal(ast::Literal::Int(lit))) => {
+            ast::FieldValue::Constraint(ast::Expr {
+                kind: ast::ExprKind::Literal(ast::Literal::Int(lit)),
+                ..
+            }) => {
                 if !field_attrs_supported(&field_attrs) {
                     return Ok(None);
                 }
@@ -581,7 +607,7 @@ fn classify(
                     return Ok(None);
                 };
                 fields.push(WriterField {
-                    name: format_ident!("{}", field.name),
+                    name: format_ident!("{}", field.name.text),
                     kind,
                     bit_offset,
                 });
@@ -600,7 +626,7 @@ fn classify(
             | FieldKind::Constant { .. } => unreachable!(),
         };
         fields.push(WriterField {
-            name: format_ident!("{}", field.name),
+            name: format_ident!("{}", field.name.text),
             kind,
             bit_offset,
         });
@@ -608,7 +634,7 @@ fn classify(
     }
 
     if let Some(pending) = pending_hook_len {
-        return classify_content_hook(ast.name, &pending, fields);
+        return classify_content_hook(ast.name.text, &pending, fields);
     }
 
     if !bit_offset.is_multiple_of(8) {
@@ -647,10 +673,13 @@ fn classify_forward(
         let field_attrs = ParsedAttrs::parse(&field.attributes).ok()?;
 
         if region.is_none() {
-            if let ast::FieldValue::Type(ast::Type::Array(array)) = &field.value
+            if let ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Array(array),
+                ..
+            }) = &field.value
                 && matches!(
-                    array.elem_ty,
-                    ast::ArrayElemType::Primitive(ast::Primitive::U8)
+                    array.elem_ty.kind,
+                    ast::ArrayElemTypeKind::Primitive(ast::Primitive::U8)
                 )
                 && field_attrs_supported(&field_attrs)
                 && bit_offset.is_multiple_of(8)
@@ -666,7 +695,7 @@ fn classify_forward(
                     .find(|f: &&WriterField| f.name == len_field_str)?;
                 let (len_primitive, len_endian) = forward_len_field(len_field)?;
                 region = Some(ForwardRegion {
-                    region_field: format_ident!("{}", field.name),
+                    region_field: format_ident!("{}", field.name.text),
                     region_kind: RegionKind::Bytes,
                     len_field_str: len_field_str.to_string(),
                     len_primitive,
@@ -678,22 +707,25 @@ fn classify_forward(
                 continue;
             }
 
-            if let ast::FieldValue::Type(ast::Type::StructRef(child_name)) = &field.value
+            if let ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::StructRef(child_name),
+                ..
+            }) = &field.value
                 && bit_offset.is_multiple_of(8)
                 && let Some(len_expr) = &field_attrs.len
                 && len_only_attr_supported(&field_attrs)
                 && let Some((len_field_str, len_adjust)) = affine_size_shape(len_expr)
-                && let Some(size) = writer_sizes.get(child_name).copied()
+                && let Some(size) = writer_sizes.get(child_name.text).copied()
             {
                 let len_field = prefix_fields
                     .iter()
                     .find(|f: &&WriterField| f.name == len_field_str)?;
                 let (len_primitive, len_endian) = forward_len_field(len_field)?;
                 region = Some(ForwardRegion {
-                    region_field: format_ident!("{}", field.name),
+                    region_field: format_ident!("{}", field.name.text),
                     region_kind: RegionKind::StructRef {
-                        child_writer: format_ident!("{}Writer", child_name),
-                        child_content: format_ident!("{}Content", child_name),
+                        child_writer: format_ident!("{}Writer", child_name.text),
+                        child_content: format_ident!("{}Content", child_name.text),
                         size,
                     },
                     len_field_str: len_field_str.to_string(),
@@ -706,8 +738,11 @@ fn classify_forward(
                 continue;
             }
 
-            if let ast::FieldValue::Type(ast::Type::Array(array)) = &field.value
-                && let ast::ArrayElemType::StructRef(child_name) = &array.elem_ty
+            if let ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Array(array),
+                ..
+            }) = &field.value
+                && let ast::ArrayElemTypeKind::StructRef(child_name) = &array.elem_ty.kind
                 && field_attrs_supported(&field_attrs)
                 && bit_offset.is_multiple_of(8)
                 && let Some(size) = array.size.as_ref()
@@ -716,17 +751,17 @@ fn classify_forward(
                     .and_then(|lowered| lowered.const_value)
                     .is_none()
                 && let Some((len_field_str, len_adjust)) = affine_size_shape(size)
-                && let Some(child_size) = writer_sizes.get(child_name).copied()
+                && let Some(child_size) = writer_sizes.get(child_name.text).copied()
             {
                 let len_field = prefix_fields
                     .iter()
                     .find(|f: &&WriterField| f.name == len_field_str)?;
                 let (len_primitive, len_endian) = forward_len_field(len_field)?;
                 region = Some(ForwardRegion {
-                    region_field: format_ident!("{}", field.name),
+                    region_field: format_ident!("{}", field.name.text),
                     region_kind: RegionKind::ArrayOfStructs {
-                        child_writer: format_ident!("{}Writer", child_name),
-                        child_content: format_ident!("{}Content", child_name),
+                        child_writer: format_ident!("{}Writer", child_name.text),
+                        child_content: format_ident!("{}Content", child_name.text),
                         size: child_size,
                     },
                     len_field_str: len_field_str.to_string(),
@@ -800,22 +835,25 @@ fn classify_greedy_struct_tail(
         let field_attrs = ParsedAttrs::parse(&field.attributes).ok()?;
 
         if index == last_index
-            && let ast::FieldValue::Type(ast::Type::Array(array)) = &field.value
-            && let ast::ArrayElemType::StructRef(child_name) = &array.elem_ty
+            && let ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Array(array),
+                ..
+            }) = &field.value
+            && let ast::ArrayElemTypeKind::StructRef(child_name) = &array.elem_ty.kind
             && array.size.is_none()
             && field_attrs.greedy
             && field_attrs.until.is_none()
             && field_attrs.hook.is_none()
             && field_attrs.max_iter.is_none()
             && bit_offset.is_multiple_of(8)
-            && let Some(size) = writer_sizes.get(child_name).copied()
+            && let Some(size) = writer_sizes.get(child_name.text).copied()
         {
             return Some(GreedyStructTail {
                 fields,
-                array_field: format_ident!("{}", field.name),
+                array_field: format_ident!("{}", field.name.text),
                 prefix_size: bit_offset / 8,
-                child_writer: format_ident!("{}Writer", child_name),
-                child_content: format_ident!("{}Content", child_name),
+                child_writer: format_ident!("{}Writer", child_name.text),
+                child_content: format_ident!("{}Content", child_name.text),
                 size,
             });
         }
@@ -904,16 +942,16 @@ fn classify_branch(
 }
 
 fn lower_condition(expr: &ast::Expr<'_>, prefix_fields: &[WriterField]) -> Option<TokenStream> {
-    match expr {
-        ast::Expr::Literal(ast::Literal::Int(ast::IntLiteral { value, .. })) => {
+    match &expr.kind {
+        ast::ExprKind::Literal(ast::Literal::Int(ast::IntLiteral { value, .. })) => {
             let v = *value;
             Some(quote! { #v })
         }
-        ast::Expr::Path(path) => {
+        ast::ExprKind::Path(path) => {
             let [field_name] = path.as_slice() else {
                 return None;
             };
-            let field = prefix_fields.iter().find(|f| f.name == *field_name)?;
+            let field = prefix_fields.iter().find(|f| f.name == field_name.text)?;
             match &field.kind {
                 FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
                     let ident = &field.name;
@@ -926,7 +964,7 @@ fn lower_condition(expr: &ast::Expr<'_>, prefix_fields: &[WriterField]) -> Optio
                 | FieldKind::Constant { .. } => None,
             }
         }
-        ast::Expr::Binary(binary) => {
+        ast::ExprKind::Binary(binary) => {
             let lhs = lower_condition(&binary.lhs, prefix_fields)?;
             let rhs = lower_condition(&binary.rhs, prefix_fields)?;
             let op = match binary.op {
@@ -949,10 +987,10 @@ fn lower_condition(expr: &ast::Expr<'_>, prefix_fields: &[WriterField]) -> Optio
             };
             Some(quote! { ((#lhs) #op (#rhs)) })
         }
-        ast::Expr::Literal(ast::Literal::String(_))
-        | ast::Expr::Call(..)
-        | ast::Expr::Tuple(_)
-        | ast::Expr::RawType(_) => None,
+        ast::ExprKind::Literal(ast::Literal::String(_))
+        | ast::ExprKind::Call(..)
+        | ast::ExprKind::Tuple(_)
+        | ast::ExprKind::RawType(_) => None,
     }
 }
 
@@ -995,7 +1033,10 @@ fn classify_fixed_field(
 ) -> Option<(WriterField, usize)> {
     let field_attrs = ParsedAttrs::parse(&field.attributes).ok()?;
     match &field.value {
-        ast::FieldValue::Type(ast::Type::Primitive(primitive)) => {
+        ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::Primitive(primitive),
+            ..
+        }) => {
             if !field_attrs_supported(&field_attrs) {
                 return None;
             }
@@ -1010,14 +1051,17 @@ fn classify_fixed_field(
             };
             Some((
                 WriterField {
-                    name: format_ident!("{}", field.name),
+                    name: format_ident!("{}", field.name.text),
                     kind,
                     bit_offset,
                 },
                 len.byte * 8,
             ))
         }
-        ast::FieldValue::Type(ast::Type::BitField(width)) => {
+        ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::BitField(width),
+            ..
+        }) => {
             let width = *width as usize;
             if !(1..=7).contains(&width) {
                 return None;
@@ -1028,14 +1072,17 @@ fn classify_fixed_field(
             let bit_order = field_attrs.merge_inherited(struct_inherited).bit_order;
             Some((
                 WriterField {
-                    name: format_ident!("{}", field.name),
+                    name: format_ident!("{}", field.name.text),
                     kind: FieldKind::BitField { width, bit_order },
                     bit_offset,
                 },
                 width,
             ))
         }
-        ast::FieldValue::Type(ast::Type::Array(array)) => {
+        ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::Array(array),
+            ..
+        }) => {
             if !field_attrs_supported(&field_attrs) {
                 return None;
             }
@@ -1043,8 +1090,8 @@ fn classify_fixed_field(
                 return None;
             }
             if !matches!(
-                array.elem_ty,
-                ast::ArrayElemType::Primitive(ast::Primitive::U8)
+                array.elem_ty.kind,
+                ast::ArrayElemTypeKind::Primitive(ast::Primitive::U8)
             ) {
                 return None;
             }
@@ -1054,26 +1101,29 @@ fn classify_fixed_field(
                 .and_then(|lowered| lowered.const_value)?;
             Some((
                 WriterField {
-                    name: format_ident!("{}", field.name),
+                    name: format_ident!("{}", field.name.text),
                     kind: FieldKind::ByteArray { len },
                     bit_offset,
                 },
                 len * 8,
             ))
         }
-        ast::FieldValue::Type(ast::Type::StructRef(child_name)) => {
+        ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::StructRef(child_name),
+            ..
+        }) => {
             if !field_attrs_supported(&field_attrs) {
                 return None;
             }
             if !bit_offset.is_multiple_of(8) {
                 return None;
             }
-            let size = writer_sizes.get(child_name).copied()?;
+            let size = writer_sizes.get(child_name.text).copied()?;
             Some((
                 WriterField {
-                    name: format_ident!("{}", field.name),
+                    name: format_ident!("{}", field.name.text),
                     kind: FieldKind::StructRef {
-                        name: format_ident!("{}Writer", child_name),
+                        name: format_ident!("{}Writer", child_name.text),
                         size,
                     },
                     bit_offset,
@@ -1098,7 +1148,10 @@ fn classify_field_type(
     writer_sizes: &HashMap<&str, usize>,
 ) -> Option<(FieldKind, usize)> {
     match &field.value {
-        ast::FieldValue::Type(ast::Type::Primitive(primitive)) => {
+        ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::Primitive(primitive),
+            ..
+        }) => {
             if !bit_offset.is_multiple_of(8) {
                 return None;
             }
@@ -1112,7 +1165,10 @@ fn classify_field_type(
                 len.byte * 8,
             ))
         }
-        ast::FieldValue::Type(ast::Type::BitField(width)) => {
+        ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::BitField(width),
+            ..
+        }) => {
             let width = *width as usize;
             if !(1..=7).contains(&width) {
                 return None;
@@ -1120,7 +1176,10 @@ fn classify_field_type(
             let bit_order = field_attrs.merge_inherited(struct_inherited).bit_order;
             Some((FieldKind::BitField { width, bit_order }, width))
         }
-        ast::FieldValue::Type(ast::Type::Array(array)) => {
+        ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::Array(array),
+            ..
+        }) => {
             if !bit_offset.is_multiple_of(8) {
                 return None;
             }
@@ -1128,11 +1187,11 @@ fn classify_field_type(
             let count = expr::lower(size, ExprType::Numeric, &[])
                 .ok()
                 .and_then(|lowered| lowered.const_value)?;
-            match array.elem_ty {
-                ast::ArrayElemType::Primitive(ast::Primitive::U8) => {
+            match array.elem_ty.kind {
+                ast::ArrayElemTypeKind::Primitive(ast::Primitive::U8) => {
                     Some((FieldKind::ByteArray { len: count }, count * 8))
                 }
-                ast::ArrayElemType::Primitive(prim) => {
+                ast::ArrayElemTypeKind::Primitive(prim) => {
                     let endian = field_attrs.merge_inherited(struct_inherited).endian;
                     let (len, _) = crate::match_primitive(&prim);
                     Some((
@@ -1144,23 +1203,29 @@ fn classify_field_type(
                         count * len.byte * 8,
                     ))
                 }
-                ast::ArrayElemType::BitField(_) | ast::ArrayElemType::StructRef(_) => None,
+                ast::ArrayElemTypeKind::BitField(_) | ast::ArrayElemTypeKind::StructRef(_) => None,
             }
         }
-        ast::FieldValue::Type(ast::Type::StructRef(child_name)) => {
+        ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::StructRef(child_name),
+            ..
+        }) => {
             if !bit_offset.is_multiple_of(8) {
                 return None;
             }
-            let size = writer_sizes.get(child_name).copied()?;
+            let size = writer_sizes.get(child_name.text).copied()?;
             Some((
                 FieldKind::StructRef {
-                    name: format_ident!("{}Writer", child_name),
+                    name: format_ident!("{}Writer", child_name.text),
                     size,
                 },
                 size * 8,
             ))
         }
-        ast::FieldValue::Type(ast::Type::Concat(items)) => {
+        ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::Concat(items),
+            ..
+        }) => {
             if !bit_offset.is_multiple_of(8) {
                 return None;
             }
@@ -1173,7 +1238,10 @@ fn classify_field_type(
                 concat_bits,
             ))
         }
-        ast::FieldValue::Constraint(ast::Expr::Literal(ast::Literal::Int(lit))) => {
+        ast::FieldValue::Constraint(ast::Expr {
+            kind: ast::ExprKind::Literal(ast::Literal::Int(lit)),
+            ..
+        }) => {
             constant_field_kind(
                 lit,
                 bit_offset,
@@ -1257,7 +1325,7 @@ fn classify_padded_fixed(
         )?;
         fields.push(PaddedField {
             field: WriterField {
-                name: format_ident!("{}", field.name),
+                name: format_ident!("{}", field.name.text),
                 kind,
                 bit_offset,
             },
@@ -1314,10 +1382,13 @@ fn classify_variant_layout(
         };
         let field_attrs = ParsedAttrs::parse(&field.attributes).ok()?;
 
-        if let ast::FieldValue::Type(ast::Type::Array(array)) = &field.value
+        if let ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::Array(array),
+            ..
+        }) = &field.value
             && matches!(
-                array.elem_ty,
-                ast::ArrayElemType::Primitive(ast::Primitive::U8)
+                array.elem_ty.kind,
+                ast::ArrayElemTypeKind::Primitive(ast::Primitive::U8)
             )
         {
             if let Some(size) = array.size.as_ref() {
@@ -1345,7 +1416,7 @@ fn classify_variant_layout(
                             cur_run_bits = 0;
                         }
                         segments.push(VariantSegment::VarintLenRegion {
-                            region_field: format_ident!("{}", field.name),
+                            region_field: format_ident!("{}", field.name.text),
                             encode_fn,
                             width_fn,
                             return_ty,
@@ -1364,7 +1435,7 @@ fn classify_variant_layout(
                     });
                     cur_run_bits = 0;
                     segments.push(VariantSegment::DynRegion {
-                        region_field: format_ident!("{}", field.name),
+                        region_field: format_ident!("{}", field.name.text),
                         derived_len: Some(DerivedLen {
                             len_field_str: len_field_str.to_string(),
                             len_primitive,
@@ -1387,7 +1458,7 @@ fn classify_variant_layout(
                     return None;
                 }
                 pending_varint = Some((
-                    field.name.to_string(),
+                    field.name.text.to_string(),
                     encode_fn,
                     width_fn,
                     hook.return_ty.clone(),
@@ -1410,7 +1481,7 @@ fn classify_variant_layout(
                     cur_run_bits = 0;
                 }
                 segments.push(VariantSegment::DynRegion {
-                    region_field: format_ident!("{}", field.name),
+                    region_field: format_ident!("{}", field.name.text),
                     derived_len: None,
                 });
                 continue;
@@ -1467,8 +1538,8 @@ fn classify_concat_items(
         let item_attrs = ParsedAttrs::parse(&item.attributes).ok()?;
         let item_inherited = item_attrs.merge_inherited(struct_inherited);
         let name = format_ident!("item{}", i);
-        match &item.ty {
-            ast::Type::Primitive(primitive) => {
+        match &item.ty.kind {
+            ast::TypeKind::Primitive(primitive) => {
                 if !field_attrs_supported(&item_attrs) {
                     return None;
                 }
@@ -1486,7 +1557,7 @@ fn classify_concat_items(
                 });
                 bit_offset += len.byte * 8;
             }
-            ast::Type::BitField(width) => {
+            ast::TypeKind::BitField(width) => {
                 let width = *width as usize;
                 if !(1..=7).contains(&width) {
                     return None;
@@ -1504,7 +1575,7 @@ fn classify_concat_items(
                 });
                 bit_offset += width;
             }
-            ast::Type::Array(array) => {
+            ast::TypeKind::Array(array) => {
                 if !field_attrs_supported(&item_attrs) {
                     return None;
                 }
@@ -1515,8 +1586,8 @@ fn classify_concat_items(
                 let count = expr::lower(size, ExprType::Numeric, &[])
                     .ok()
                     .and_then(|lowered| lowered.const_value)?;
-                match array.elem_ty {
-                    ast::ArrayElemType::Primitive(ast::Primitive::U8) => {
+                match array.elem_ty.kind {
+                    ast::ArrayElemTypeKind::Primitive(ast::Primitive::U8) => {
                         fields.push(WriterField {
                             name,
                             kind: FieldKind::ByteArray { len: count },
@@ -1524,7 +1595,7 @@ fn classify_concat_items(
                         });
                         bit_offset += count * 8;
                     }
-                    ast::ArrayElemType::Primitive(prim) => {
+                    ast::ArrayElemTypeKind::Primitive(prim) => {
                         let (len, _) = crate::match_primitive(&prim);
                         fields.push(WriterField {
                             name,
@@ -1537,12 +1608,14 @@ fn classify_concat_items(
                         });
                         bit_offset += count * len.byte * 8;
                     }
-                    ast::ArrayElemType::BitField(_) | ast::ArrayElemType::StructRef(_) => {
+                    ast::ArrayElemTypeKind::BitField(_) | ast::ArrayElemTypeKind::StructRef(_) => {
                         return None;
                     }
                 }
             }
-            ast::Type::StructRef(_) | ast::Type::Concat(_) | ast::Type::Union(_) => return None,
+            ast::TypeKind::StructRef(_)
+            | ast::TypeKind::Concat(_)
+            | ast::TypeKind::Union(_) => return None,
         }
     }
     if !bit_offset.is_multiple_of(8) {
@@ -1582,8 +1655,8 @@ fn matcher_disc_values(
     matcher: &ast::UnionMatcher<'_>,
     num_args: usize,
 ) -> Option<Option<Vec<proc_macro2::Literal>>> {
-    match matcher {
-        ast::UnionMatcher::Literal(ast::Literal::Int(int_lit)) => {
+    match &matcher.kind {
+        ast::UnionMatcherKind::Literal(ast::Literal::Int(int_lit)) => {
             if num_args != 1 {
                 return None;
             }
@@ -1591,16 +1664,16 @@ fn matcher_disc_values(
                 int_lit.value as u128,
             )]))
         }
-        ast::UnionMatcher::Literal(_) => None,
-        ast::UnionMatcher::Wildcard => Some(None),
-        ast::UnionMatcher::Tuple(elements) => {
+        ast::UnionMatcherKind::Literal(_) => None,
+        ast::UnionMatcherKind::Wildcard => Some(None),
+        ast::UnionMatcherKind::Tuple(elements) => {
             if elements.len() != num_args {
                 return None;
             }
             let mut values = Vec::with_capacity(elements.len());
             for element in elements {
-                match element {
-                    ast::UnionMatcher::Literal(ast::Literal::Int(int_lit)) => {
+                match &element.kind {
+                    ast::UnionMatcherKind::Literal(ast::Literal::Int(int_lit)) => {
                         values.push(proc_macro2::Literal::u128_unsuffixed(int_lit.value as u128))
                     }
                     _ => return None,
@@ -1626,7 +1699,7 @@ fn build_union_layout(
     }
     let mut discs = Vec::with_capacity(num_args);
     for disc_name in &union.args {
-        discs.push(union_disc_field(&prefix_fields, disc_name)?);
+        discs.push(union_disc_field(&prefix_fields, disc_name.text)?);
     }
     let wildcard_writable =
         discs.len() == 1 && matches!(discs[0].kind, FieldKind::Primitive { .. });
@@ -1856,8 +1929,8 @@ fn push_union_variant(
         },
     };
     variants.push(UnionVariantInfo {
-        name: format_ident!("{}", inline.name),
-        reader_variant: format_ident!("{}", inline.name),
+        name: format_ident!("{}", inline.name.text),
+        reader_variant: format_ident!("{}", inline.name.text),
         body,
         disc_values,
     });
@@ -1903,7 +1976,11 @@ fn classify_len_union(
             return Ok(None);
         };
 
-        if let ast::FieldValue::Type(ast::Type::Union(union)) = &field.value {
+        if let ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::Union(union),
+            ..
+        }) = &field.value
+        {
             if index != last_index {
                 return Ok(None);
             }
@@ -1932,7 +2009,7 @@ fn classify_len_union(
             let region_offset = bit_offset / 8;
             let Some(union_layout) = build_union_layout(
                 union,
-                field.name,
+                field.name.text,
                 prefix_fields,
                 bit_offset,
                 struct_inherited,
@@ -1995,10 +2072,13 @@ fn classify_multi_region(
         };
         let field_attrs = ParsedAttrs::parse(&field.attributes).ok()?;
 
-        if let ast::FieldValue::Type(ast::Type::Array(array)) = &field.value
+        if let ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::Array(array),
+            ..
+        }) = &field.value
             && matches!(
-                array.elem_ty,
-                ast::ArrayElemType::Primitive(ast::Primitive::U8)
+                array.elem_ty.kind,
+                ast::ArrayElemTypeKind::Primitive(ast::Primitive::U8)
             )
             && array.size.is_none()
             && field_attrs.hook.is_some()
@@ -2013,7 +2093,7 @@ fn classify_multi_region(
             };
             if ast.items[index + 1..]
                 .iter()
-                .any(|later| field_len_references(later, field.name))
+                .any(|later| field_len_references(later, field.name.text))
             {
                 return None;
             }
@@ -2028,14 +2108,18 @@ fn classify_multi_region(
                 cur_run_bits = 0;
             }
             segments.push(RegionSegment::ByteRegion {
-                field: format_ident!("{}", field.name),
+                field: format_ident!("{}", field.name.text),
                 encode,
             });
             has_byte_region = true;
             continue;
         }
 
-        if let ast::FieldValue::Type(ast::Type::Union(union)) = &field.value {
+        if let ast::FieldValue::Type(ast::Type {
+            kind: ast::TypeKind::Union(union),
+            ..
+        }) = &field.value
+        {
             if index != last_index {
                 return None;
             }
@@ -2053,7 +2137,7 @@ fn classify_multi_region(
             let prefix_size = cur_run_bits / 8;
             let union_layout = build_union_layout(
                 union,
-                field.name,
+                field.name.text,
                 std::mem::take(&mut cur_run),
                 cur_run_bits,
                 struct_inherited,
@@ -2123,32 +2207,32 @@ fn classify_dynamic_tail(
 }
 
 fn affine_size_shape<'a>(size: &'a ast::Expr<'a>) -> Option<(&'a str, LenAdjust)> {
-    match size {
-        ast::Expr::Path(path) => {
+    match &size.kind {
+        ast::ExprKind::Path(path) => {
             let [len_field_str] = path.as_slice() else {
                 return None;
             };
-            Some((len_field_str, LenAdjust::None))
+            Some((len_field_str.text, LenAdjust::None))
         }
-        ast::Expr::Binary(binary) => {
+        ast::ExprKind::Binary(binary) => {
             let op = match binary.op {
                 ast::BinaryOp::Numeric(ast::NumericBinaryOp::Add) => LenAdjust::Sub,
                 ast::BinaryOp::Numeric(ast::NumericBinaryOp::Sub) => LenAdjust::Add,
                 _ => return None,
             };
-            let ast::Expr::Path(path) = &binary.lhs else {
+            let ast::ExprKind::Path(path) = &binary.lhs.kind else {
                 return None;
             };
             let [len_field_str] = path.as_slice() else {
                 return None;
             };
-            let ast::Expr::Literal(ast::Literal::Int(int_lit)) = &binary.rhs else {
+            let ast::ExprKind::Literal(ast::Literal::Int(int_lit)) = &binary.rhs.kind else {
                 return None;
             };
             if int_lit.value == 0 {
-                return Some((len_field_str, LenAdjust::None));
+                return Some((len_field_str.text, LenAdjust::None));
             }
-            Some((len_field_str, op(int_lit.value)))
+            Some((len_field_str.text, op(int_lit.value)))
         }
         _ => None,
     }
@@ -2163,7 +2247,7 @@ fn len_value_expr(region_len: &TokenStream, adjust: LenAdjust) -> TokenStream {
 }
 
 fn size_path_matches(size: &ast::Expr<'_>, name: &str) -> bool {
-    matches!(size, ast::Expr::Path(path) if path.as_slice() == [name])
+    matches!(&size.kind, ast::ExprKind::Path(path) if path.as_slice() == [name])
 }
 
 fn constant_field_kind(
@@ -2236,7 +2320,7 @@ fn classify_dynamic_tail_hook(
     let Some((encode_fn, width_fn)) = parse_write_hook(&pending.field.attributes) else {
         return Err(Error::MissingWriteHook {
             struct_name: struct_name.to_string(),
-            field: pending.field.name.to_string(),
+            field: pending.field.name.text.to_string(),
         });
     };
     let tail = DynamicTailHook {
@@ -2272,7 +2356,7 @@ fn classify_len_union_hook(
     let Some((len_field_str, len_adjust)) = affine_size_shape(len_expr) else {
         return Ok(None);
     };
-    if len_field_str != pending.field.name {
+    if len_field_str != pending.field.name.text {
         return Ok(None);
     }
     let Ok(pending_attrs) = ParsedAttrs::parse(&pending.field.attributes) else {
@@ -2284,12 +2368,12 @@ fn classify_len_union_hook(
     let Some((encode_fn, width_fn)) = parse_write_hook(&pending.field.attributes) else {
         return Err(Error::MissingWriteHook {
             struct_name: struct_name.to_string(),
-            field: pending.field.name.to_string(),
+            field: pending.field.name.text.to_string(),
         });
     };
     let Some(union_layout) = build_union_layout(
         union,
-        body_field.name,
+        body_field.name.text,
         prefix_fields,
         bit_offset,
         struct_inherited,
@@ -2330,7 +2414,7 @@ fn classify_content_hook(
     if !parse_write_hook_present(&pending.field.attributes) {
         return Err(Error::MissingWriteHook {
             struct_name: struct_name.to_string(),
-            field: pending.field.name.to_string(),
+            field: pending.field.name.text.to_string(),
         });
     }
     if !pending.is_last || !fields_all_simple(&fields) {
@@ -2338,7 +2422,7 @@ fn classify_content_hook(
     }
     if let Some((encode_fn, width_fn)) = parse_write_hook(&pending.field.attributes) {
         let hook = ContentHook {
-            field: format_ident!("{}", pending.field.name),
+            field: format_ident!("{}", pending.field.name.text),
             prefix_size: pending.prefix_size,
             encode_fn,
             width_fn,
@@ -2350,7 +2434,7 @@ fn classify_content_hook(
         return Ok(None);
     };
     let hook = ContentHookNoWidth {
-        field: format_ident!("{}", pending.field.name),
+        field: format_ident!("{}", pending.field.name.text),
         prefix_size: pending.prefix_size,
         encode_fn,
         value_ty: hook.return_ty,
@@ -2371,9 +2455,9 @@ fn parse_write_hook_present(attrs: &[ast::Attribute<'_>]) -> bool {
 }
 
 fn path_to_tokens(expr: &ast::Expr<'_>) -> Option<TokenStream> {
-    match expr {
-        ast::Expr::Path(segments) => {
-            let idents: Vec<_> = segments.iter().map(|s| format_ident!("{}", s)).collect();
+    match &expr.kind {
+        ast::ExprKind::Path(segments) => {
+            let idents: Vec<_> = segments.iter().map(|s| format_ident!("{}", s.text)).collect();
             Some(quote! { #(#idents)::* })
         }
         _ => None,

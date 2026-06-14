@@ -66,7 +66,10 @@ pub(crate) fn lower_discriminants(
     let lowered = args
         .iter()
         .map(|arg| {
-            let expr = ast::Expr::Path(vec![arg]);
+            let expr = ast::Expr {
+                kind: ast::ExprKind::Path(vec![ast::Ident::from(*arg)]),
+                span: ast::Span::DUMMY,
+            };
             lower(&expr, ExprType::Numeric, done_fields).map(|lowered| lowered.tokens)
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -84,8 +87,8 @@ fn lower_inner(
     done_fields: &[DoneField],
     root: &ast::Expr<'_>,
 ) -> Result<LoweredExpr, Error> {
-    match expr {
-        ast::Expr::Literal(ast::Literal::Int(ast::IntLiteral { value, .. })) => {
+    match &expr.kind {
+        ast::ExprKind::Literal(ast::Literal::Int(ast::IntLiteral { value, .. })) => {
             require(ExprType::Numeric, expected, root)?;
             let v = *value;
             Ok(LoweredExpr {
@@ -94,50 +97,50 @@ fn lower_inner(
             })
         }
 
-        ast::Expr::Literal(ast::Literal::String(_)) => Err(Error::TypeMismatch {
+        ast::ExprKind::Literal(ast::Literal::String(_)) => Err(Error::TypeMismatch {
             expr: render(root),
             expected,
             got: "string".to_string(),
         }),
 
-        ast::Expr::Path(path) => {
+        ast::ExprKind::Path(path) => {
             require(ExprType::Numeric, expected, root)?;
             let [field_name] = path.as_slice() else {
                 return Err(Error::NestedPath {
                     expr: render(root),
-                    path: path.join("."),
+                    path: path.iter().map(|i| i.text).collect::<Vec<_>>().join("."),
                 });
             };
             let done_field = done_fields
                 .iter()
-                .find(|f| f.name == *field_name)
+                .find(|f| f.name == field_name.text)
                 .ok_or_else(|| Error::UnknownField {
                     expr: render(root),
-                    field: field_name.to_string(),
+                    field: field_name.text.to_string(),
                 })?;
             if done_field.conditional {
                 return Err(Error::ConditionalField {
                     expr: render(root),
-                    field: field_name.to_string(),
+                    field: field_name.text.to_string(),
                 });
             }
             match done_field.field_type {
                 DoneFieldType::Primitive | DoneFieldType::BitField => {
-                    let getter = format_ident!("{}", field_name);
+                    let getter = format_ident!("{}", field_name.text);
                     Ok(LoweredExpr {
                         tokens: quote! { self.#getter() as usize },
                         const_value: None,
                     })
                 }
                 DoneFieldType::Hook => {
-                    let getter = format_ident!("{}", field_name);
+                    let getter = format_ident!("{}", field_name.text);
                     Ok(LoweredExpr {
                         tokens: quote! { self.#getter().map(|v| v as usize).unwrap_or(0) },
                         const_value: None,
                     })
                 }
                 DoneFieldType::HookRef => {
-                    let getter = format_ident!("{}", field_name);
+                    let getter = format_ident!("{}", field_name.text);
                     Ok(LoweredExpr {
                         tokens: quote! { self.#getter().map(|v| *v as usize).unwrap_or(0) },
                         const_value: None,
@@ -145,12 +148,12 @@ fn lower_inner(
                 }
                 DoneFieldType::Other => Err(Error::NonNumericField {
                     expr: render(root),
-                    field: field_name.to_string(),
+                    field: field_name.text.to_string(),
                 }),
             }
         }
 
-        ast::Expr::Binary(binary) => match binary.op {
+        ast::ExprKind::Binary(binary) => match binary.op {
             ast::BinaryOp::Numeric(op) => {
                 require(ExprType::Numeric, expected, root)?;
                 let lhs = lower_inner(&binary.lhs, ExprType::Numeric, done_fields, root)?;
@@ -184,15 +187,15 @@ fn lower_inner(
             }
         },
 
-        ast::Expr::Tuple(_) => Err(Error::TypeMismatch {
+        ast::ExprKind::Tuple(_) => Err(Error::TypeMismatch {
             expr: render(root),
             expected,
             got: "tuple".to_string(),
         }),
 
-        ast::Expr::Call(..) => Err(Error::MacroCall { expr: render(root) }),
+        ast::ExprKind::Call(..) => Err(Error::MacroCall { expr: render(root) }),
 
-        ast::Expr::RawType(_) => Err(Error::TypeMismatch {
+        ast::ExprKind::RawType(_) => Err(Error::TypeMismatch {
             expr: render(root),
             expected,
             got: "type".to_string(),
@@ -271,15 +274,15 @@ fn require(actual: ExprType, expected: ExprType, root: &ast::Expr<'_>) -> Result
 }
 
 fn render(expr: &ast::Expr<'_>) -> String {
-    match expr {
-        ast::Expr::Literal(ast::Literal::Int(lit)) => match lit.ty {
+    match &expr.kind {
+        ast::ExprKind::Literal(ast::Literal::Int(lit)) => match lit.ty {
             ast::IntType::Decimal => format!("{}", lit.value),
             ast::IntType::Hex => format!("x{:x}", lit.value),
             ast::IntType::Binary => format!("b{:b}", lit.value),
         },
-        ast::Expr::Literal(ast::Literal::String(s)) => format!("\"{s}\""),
-        ast::Expr::Path(path) => path.join("."),
-        ast::Expr::Binary(binary) => {
+        ast::ExprKind::Literal(ast::Literal::String(s)) => format!("\"{s}\""),
+        ast::ExprKind::Path(path) => path.iter().map(|i| i.text).collect::<Vec<_>>().join("."),
+        ast::ExprKind::Binary(binary) => {
             let op = match binary.op {
                 ast::BinaryOp::Numeric(op) => match op {
                     ast::NumericBinaryOp::Add => "+",
@@ -304,14 +307,15 @@ fn render(expr: &ast::Expr<'_>) -> String {
             };
             format!("({} {} {})", render(&binary.lhs), op, render(&binary.rhs))
         }
-        ast::Expr::Call(name, args) => {
+        ast::ExprKind::Call(name, args) => {
             let args = args.iter().map(render).collect::<Vec<_>>().join(", ");
+            let name = name.text;
             format!("{name}({args})")
         }
-        ast::Expr::Tuple(elements) => {
+        ast::ExprKind::Tuple(elements) => {
             let elements = elements.iter().map(render).collect::<Vec<_>>().join(", ");
             format!("({elements})")
         }
-        ast::Expr::RawType(raw) => raw.to_string(),
+        ast::ExprKind::RawType(raw) => raw.to_string(),
     }
 }

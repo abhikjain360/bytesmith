@@ -113,7 +113,7 @@ pub(crate) fn generate<'a>(
     let attrs = ParsedAttrs::parse(&ast.attributes)?;
     let struct_inherited = attrs.merge_inherited(Inherited::default());
     let generated = generate_struct(
-        ast.name,
+        ast.name.text,
         &ast.items,
         struct_inherited,
         attrs.len.clone(),
@@ -122,7 +122,7 @@ pub(crate) fn generate<'a>(
         TokenStream::new(),
     )?;
 
-    done.insert(ast.name, generated);
+    done.insert(ast.name.text, generated);
 
     Ok(())
 }
@@ -453,7 +453,7 @@ fn generate_items<'a>(
         match item {
             ast::StructItem::Field(ast_field) => {
                 field::generate(ast_field, done, accum, errors).map_err(|error| Error::Field {
-                    name: ast_field.name.to_string(),
+                    name: ast_field.name.text.to_string(),
                     error,
                 })?;
             }

@@ -84,12 +84,15 @@ pub(crate) fn generate<'a>(
 ) -> Result<(), Error> {
     let attrs = ParsedAttrs::parse(&ast.attributes)?;
     let field_inherited = attrs.merge_inherited(struct_accum.inherited);
-    let mut field_accum = FieldAccum::new(ast.name);
+    let mut field_accum = FieldAccum::new(ast.name.text);
 
     let cache_value_supported = attrs.hook.is_some()
         || matches!(
             ast.value,
-            ast::FieldValue::Type(ast::Type::Union(_))
+            ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Union(_),
+                ..
+            })
         );
     if attrs.cache_value && !cache_value_supported {
         return Err(Error::CacheValueOnNonHook);
@@ -137,7 +140,9 @@ pub(crate) fn generate<'a>(
             check_len_applies(&attrs, ty)?;
             check_handoff_applies(&attrs, ty, struct_accum)?;
 
-            if struct_accum.condition.is_some() && matches!(ty, ast::Type::Concat(_)) {
+            if struct_accum.condition.is_some()
+                && matches!(ty.kind, ast::TypeKind::Concat(_))
+            {
                 return Err(Error::ConcatInConditional);
             }
             if struct_accum.condition.is_some() && attrs.len.is_some() {
@@ -147,9 +152,12 @@ pub(crate) fn generate<'a>(
             match (&attrs.hook, is_vla(ty)) {
                 (Some(hook), true) => {
                     if !matches!(
-                        ty,
-                        ast::Type::Array(ast::ArrayType {
-                            elem_ty: ast::ArrayElemType::Primitive(ast::Primitive::U8),
+                        &ty.kind,
+                        ast::TypeKind::Array(ast::ArrayType {
+                            elem_ty: ast::ArrayElemType {
+                                kind: ast::ArrayElemTypeKind::Primitive(ast::Primitive::U8),
+                                ..
+                            },
                             ..
                         })
                     ) {
@@ -184,7 +192,7 @@ pub(crate) fn generate<'a>(
         }
 
         ast::FieldValue::Constraint(expr) => {
-            let ast::Expr::Literal(ast::Literal::Int(lit)) = expr else {
+            let ast::ExprKind::Literal(ast::Literal::Int(lit)) = &expr.kind else {
                 return Err(Error::NonLiteralConstraint);
             };
             let ty = constant_type(lit)?;
@@ -221,8 +229,8 @@ pub(crate) fn generate<'a>(
     );
     let end_offset = start_offset.clone() + len.clone();
 
-    let start_offset_getter_fn_name = format_ident!("{}_start_offset", ast.name);
-    let bit_range_fn_name = format_ident!("{}_bit_range", ast.name);
+    let start_offset_getter_fn_name = format_ident!("{}_start_offset", ast.name.text);
+    let bit_range_fn_name = format_ident!("{}_bit_range", ast.name.text);
     let start_offset_body = if has_padding {
         match &start_offset {
             GeneratedLen::Fixed(len) => {
@@ -253,7 +261,7 @@ pub(crate) fn generate<'a>(
             }
         }
         GeneratedLen::Dynamic(total_len) if attrs.cache_len => {
-            let cache_ident = format_ident!("{}_end_cache", ast.name);
+            let cache_ident = format_ident!("{}_end_cache", ast.name.text);
             struct_accum.cache_field_defs.extend(quote! {
                 #cache_ident: Option<binparse::Len>,
             });
@@ -307,15 +315,15 @@ pub(crate) fn generate<'a>(
     }
 
     let tree_body = if field_accum.tree_body.is_empty() {
-        type_::opaque_node(ast.name, &stub_label)
+        type_::opaque_node(ast.name.text, &stub_label)
     } else {
         std::mem::take(&mut field_accum.tree_body)
     };
     let hide = attrs.skip.then(|| quote! { .hide() });
 
-    let pad_node_fn_name = format_ident!("{}_pad_node", ast.name);
+    let pad_node_fn_name = format_ident!("{}_pad_node", ast.name.text);
     let pad_push = if has_padding {
-        let pad_name = format!("{}_pad", ast.name);
+        let pad_name = format!("{}_pad", ast.name.text);
         let prev_end = match &struct_accum.last_offset_getter_fn_name {
             Some(prev) => quote! { self.#prev() },
             None => quote! { binparse::Len::ZERO },
@@ -348,7 +356,7 @@ pub(crate) fn generate<'a>(
         TokenStream::new()
     };
 
-    let present_node_fn_name = format_ident!("{}_present_node", ast.name);
+    let present_node_fn_name = format_ident!("{}_present_node", ast.name.text);
     struct_accum.functions.extend(quote! {
         #[allow(dead_code)]
         fn #present_node_fn_name(&mut self) -> ::binparse::FieldNode<'a> {
@@ -360,9 +368,9 @@ pub(crate) fn generate<'a>(
         children.push(me.#present_node_fn_name());
     };
 
-    let absent_node_fn_name = format_ident!("{}_absent_node", ast.name);
+    let absent_node_fn_name = format_ident!("{}_absent_node", ast.name.text);
     let absent_push = if struct_accum.condition.is_some() {
-        let absent_name = ast.name;
+        let absent_name = ast.name.text;
         struct_accum.functions.extend(quote! {
             #[allow(dead_code)]
             fn #absent_node_fn_name(&mut self) -> ::binparse::FieldNode<'a> {
@@ -414,10 +422,10 @@ pub(crate) fn generate<'a>(
     struct_accum.functions.extend(field_accum.field_getter);
     struct_accum.functions.extend(field_accum.offset_getter);
 
-    let fatal_check_fn_name = format_ident!("{}_fatal_check", ast.name);
+    let fatal_check_fn_name = format_ident!("{}_fatal_check", ast.name.text);
     let mut fatal_check = TokenStream::new();
     if let Some(align) = dynamic_align {
-        let field_path = format!("{}.{}", struct_accum.name, ast.name);
+        let field_path = format!("{}.{}", struct_accum.name, ast.name.text);
         fatal_check.extend(quote! {
             {
                 let offset = self.#start_offset_getter_fn_name();
@@ -453,12 +461,12 @@ pub(crate) fn generate<'a>(
     });
 
     struct_accum.done_fields.push(DoneField {
-        name: ast.name.to_string(),
+        name: ast.name.text.to_string(),
         field_type,
         conditional: struct_accum.condition.is_some(),
     });
 
-    let recoverable_check_fn_name = format_ident!("{}_recoverable_check", ast.name);
+    let recoverable_check_fn_name = format_ident!("{}_recoverable_check", ast.name.text);
     let mut recoverable_check = std::mem::take(&mut field_accum.parse_checks);
     generate_validations(
         ast,
@@ -489,7 +497,7 @@ pub(crate) fn generate<'a>(
         None => struct_accum.parse_checks.extend(field_checks),
     }
 
-    let field_name_str = ast.name;
+    let field_name_str = ast.name.text;
     let dissect_field = quote! {
         match me.#fatal_check_fn_name() {
             Err(error) => {
@@ -574,8 +582,8 @@ fn generate_validations<'a>(
         return Err(attr::Error::ValidationOnNonNumeric.into());
     }
 
-    let field_name = format_ident!("{}", ast.name);
-    let field_path = format!("{}.{}", struct_accum.name, ast.name);
+    let field_name = format_ident!("{}", ast.name.text);
+    let field_path = format!("{}.{}", struct_accum.name, ast.name.text);
     let actual_u128 = match field_type {
         DoneFieldType::Primitive | DoneFieldType::BitField => quote! { self.#field_name() as u128 },
         DoneFieldType::Hook => {
@@ -646,7 +654,7 @@ fn generate_validations<'a>(
         });
     }
 
-    let validate_fn_name = format_ident!("{}_validate", ast.name);
+    let validate_fn_name = format_ident!("{}_validate", ast.name.text);
     struct_accum.functions.extend(quote! {
         #[allow(clippy::unnecessary_cast)]
         fn #validate_fn_name(&mut self) -> Result<(), ::binparse::ParseError> {
@@ -737,18 +745,18 @@ pub(crate) fn getter_visibility(attrs: &ParsedAttrs<'_>) -> (TokenStream, TokenS
 }
 
 fn constant_type(lit: &ast::IntLiteral) -> Result<ast::Type<'static>, Error> {
-    match lit.ty {
+    let kind = match lit.ty {
         ast::IntType::Binary => match lit.width {
-            1..=8 => Ok(ast::Type::BitField(lit.width)),
-            _ => Err(Error::ConstantTooWide { width: lit.width }),
+            1..=8 => ast::TypeKind::BitField(lit.width),
+            _ => return Err(Error::ConstantTooWide { width: lit.width }),
         },
         ast::IntType::Hex => match usize::from(lit.width).div_ceil(2) {
-            1 => Ok(ast::Type::Primitive(ast::Primitive::U8)),
-            2 => Ok(ast::Type::Primitive(ast::Primitive::U16)),
-            3..=4 => Ok(ast::Type::Primitive(ast::Primitive::U32)),
-            5..=8 => Ok(ast::Type::Primitive(ast::Primitive::U64)),
-            9..=16 => Ok(ast::Type::Primitive(ast::Primitive::U128)),
-            _ => Err(Error::ConstantTooWide { width: lit.width }),
+            1 => ast::TypeKind::Primitive(ast::Primitive::U8),
+            2 => ast::TypeKind::Primitive(ast::Primitive::U16),
+            3..=4 => ast::TypeKind::Primitive(ast::Primitive::U32),
+            5..=8 => ast::TypeKind::Primitive(ast::Primitive::U64),
+            9..=16 => ast::TypeKind::Primitive(ast::Primitive::U128),
+            _ => return Err(Error::ConstantTooWide { width: lit.width }),
         },
         ast::IntType::Decimal => {
             let primitive = if lit.value <= usize::from(u8::MAX) {
@@ -760,29 +768,36 @@ fn constant_type(lit: &ast::IntLiteral) -> Result<ast::Type<'static>, Error> {
             } else {
                 ast::Primitive::U64
             };
-            Ok(ast::Type::Primitive(primitive))
+            ast::TypeKind::Primitive(primitive)
         }
-    }
+    };
+    Ok(ast::Type {
+        kind,
+        span: ast::Span::DUMMY,
+    })
 }
 
 fn is_vla(ty: &ast::Type<'_>) -> bool {
-    matches!(ty, ast::Type::Array(ast::ArrayType { size: None, .. }))
+    matches!(
+        ty.kind,
+        ast::TypeKind::Array(ast::ArrayType { size: None, .. })
+    )
 }
 
 fn check_endian_applies(ty: &ast::Type<'_>) -> Result<(), attr::Error> {
-    match ty {
-        ast::Type::Primitive(ast::Primitive::U8 | ast::Primitive::I8) => {
+    match &ty.kind {
+        ast::TypeKind::Primitive(ast::Primitive::U8 | ast::Primitive::I8) => {
             Err(attr::Error::EndianOnSingleByte)
         }
-        ast::Type::BitField(_) => Err(attr::Error::EndianOnBitfield),
-        ast::Type::StructRef(_) => Err(attr::Error::EndianOnStructRef),
-        ast::Type::Array(ast::ArrayType { elem_ty, .. }) => match elem_ty {
-            ast::ArrayElemType::Primitive(ast::Primitive::U8 | ast::Primitive::I8) => {
+        ast::TypeKind::BitField(_) => Err(attr::Error::EndianOnBitfield),
+        ast::TypeKind::StructRef(_) => Err(attr::Error::EndianOnStructRef),
+        ast::TypeKind::Array(ast::ArrayType { elem_ty, .. }) => match &elem_ty.kind {
+            ast::ArrayElemTypeKind::Primitive(ast::Primitive::U8 | ast::Primitive::I8) => {
                 Err(attr::Error::EndianOnSingleByte)
             }
-            ast::ArrayElemType::BitField(_) => Err(attr::Error::EndianOnBitfield),
-            ast::ArrayElemType::StructRef(_) => Err(attr::Error::EndianOnStructRef),
-            ast::ArrayElemType::Primitive(_) => Ok(()),
+            ast::ArrayElemTypeKind::BitField(_) => Err(attr::Error::EndianOnBitfield),
+            ast::ArrayElemTypeKind::StructRef(_) => Err(attr::Error::EndianOnStructRef),
+            ast::ArrayElemTypeKind::Primitive(_) => Ok(()),
         },
         _ => Ok(()),
     }
@@ -801,7 +816,7 @@ fn check_array_attrs_apply(attrs: &ParsedAttrs<'_>, ty: &ast::Type<'_>) -> Resul
         if attrs.hook.is_some() {
             return Err(attr::Error::ArrayAttrWithHook(name));
         }
-        if !matches!(ty, ast::Type::Array(_)) {
+        if !matches!(ty.kind, ast::TypeKind::Array(_)) {
             return Err(attr::Error::ArrayAttrOnNonArray(name));
         }
     }
@@ -821,10 +836,10 @@ fn check_len_applies(attrs: &ParsedAttrs<'_>, ty: &ast::Type<'_>) -> Result<(), 
         }
         return Err(attr::Error::LenWithFixedHook);
     }
-    match ty {
-        ast::Type::StructRef(_) | ast::Type::Union(_) => Ok(()),
-        ast::Type::Array(array) => {
-            if matches!(array.elem_ty, ast::ArrayElemType::BitField(_)) {
+    match &ty.kind {
+        ast::TypeKind::StructRef(_) | ast::TypeKind::Union(_) => Ok(()),
+        ast::TypeKind::Array(array) => {
+            if matches!(array.elem_ty.kind, ast::ArrayElemTypeKind::BitField(_)) {
                 return Err(attr::Error::LenOnBitfieldArray);
             }
             if array.size.is_some() {
@@ -832,8 +847,10 @@ fn check_len_applies(attrs: &ParsedAttrs<'_>, ty: &ast::Type<'_>) -> Result<(), 
             }
             Ok(())
         }
-        ast::Type::Concat(_) => Err(attr::Error::LenOnConcat),
-        ast::Type::Primitive(_) | ast::Type::BitField(_) => Err(attr::Error::LenOnUnsupportedType),
+        ast::TypeKind::Concat(_) => Err(attr::Error::LenOnConcat),
+        ast::TypeKind::Primitive(_) | ast::TypeKind::BitField(_) => {
+            Err(attr::Error::LenOnUnsupportedType)
+        }
     }
 }
 
@@ -860,12 +877,12 @@ fn check_handoff_applies(
         return Err(attr::Error::HandoffWithHook(name));
     }
     if attrs.discriminator {
-        match ty {
-            ast::Type::Primitive(_) | ast::Type::BitField(_) => {}
-            ast::Type::Concat(_) | ast::Type::Union(_) => {
+        match &ty.kind {
+            ast::TypeKind::Primitive(_) | ast::TypeKind::BitField(_) => {}
+            ast::TypeKind::Concat(_) | ast::TypeKind::Union(_) => {
                 return Err(attr::Error::DiscriminatorOnConcatOrUnion);
             }
-            ast::Type::Array(_) | ast::Type::StructRef(_) => {
+            ast::TypeKind::Array(_) | ast::TypeKind::StructRef(_) => {
                 return Err(attr::Error::DiscriminatorOnNonNumeric);
             }
         }
@@ -874,16 +891,21 @@ fn check_handoff_applies(
         if struct_accum.payload.is_some() {
             return Err(attr::Error::MultiplePayloads);
         }
-        match ty {
-            ast::Type::Array(ast::ArrayType {
-                elem_ty: ast::ArrayElemType::Primitive(ast::Primitive::U8),
+        match &ty.kind {
+            ast::TypeKind::Array(ast::ArrayType {
+                elem_ty: ast::ArrayElemType {
+                    kind: ast::ArrayElemTypeKind::Primitive(ast::Primitive::U8),
+                    ..
+                },
                 ..
             })
-            | ast::Type::StructRef(_) => {}
-            ast::Type::Concat(_) | ast::Type::Union(_) => {
+            | ast::TypeKind::StructRef(_) => {}
+            ast::TypeKind::Concat(_) | ast::TypeKind::Union(_) => {
                 return Err(attr::Error::PayloadOnConcatOrUnion);
             }
-            ast::Type::Primitive(_) | ast::Type::BitField(_) | ast::Type::Array(_) => {
+            ast::TypeKind::Primitive(_)
+            | ast::TypeKind::BitField(_)
+            | ast::TypeKind::Array(_) => {
                 return Err(attr::Error::PayloadOnNonByteArray);
             }
         }
@@ -892,14 +914,17 @@ fn check_handoff_applies(
 }
 
 fn check_bit_order_applies(ty: &ast::Type<'_>) -> Result<(), attr::Error> {
-    match ty {
-        ast::Type::BitField(_)
-        | ast::Type::Array(ast::ArrayType {
-            elem_ty: ast::ArrayElemType::BitField(_),
+    match &ty.kind {
+        ast::TypeKind::BitField(_)
+        | ast::TypeKind::Array(ast::ArrayType {
+            elem_ty: ast::ArrayElemType {
+                kind: ast::ArrayElemTypeKind::BitField(_),
+                ..
+            },
             ..
         })
-        | ast::Type::Concat(_)
-        | ast::Type::Union(_) => Ok(()),
+        | ast::TypeKind::Concat(_)
+        | ast::TypeKind::Union(_) => Ok(()),
         _ => Err(attr::Error::BitOrderOnNonBitfield),
     }
 }

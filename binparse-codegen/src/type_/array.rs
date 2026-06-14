@@ -120,8 +120,8 @@ pub(crate) fn generate<'a>(
         }
     };
 
-    let elem = match &array_type.elem_ty {
-        ast::ArrayElemType::Primitive(prim) => {
+    let elem = match &array_type.elem_ty.kind {
+        ast::ArrayElemTypeKind::Primitive(prim) => {
             let (prim_len, prim_ty) = crate::match_primitive(prim);
             let byte_len = prim_len.byte;
             let count = match &mode {
@@ -177,11 +177,11 @@ pub(crate) fn generate<'a>(
             }
         }
 
-        ast::ArrayElemType::StructRef(struct_name) => {
+        ast::ArrayElemTypeKind::StructRef(struct_name) => {
             let generated_struct = done
-                .get(*struct_name)
-                .ok_or_else(|| type_::Error::UnknownType(struct_name.to_string()))?;
-            let struct_ident = format_ident!("{}", struct_name);
+                .get(struct_name.text)
+                .ok_or_else(|| type_::Error::UnknownType(struct_name.text.to_string()))?;
+            let struct_ident = format_ident!("{}", struct_name.text);
             let return_ty = quote! { #struct_ident<'a> };
             let next_body = quote! {
                 match #struct_ident::parse(self.data) {
@@ -289,7 +289,7 @@ pub(crate) fn generate<'a>(
             }
         }
 
-        ast::ArrayElemType::BitField(width) => {
+        ast::ArrayElemTypeKind::BitField(width) => {
             let SizeMode::Counted {
                 count,
                 static_count,
@@ -511,8 +511,8 @@ fn tree_node(
         );
     };
 
-    let elem_loop = match &array_type.elem_ty {
-        ast::ArrayElemType::Primitive(prim) => {
+    let elem_loop = match &array_type.elem_ty.kind {
+        ast::ArrayElemTypeKind::Primitive(prim) => {
             let elem_bits = crate::match_primitive(prim).0.bits();
             let value_ctor = if crate::is_signed(prim) {
                 quote! { ::binparse::Value::Int(i128::from(value)) }
@@ -527,7 +527,7 @@ fn tree_node(
                 &error_node,
             )
         }
-        ast::ArrayElemType::BitField(width) => {
+        ast::ArrayElemTypeKind::BitField(width) => {
             let elem_bits = *width as usize;
             let value_ctor = quote! { ::binparse::Value::UInt(u128::from(value)) };
             elem_value_loop(
@@ -538,10 +538,10 @@ fn tree_node(
                 &error_node,
             )
         }
-        ast::ArrayElemType::StructRef(struct_name) => {
+        ast::ArrayElemTypeKind::StructRef(struct_name) => {
             let generated_struct = done
-                .get(*struct_name)
-                .ok_or_else(|| type_::Error::UnknownType(struct_name.to_string()))?;
+                .get(struct_name.text)
+                .ok_or_else(|| type_::Error::UnknownType(struct_name.text.to_string()))?;
             let elem_len = match &generated_struct.last_offset_getter {
                 Some(getter) => quote! { value.#getter().bits() },
                 None => quote! { 0usize },

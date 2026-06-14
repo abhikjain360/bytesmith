@@ -65,7 +65,8 @@ pub(crate) fn generate<'a>(
         return Err(type_::Error::Union(Error::NonExhaustive));
     }
 
-    let match_expr = expr::lower_discriminants(&union.args, &struct_accum.done_fields)?;
+    let args = union.args.iter().map(|arg| arg.text).collect::<Vec<_>>();
+    let match_expr = expr::lower_discriminants(&args, &struct_accum.done_fields)?;
 
     let start_byte: TokenStream = match &start_offset {
         GeneratedLen::Fixed(offset) => {
@@ -120,12 +121,12 @@ pub(crate) fn generate<'a>(
 
         match &variant.body {
             ast::UnionBody::NamedInline(inline_struct) => {
-                let variant_ident = format_ident!("{}", inline_struct.name);
+                let variant_ident = format_ident!("{}", inline_struct.name.text);
                 let struct_name = format_ident!(
                     "{}_{}_{}",
                     parent_struct_name,
                     field_name,
-                    inline_struct.name
+                    inline_struct.name.text
                 );
 
                 let variant_attrs = crate::attr::ParsedAttrs::parse(&inline_struct.attributes)?;
@@ -142,7 +143,7 @@ pub(crate) fn generate<'a>(
                 )
                 .map_err(|error| {
                     type_::Error::Union(Error::VariantStruct {
-                        name: inline_struct.name.to_string(),
+                        name: inline_struct.name.text.to_string(),
                         error: Box::new(error),
                     })
                 })?;
@@ -233,7 +234,7 @@ pub(crate) fn generate<'a>(
                     }
                 });
 
-                let variant_name = inline_struct.name.to_string();
+                let variant_name = inline_struct.name.text.to_string();
                 if attrs.cache_value {
                     tree_arms.extend(quote! {
                         Ok(#enum_name::#variant_ident(value)) => {
@@ -268,14 +269,14 @@ pub(crate) fn generate<'a>(
                     .iter()
                     .find(|declared| declared.name == *error_name)
                     .ok_or_else(|| {
-                        type_::Error::Union(Error::UnknownErrorVariant(error_name.to_string()))
+                        type_::Error::Union(Error::UnknownErrorVariant(error_name.text.to_string()))
                     })?;
 
                 for (provided, _) in fields {
                     if !declared.fields.iter().any(|(name, _)| name == provided) {
                         return Err(type_::Error::Union(Error::UnknownErrorField {
-                            variant: error_name.to_string(),
-                            field: provided.to_string(),
+                            variant: error_name.text.to_string(),
+                            field: provided.text.to_string(),
                         }));
                     }
                 }
@@ -288,21 +289,21 @@ pub(crate) fn generate<'a>(
                         .map(|(_, value)| value)
                         .ok_or_else(|| {
                             type_::Error::Union(Error::MissingErrorField {
-                                variant: error_name.to_string(),
-                                field: declared_name.to_string(),
+                                variant: error_name.text.to_string(),
+                                field: declared_name.text.to_string(),
                             })
                         })?;
                     let lowered =
                         expr::lower(value, expr::ExprType::Numeric, &struct_accum.done_fields)?
                             .tokens;
-                    let declared_ident = format_ident!("{}", declared_name);
+                    let declared_ident = format_ident!("{}", declared_name.text);
                     let ty = crate::match_primitive(primitive).1;
                     field_inits.extend(quote! {
                         #declared_ident: (#lowered) as #ty,
                     });
                 }
 
-                let error_ident = format_ident!("{}", error_name);
+                let error_ident = format_ident!("{}", error_name.text);
                 let error_value = if declared.fields.is_empty() {
                     quote! { Error::#error_ident }
                 } else {
@@ -543,10 +544,10 @@ pub(crate) fn generate<'a>(
 }
 
 fn is_catch_all(matcher: &ast::UnionMatcher<'_>) -> bool {
-    match matcher {
-        ast::UnionMatcher::Wildcard => true,
-        ast::UnionMatcher::Tuple(elements) => elements.iter().all(is_catch_all),
-        ast::UnionMatcher::Literal(_) => false,
+    match &matcher.kind {
+        ast::UnionMatcherKind::Wildcard => true,
+        ast::UnionMatcherKind::Tuple(elements) => elements.iter().all(is_catch_all),
+        ast::UnionMatcherKind::Literal(_) => false,
     }
 }
 
@@ -566,10 +567,10 @@ fn generate_matchers(
 }
 
 fn validate_matcher_arity(matcher: &ast::UnionMatcher<'_>, num_args: usize) -> Result<(), Error> {
-    let got = match matcher {
-        ast::UnionMatcher::Wildcard => return Ok(()),
-        ast::UnionMatcher::Literal(_) => 1,
-        ast::UnionMatcher::Tuple(elements) => elements.len(),
+    let got = match &matcher.kind {
+        ast::UnionMatcherKind::Wildcard => return Ok(()),
+        ast::UnionMatcherKind::Literal(_) => 1,
+        ast::UnionMatcherKind::Tuple(elements) => elements.len(),
     };
     if got != num_args {
         return Err(Error::MatcherCountMismatch {
@@ -581,14 +582,14 @@ fn validate_matcher_arity(matcher: &ast::UnionMatcher<'_>, num_args: usize) -> R
 }
 
 fn generate_matcher(matcher: &ast::UnionMatcher<'_>) -> Result<TokenStream, Error> {
-    match matcher {
-        ast::UnionMatcher::Literal(ast::Literal::Int(int_lit)) => {
+    match &matcher.kind {
+        ast::UnionMatcherKind::Literal(ast::Literal::Int(int_lit)) => {
             let value = proc_macro2::Literal::usize_unsuffixed(int_lit.value);
             Ok(quote! { #value })
         }
-        ast::UnionMatcher::Literal(_) => Err(Error::NonIntegerMatcher),
-        ast::UnionMatcher::Wildcard => Ok(quote! { _ }),
-        ast::UnionMatcher::Tuple(elements) => {
+        ast::UnionMatcherKind::Literal(_) => Err(Error::NonIntegerMatcher),
+        ast::UnionMatcherKind::Wildcard => Ok(quote! { _ }),
+        ast::UnionMatcherKind::Tuple(elements) => {
             let element_patterns = elements
                 .iter()
                 .map(generate_matcher)

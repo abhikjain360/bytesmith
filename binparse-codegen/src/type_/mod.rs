@@ -96,21 +96,21 @@ pub(crate) fn len_bound(
 }
 
 pub(crate) fn type_label(ty: &ast::Type<'_>) -> String {
-    match ty {
-        ast::Type::Primitive(p) => crate::match_primitive(p).1.to_string(),
-        ast::Type::BitField(width) => format!("b<{width}>"),
-        ast::Type::Array(array) => format!("[{}]", elem_label(&array.elem_ty)),
-        ast::Type::StructRef(name) => name.to_string(),
-        ast::Type::Concat(_) => "concat".to_string(),
-        ast::Type::Union(_) => "union".to_string(),
+    match &ty.kind {
+        ast::TypeKind::Primitive(p) => crate::match_primitive(p).1.to_string(),
+        ast::TypeKind::BitField(width) => format!("b<{width}>"),
+        ast::TypeKind::Array(array) => format!("[{}]", elem_label(&array.elem_ty)),
+        ast::TypeKind::StructRef(name) => name.text.to_string(),
+        ast::TypeKind::Concat(_) => "concat".to_string(),
+        ast::TypeKind::Union(_) => "union".to_string(),
     }
 }
 
 pub(crate) fn elem_label(elem: &ast::ArrayElemType<'_>) -> String {
-    match elem {
-        ast::ArrayElemType::Primitive(p) => crate::match_primitive(p).1.to_string(),
-        ast::ArrayElemType::BitField(width) => format!("b<{width}>"),
-        ast::ArrayElemType::StructRef(name) => name.to_string(),
+    match &elem.kind {
+        ast::ArrayElemTypeKind::Primitive(p) => crate::match_primitive(p).1.to_string(),
+        ast::ArrayElemTypeKind::BitField(width) => format!("b<{width}>"),
+        ast::ArrayElemTypeKind::StructRef(name) => name.text.to_string(),
     }
 }
 
@@ -161,12 +161,12 @@ pub(crate) fn generate<'a>(
     attrs: &ParsedAttrs<'a>,
     errors: &[ast::ErrorVariant<'_>],
 ) -> Result<GeneratedTypeInfo, Error> {
-    match ast {
-        ast::Type::Primitive(p) => primitive::generate(*p, start_offset, inherited.endian),
-        ast::Type::BitField(width) => {
+    match &ast.kind {
+        ast::TypeKind::Primitive(p) => primitive::generate(*p, start_offset, inherited.endian),
+        ast::TypeKind::BitField(width) => {
             bitfield::generate(*width as usize, start_offset, inherited.bit_order)
         }
-        ast::Type::Concat(items) => concat::generate(
+        ast::TypeKind::Concat(items) => concat::generate(
             items,
             done,
             struct_accum,
@@ -175,15 +175,15 @@ pub(crate) fn generate<'a>(
             inherited,
             errors,
         ),
-        ast::Type::StructRef(struct_name) => struct_ref::generate(
-            struct_name,
+        ast::TypeKind::StructRef(struct_name) => struct_ref::generate(
+            struct_name.text,
             done,
             struct_accum,
             field_accum,
             start_offset,
             attrs,
         ),
-        ast::Type::Array(array_type) => array::generate(
+        ast::TypeKind::Array(array_type) => array::generate(
             array_type,
             attrs,
             done,
@@ -192,7 +192,7 @@ pub(crate) fn generate<'a>(
             start_offset,
             inherited,
         ),
-        ast::Type::Union(u) => union_::generate(
+        ast::TypeKind::Union(u) => union_::generate(
             u,
             done,
             struct_accum,

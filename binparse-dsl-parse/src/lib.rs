@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use winnow::{
     ModalResult, Parser,
@@ -68,8 +70,15 @@ fn identifier<'a>(input: &mut Input<'a>) -> ModalResult<&'a str> {
     }
 }
 
-fn path<'a>(input: &mut Input<'a>) -> ModalResult<Vec<&'a str>> {
-    separated(1.., identifier, ".").parse_next(input)
+fn ident<'a>(input: &mut Input<'a>) -> ModalResult<ast::Ident<'a>> {
+    identifier
+        .with_span()
+        .map(|(text, r)| ast::Ident::new(text, r.into()))
+        .parse_next(input)
+}
+
+fn path<'a>(input: &mut Input<'a>) -> ModalResult<Vec<ast::Ident<'a>>> {
+    separated(1.., ident, ".").parse_next(input)
 }
 
 fn literal<'a>(input: &mut Input<'a>) -> ModalResult<ast::Literal<'a>> {
@@ -102,10 +111,15 @@ fn decimal_literal<'a>(input: &mut Input<'a>) -> ModalResult<ast::Literal<'a>> {
                     value,
                     width,
                     ty: ast::IntType::Decimal,
+                    span: ast::Span::DUMMY,
                 })
                 .map_err(IntLiteralError::InvalidInt)
         })
-        .map(ast::Literal::Int)
+        .with_span()
+        .map(|(mut lit, r)| {
+            lit.span = r.into();
+            ast::Literal::Int(lit)
+        })
         .parse_next(input)
 }
 
@@ -118,10 +132,15 @@ fn hex_literal<'a>(input: &mut Input<'a>) -> ModalResult<ast::Literal<'a>> {
                     value,
                     width,
                     ty: ast::IntType::Hex,
+                    span: ast::Span::DUMMY,
                 })
                 .map_err(IntLiteralError::InvalidInt)
         })
-        .map(ast::Literal::Int)
+        .with_span()
+        .map(|(mut lit, r)| {
+            lit.span = r.into();
+            ast::Literal::Int(lit)
+        })
         .parse_next(input)
 }
 
@@ -134,10 +153,15 @@ fn binary_literal<'a>(input: &mut Input<'a>) -> ModalResult<ast::Literal<'a>> {
                     value,
                     width,
                     ty: ast::IntType::Binary,
+                    span: ast::Span::DUMMY,
                 })
                 .map_err(IntLiteralError::InvalidInt)
         })
-        .map(ast::Literal::Int)
+        .with_span()
+        .map(|(mut lit, r)| {
+            lit.span = r.into();
+            ast::Literal::Int(lit)
+        })
         .parse_next(input)
 }
 
@@ -171,40 +195,51 @@ fn hook_args<'a>(input: &mut Input<'a>) -> ModalResult<Vec<ast::Expr<'a>>> {
 
 fn type_token<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     take_while(1.., |c| c != ')')
-        .map(|s: &str| ast::Expr::RawType(s.trim()))
+        .with_span()
+        .map(|(s, r): (&str, _)| ast::Expr {
+            kind: ast::ExprKind::RawType(s.trim()),
+            span: r.into(),
+        })
         .parse_next(input)
 }
 
 fn atom<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
-    padded(alt((
-        literal.map(ast::Expr::Literal),
-        call_or_path,
-        tuple_or_group,
-    )))
+    padded(
+        alt((
+            literal.map(ast::ExprKind::Literal),
+            call_or_path,
+            tuple_or_group,
+        ))
+        .with_span()
+        .map(|(kind, r)| ast::Expr {
+            kind,
+            span: r.into(),
+        }),
+    )
     .parse_next(input)
 }
 
-fn call_or_path<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
+fn call_or_path<'a>(input: &mut Input<'a>) -> ModalResult<ast::ExprKind<'a>> {
     let p = path(input)?;
     if p.len() == 1 {
         let name = p[0];
         let args_opt = opt(args).parse_next(input)?;
         match args_opt {
-            Some(a) => Ok(ast::Expr::Call(name, a)),
-            None => Ok(ast::Expr::Path(p)),
+            Some(a) => Ok(ast::ExprKind::Call(name, a)),
+            None => Ok(ast::ExprKind::Path(p)),
         }
     } else {
-        Ok(ast::Expr::Path(p))
+        Ok(ast::ExprKind::Path(p))
     }
 }
 
-fn tuple_or_group<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
+fn tuple_or_group<'a>(input: &mut Input<'a>) -> ModalResult<ast::ExprKind<'a>> {
     delimited(padded('('), separated(0.., expr, padded(',')), padded(')'))
         .map(|mut exprs: Vec<ast::Expr<'a>>| {
             if exprs.len() == 1 {
-                exprs.pop().unwrap()
+                exprs.pop().unwrap().kind
             } else {
-                ast::Expr::Tuple(exprs)
+                ast::ExprKind::Tuple(exprs)
             }
         })
         .parse_next(input)
@@ -214,21 +249,35 @@ fn member_access<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     atom(input)
 }
 
+fn binary_expr<'a>(lhs: ast::Expr<'a>, op: ast::BinaryOp, op_span: Range<usize>, rhs: ast::Expr<'a>) -> ast::Expr<'a> {
+    let span = ast::Span::new(lhs.span.start, rhs.span.end);
+    ast::Expr {
+        kind: ast::ExprKind::Binary(Box::new(ast::BinaryExpr {
+            lhs,
+            op,
+            op_span: op_span.into(),
+            rhs,
+        })),
+        span,
+    }
+}
+
 fn product<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     let mut lhs = member_access(input)?;
     loop {
         let start = *input;
-        let op_res: ModalResult<ast::BinaryOp> = padded(alt((
+        let op_res: ModalResult<(ast::BinaryOp, Range<usize>)> = padded(alt((
             "*".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::Mul)),
             "/".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::Div)),
             "%".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::Mod)),
         )))
+        .with_span()
         .parse_next(input);
 
         match op_res {
-            Ok(op) => {
+            Ok((op, op_span)) => {
                 let rhs = member_access(input)?;
-                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
+                lhs = binary_expr(lhs, op, op_span, rhs);
             }
             Err(_) => {
                 *input = start;
@@ -243,16 +292,17 @@ fn sum<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     let mut lhs = product(input)?;
     loop {
         let start = *input;
-        let op_res: ModalResult<ast::BinaryOp> = padded(alt((
+        let op_res: ModalResult<(ast::BinaryOp, Range<usize>)> = padded(alt((
             "+".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::Add)),
             "-".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::Sub)),
         )))
+        .with_span()
         .parse_next(input);
 
         match op_res {
-            Ok(op) => {
+            Ok((op, op_span)) => {
                 let rhs = product(input)?;
-                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
+                lhs = binary_expr(lhs, op, op_span, rhs);
             }
             Err(_) => {
                 *input = start;
@@ -267,17 +317,18 @@ fn bitwise<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     let mut lhs = sum(input)?;
     loop {
         let start = *input;
-        let op_res: ModalResult<ast::BinaryOp> = padded(alt((
+        let op_res: ModalResult<(ast::BinaryOp, Range<usize>)> = padded(alt((
             terminated("&", not('&')).map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::BitAnd)),
             "^".map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::BitXor)),
             terminated("|", not('|')).map(|_| ast::BinaryOp::Numeric(ast::NumericBinaryOp::BitOr)),
         )))
+        .with_span()
         .parse_next(input);
 
         match op_res {
-            Ok(op) => {
+            Ok((op, op_span)) => {
                 let rhs = sum(input)?;
-                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
+                lhs = binary_expr(lhs, op, op_span, rhs);
             }
             Err(_) => {
                 *input = start;
@@ -292,7 +343,7 @@ fn comparison<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     let mut lhs = bitwise(input)?;
     loop {
         let start = *input;
-        let op_res: ModalResult<ast::BinaryOp> = padded(alt((
+        let op_res: ModalResult<(ast::BinaryOp, Range<usize>)> = padded(alt((
             "==".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Eq)),
             "!=".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Neq)),
             "<=".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Le)),
@@ -300,12 +351,13 @@ fn comparison<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
             "<".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Lt)),
             ">".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Gt)),
         )))
+        .with_span()
         .parse_next(input);
 
         match op_res {
-            Ok(op) => {
+            Ok((op, op_span)) => {
                 let rhs = bitwise(input)?;
-                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
+                lhs = binary_expr(lhs, op, op_span, rhs);
             }
             Err(_) => {
                 *input = start;
@@ -320,12 +372,14 @@ fn logic_and<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     let mut lhs = comparison(input)?;
     loop {
         let start = *input;
-        let op_res: ModalResult<ast::BinaryOp> =
-            padded("&&".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::And))).parse_next(input);
+        let op_res: ModalResult<(ast::BinaryOp, Range<usize>)> =
+            padded("&&".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::And)))
+                .with_span()
+                .parse_next(input);
         match op_res {
-            Ok(op) => {
+            Ok((op, op_span)) => {
                 let rhs = comparison(input)?;
-                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
+                lhs = binary_expr(lhs, op, op_span, rhs);
             }
             Err(_) => {
                 *input = start;
@@ -340,12 +394,14 @@ fn logic_or<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
     let mut lhs = logic_and(input)?;
     loop {
         let start = *input;
-        let op_res: ModalResult<ast::BinaryOp> =
-            padded("||".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Or))).parse_next(input);
+        let op_res: ModalResult<(ast::BinaryOp, Range<usize>)> =
+            padded("||".map(|_| ast::BinaryOp::Bool(ast::BoolBinaryOp::Or)))
+                .with_span()
+                .parse_next(input);
         match op_res {
-            Ok(op) => {
+            Ok((op, op_span)) => {
                 let rhs = logic_and(input)?;
-                lhs = ast::Expr::Binary(Box::new(ast::BinaryExpr { lhs, op, rhs }));
+                lhs = binary_expr(lhs, op, op_span, rhs);
             }
             Err(_) => {
                 *input = start;
@@ -357,14 +413,23 @@ fn logic_or<'a>(input: &mut Input<'a>) -> ModalResult<ast::Expr<'a>> {
 }
 
 fn attribute<'a>(input: &mut Input<'a>) -> ModalResult<ast::Attribute<'a>> {
-    '@'.parse_next(input)?;
-    let name = identifier(input)?;
-    let args = if name == "hook" || name == "parse_with" {
-        opt(hook_args).parse_next(input)?.unwrap_or_default()
-    } else {
-        opt(args).parse_next(input)?.unwrap_or_default()
-    };
-    Ok(ast::Attribute { name, args })
+    (move |input: &mut Input<'a>| {
+        '@'.parse_next(input)?;
+        let name = ident(input)?;
+        let args = if name == "hook" || name == "parse_with" {
+            opt(hook_args).parse_next(input)?.unwrap_or_default()
+        } else {
+            opt(args).parse_next(input)?.unwrap_or_default()
+        };
+        Ok((name, args))
+    })
+    .with_span()
+    .map(|((name, args), r)| ast::Attribute {
+        name,
+        args,
+        span: r.into(),
+    })
+    .parse_next(input)
 }
 
 fn attributes<'a>(input: &mut Input<'a>) -> ModalResult<Vec<ast::Attribute<'a>>> {
@@ -392,11 +457,11 @@ fn primitive(input: &mut Input<'_>) -> ModalResult<ast::Primitive> {
     .parse_next(input)
 }
 
-fn bit_field_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::Type<'a>> {
+fn bit_field_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::TypeKind<'a>> {
     ("b", delimited('<', digit1, '>'))
         .try_map(|(_, w_str): (&str, &str)| w_str.parse::<u8>())
         .verify(|w| *w <= 8)
-        .map(ast::Type::BitField)
+        .map(ast::TypeKind::BitField)
         .parse_next(input)
 }
 
@@ -405,10 +470,15 @@ fn type_parser<'a>(input: &mut Input<'a>) -> ModalResult<ast::Type<'a>> {
         array_type,
         concat_type,
         union_type,
-        primitive.map(ast::Type::Primitive),
+        primitive.map(ast::TypeKind::Primitive),
         bit_field_type,
-        padded(identifier).map(ast::Type::StructRef),
+        padded(ident).map(ast::TypeKind::StructRef),
     ))
+    .with_span()
+    .map(|(kind, r)| ast::Type {
+        kind,
+        span: r.into(),
+    })
     .parse_next(input)
 }
 
@@ -417,20 +487,25 @@ fn array_elem_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::ArrayElemType<
         ("b", delimited('<', digit1, '>'))
             .try_map(|(_, w_str): (&str, &str)| w_str.parse::<u8>())
             .verify(|w| *w <= 8)
-            .map(ast::ArrayElemType::BitField),
-        primitive.map(ast::ArrayElemType::Primitive),
-        padded(identifier).map(ast::ArrayElemType::StructRef),
+            .map(ast::ArrayElemTypeKind::BitField),
+        primitive.map(ast::ArrayElemTypeKind::Primitive),
+        padded(ident).map(ast::ArrayElemTypeKind::StructRef),
     ))
+    .with_span()
+    .map(|(kind, r)| ast::ArrayElemType {
+        kind,
+        span: r.into(),
+    })
     .parse_next(input)
 }
 
-fn array_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::Type<'a>> {
+fn array_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::TypeKind<'a>> {
     delimited(
         padded('['),
         (array_elem_type, opt(preceded(padded(';'), expr))),
         padded(']'),
     )
-    .map(|(elem_ty, size)| ast::Type::Array(ast::ArrayType { elem_ty, size }))
+    .map(|(elem_ty, size)| ast::TypeKind::Array(ast::ArrayType { elem_ty, size }))
     .parse_next(input)
 }
 
@@ -450,14 +525,14 @@ fn concat_item<'a>(input: &mut Input<'a>) -> ModalResult<ast::ConcatItem<'a>> {
     .parse_next(input)
 }
 
-fn concat_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::Type<'a>> {
+fn concat_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::TypeKind<'a>> {
     let _ = padded("concat").parse_next(input)?;
     delimited(
         padded('('),
         separated(0.., concat_item, padded(',')),
         padded(')').context(StrContext::Label("')' or type")),
     )
-    .map(ast::Type::Concat)
+    .map(ast::TypeKind::Concat)
     .parse_next(input)
     .map_err(|e| e.cut())
 }
@@ -466,12 +541,12 @@ fn error_body<'a>(input: &mut Input<'a>) -> ModalResult<ast::UnionBody<'a>> {
     // @error(ERROR_NAME { field: expr, ... }) or @error(ERROR_NAME)
     let _ = padded("@error").parse_next(input)?;
     let _ = padded('(').parse_next(input)?;
-    let name = padded(identifier).parse_next(input)?;
+    let name = padded(ident).parse_next(input)?;
     let fields = opt(delimited(
         padded('{'),
         separated(
             0..,
-            seq! { padded(identifier), _: padded(':'), expr },
+            seq! { padded(ident), _: padded(':'), expr },
             padded(','),
         ),
         padded('}'),
@@ -485,21 +560,36 @@ fn error_body<'a>(input: &mut Input<'a>) -> ModalResult<ast::UnionBody<'a>> {
 fn union_body<'a>(input: &mut Input<'a>) -> ModalResult<ast::UnionBody<'a>> {
     alt((
         error_body,
-        seq! {ast::NamedInlineStruct {
-            attributes: attributes,
-            name: padded(identifier),
-            items: delimited(padded('{'), struct_items, padded('}')),
-        }}
-        .map(ast::UnionBody::NamedInline),
+        (
+            attributes,
+            padded(ident),
+            delimited(padded('{'), struct_items, padded('}')),
+        )
+            .with_span()
+            .map(|((attributes, name, items), r)| {
+                ast::UnionBody::NamedInline(ast::NamedInlineStruct {
+                    attributes,
+                    name,
+                    items,
+                    span: r.into(),
+                })
+            }),
     ))
     .parse_next(input)
 }
 
 fn union_matcher_simple<'a>(input: &mut Input<'a>) -> ModalResult<ast::UnionMatcher<'a>> {
-    padded(alt((
-        "_".map(|_| ast::UnionMatcher::Wildcard),
-        literal.map(ast::UnionMatcher::Literal),
-    )))
+    padded(
+        alt((
+            "_".map(|_| ast::UnionMatcherKind::Wildcard),
+            literal.map(ast::UnionMatcherKind::Literal),
+        ))
+        .with_span()
+        .map(|(kind, r)| ast::UnionMatcher {
+            kind,
+            span: r.into(),
+        }),
+    )
     .parse_next(input)
 }
 
@@ -510,30 +600,41 @@ fn union_matcher<'a>(input: &mut Input<'a>) -> ModalResult<ast::UnionMatcher<'a>
             separated(1.., union_matcher_simple, padded(',')),
             padded(')'),
         )
-        .map(ast::UnionMatcher::Tuple),
+        .map(ast::UnionMatcherKind::Tuple)
+        .with_span()
+        .map(|(kind, r)| ast::UnionMatcher {
+            kind,
+            span: r.into(),
+        }),
         union_matcher_simple,
     )))
     .parse_next(input)
 }
 
 fn union_variant<'a>(input: &mut Input<'a>) -> ModalResult<ast::UnionVariant<'a>> {
-    seq! {ast::UnionVariant {
-        matchers: separated(1.., union_matcher, padded('|')),
+    seq! {(
+        separated(1.., union_matcher, padded('|')),
         _: padded("=>"),
-        body: union_body,
-    }}
+        union_body,
+    )}
+    .with_span()
+    .map(|((matchers, body), r)| ast::UnionVariant {
+        matchers,
+        body,
+        span: r.into(),
+    })
     .parse_next(input)
 }
 
-fn union_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::Type<'a>> {
+fn union_type<'a>(input: &mut Input<'a>) -> ModalResult<ast::TypeKind<'a>> {
     preceded(
         padded("union"),
         seq! {
-            delimited(padded('('), separated(0.., padded(identifier), padded(',')), padded(')')),
+            delimited(padded('('), separated(0.., padded(ident), padded(',')), padded(')')),
             delimited(padded('{'), union_variants, padded('}'))
         },
     )
-    .map(|(args, variants)| ast::Type::Union(ast::Union { args, variants }))
+    .map(|(args, variants)| ast::TypeKind::Union(ast::Union { args, variants }))
     .parse_next(input)
 }
 
@@ -569,20 +670,35 @@ fn struct_items<'a>(input: &mut Input<'a>) -> ModalResult<Vec<ast::StructItem<'a
 }
 
 fn conditional<'a>(input: &mut Input<'a>) -> ModalResult<ast::Conditional<'a>> {
-    seq! {ast::Conditional {
+    seq! {(
         _: padded("if"),
-        condition: delimited(padded('('), expr, padded(')')),
-        then_branch: delimited(padded('{'), struct_items, padded('}')),
-        else_branch: opt(preceded(padded("else"), delimited(padded('{'), struct_items, padded('}')))),
-    }}.parse_next(input)
+        delimited(padded('('), expr, padded(')')),
+        delimited(padded('{'), struct_items, padded('}')),
+        opt(preceded(padded("else"), delimited(padded('{'), struct_items, padded('}')))),
+    )}
+    .with_span()
+    .map(|((condition, then_branch, else_branch), r)| ast::Conditional {
+        condition,
+        then_branch,
+        else_branch,
+        span: r.into(),
+    })
+    .parse_next(input)
 }
 
 fn field<'a>(input: &mut Input<'a>) -> ModalResult<ast::Field<'a>> {
-    seq! {ast::Field {
-        attributes: attributes,
-        name: padded(identifier),
-        value: field_value,
-    }}
+    seq! {(
+        attributes,
+        padded(ident),
+        field_value,
+    )}
+    .with_span()
+    .map(|((attributes, name, value), r)| ast::Field {
+        attributes,
+        name,
+        value,
+        span: r.into(),
+    })
     .parse_next(input)
 }
 
@@ -591,42 +707,58 @@ fn field_with_opt_comma<'a>(input: &mut Input<'a>) -> ModalResult<ast::Field<'a>
 }
 
 fn struct_def<'a>(input: &mut Input<'a>) -> ModalResult<ast::Definition<'a>> {
-    let attrs = attributes.parse_next(input)?;
-    let _ = padded("struct").parse_next(input)?;
+    let ((attrs, name, items), r) = (move |input: &mut Input<'a>| {
+        let attrs = attributes.parse_next(input)?;
+        let _ = padded("struct").parse_next(input)?;
 
-    let (name, items) = (
-        padded(identifier).context(StrContext::Label("struct name")),
-        delimited(
-            padded('{').context(StrContext::Label("'{'")),
-            struct_items,
-            padded('}').context(StrContext::Label("'}' or field")),
-        ),
-    )
-        .parse_next(input)
-        .map_err(|e| e.cut())?;
+        let (name, items) = (
+            padded(ident).context(StrContext::Label("struct name")),
+            delimited(
+                padded('{').context(StrContext::Label("'{'")),
+                struct_items,
+                padded('}').context(StrContext::Label("'}' or field")),
+            ),
+        )
+            .parse_next(input)
+            .map_err(|e| e.cut())?;
+
+        Ok((attrs, name, items))
+    })
+    .with_span()
+    .parse_next(input)?;
 
     Ok(ast::Definition::Struct(ast::Struct {
         attributes: attrs,
         name,
         items,
+        span: r.into(),
     }))
 }
 
 fn error_variant<'a>(input: &mut Input<'a>) -> ModalResult<ast::ErrorVariant<'a>> {
-    let name = padded(identifier).parse_next(input)?;
-    let fields = opt(delimited(
-        padded('{'),
-        separated(
-            0..,
-            seq! { padded(identifier), _: padded(':'), padded(primitive) },
-            padded(','),
-        ),
-        padded('}'),
-    ))
-    .parse_next(input)?
-    .unwrap_or_default();
-    let _ = opt(padded(',')).parse_next(input)?;
-    Ok(ast::ErrorVariant { name, fields })
+    (move |input: &mut Input<'a>| {
+        let name = padded(ident).parse_next(input)?;
+        let fields = opt(delimited(
+            padded('{'),
+            separated(
+                0..,
+                seq! { padded(ident), _: padded(':'), padded(primitive) },
+                padded(','),
+            ),
+            padded('}'),
+        ))
+        .parse_next(input)?
+        .unwrap_or_default();
+        let _ = opt(padded(',')).parse_next(input)?;
+        Ok((name, fields))
+    })
+    .with_span()
+    .map(|((name, fields), r)| ast::ErrorVariant {
+        name,
+        fields,
+        span: r.into(),
+    })
+    .parse_next(input)
 }
 
 fn error_def<'a>(input: &mut Input<'a>) -> ModalResult<ast::Definition<'a>> {
@@ -700,6 +832,7 @@ pub fn parse_str(src: &str) -> Result<Vec<ast::Definition<'_>>, String> {
 /// definition boundary, returning every definition that did parse plus every
 /// error. Intended for editor diagnostics where surfacing all problems at once
 /// is more useful than stopping at the first.
+// Spans in the returned AST are relative to each definition's start, not absolute source offsets.
 pub fn parse_str_recover(src: &str) -> (Vec<ast::Definition<'_>>, Vec<ParseError>) {
     let mut defs = Vec::new();
     let mut errors = Vec::new();
@@ -839,30 +972,51 @@ mod tests {
             .collect();
         assert_eq!(
             types[0],
-            &ast::FieldValue::Type(ast::Type::Primitive(ast::Primitive::I8))
+            &ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Primitive(ast::Primitive::I8),
+                span: ast::Span::DUMMY
+            })
         );
         assert_eq!(
             types[1],
-            &ast::FieldValue::Type(ast::Type::Primitive(ast::Primitive::I16))
+            &ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Primitive(ast::Primitive::I16),
+                span: ast::Span::DUMMY
+            })
         );
         assert_eq!(
             types[2],
-            &ast::FieldValue::Type(ast::Type::Primitive(ast::Primitive::I32))
+            &ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Primitive(ast::Primitive::I32),
+                span: ast::Span::DUMMY
+            })
         );
         assert_eq!(
             types[3],
-            &ast::FieldValue::Type(ast::Type::Primitive(ast::Primitive::I64))
+            &ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Primitive(ast::Primitive::I64),
+                span: ast::Span::DUMMY
+            })
         );
         assert_eq!(
             types[4],
-            &ast::FieldValue::Type(ast::Type::Primitive(ast::Primitive::I128))
+            &ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Primitive(ast::Primitive::I128),
+                span: ast::Span::DUMMY
+            })
         );
         assert!(matches!(
             types[5],
-            ast::FieldValue::Type(ast::Type::Array(ast::ArrayType {
-                elem_ty: ast::ArrayElemType::Primitive(ast::Primitive::I16),
+            ast::FieldValue::Type(ast::Type {
+                kind: ast::TypeKind::Array(ast::ArrayType {
+                    elem_ty: ast::ArrayElemType {
+                        kind: ast::ArrayElemTypeKind::Primitive(ast::Primitive::I16),
+                        ..
+                    },
+                    ..
+                }),
                 ..
-            }))
+            })
         ));
     }
 
@@ -963,13 +1117,15 @@ mod tests {
                 ast::StructItem::Field(f) => {
                     assert_eq!(
                         f.value,
-                        ast::FieldValue::Constraint(ast::Expr::Literal(ast::Literal::Int(
-                            ast::IntLiteral {
+                        ast::FieldValue::Constraint(ast::Expr {
+                            kind: ast::ExprKind::Literal(ast::Literal::Int(ast::IntLiteral {
                                 value: 3,
                                 width: 3,
-                                ty: ast::IntType::Binary
-                            }
-                        )))
+                                ty: ast::IntType::Binary,
+                                span: ast::Span::DUMMY
+                            })),
+                            span: ast::Span::DUMMY
+                        })
                     );
                 }
                 _ => panic!("Expected field"),
@@ -993,13 +1149,15 @@ mod tests {
                         // 0 fits in u8
                         assert_eq!(
                             f.value,
-                            ast::FieldValue::Constraint(ast::Expr::Literal(ast::Literal::Int(
-                                ast::IntLiteral {
+                            ast::FieldValue::Constraint(ast::Expr {
+                                kind: ast::ExprKind::Literal(ast::Literal::Int(ast::IntLiteral {
                                     value: 0,
                                     width: 1,
-                                    ty: ast::IntType::Decimal
-                                }
-                            )))
+                                    ty: ast::IntType::Decimal,
+                                    span: ast::Span::DUMMY
+                                })),
+                                span: ast::Span::DUMMY
+                            })
                         );
                     }
                     _ => panic!("Expected field"),
@@ -1052,13 +1210,15 @@ mod tests {
                     ast::StructItem::Field(f) => {
                         assert_eq!(
                             f.value,
-                            ast::FieldValue::Constraint(ast::Expr::Literal(ast::Literal::Int(
-                                ast::IntLiteral {
+                            ast::FieldValue::Constraint(ast::Expr {
+                                kind: ast::ExprKind::Literal(ast::Literal::Int(ast::IntLiteral {
                                     value: 10,
                                     width: 2,
-                                    ty: ast::IntType::Decimal
-                                }
-                            )))
+                                    ty: ast::IntType::Decimal,
+                                    span: ast::Span::DUMMY
+                                })),
+                                span: ast::Span::DUMMY
+                            })
                         );
                     }
                     _ => panic!("Expected field v"),
@@ -1068,13 +1228,15 @@ mod tests {
                     ast::StructItem::Field(f) => {
                         assert_eq!(
                             f.value,
-                            ast::FieldValue::Constraint(ast::Expr::Literal(ast::Literal::Int(
-                                ast::IntLiteral {
+                            ast::FieldValue::Constraint(ast::Expr {
+                                kind: ast::ExprKind::Literal(ast::Literal::Int(ast::IntLiteral {
                                     value: 65536,
                                     width: 5,
-                                    ty: ast::IntType::Decimal
-                                }
-                            )))
+                                    ty: ast::IntType::Decimal,
+                                    span: ast::Span::DUMMY
+                                })),
+                                span: ast::Span::DUMMY
+                            })
                         );
                     }
                     _ => panic!("Expected field big"),
@@ -1114,10 +1276,13 @@ mod tests {
         match &defs[0] {
             ast::Definition::Struct(s) => match &s.items[1] {
                 ast::StructItem::Field(f) => match &f.value {
-                    ast::FieldValue::Type(ast::Type::Union(u)) => {
+                    ast::FieldValue::Type(ast::Type {
+                        kind: ast::TypeKind::Union(u),
+                        ..
+                    }) => {
                         assert_eq!(u.variants.len(), 2);
-                        match &u.variants[0].matchers[0] {
-                            ast::UnionMatcher::Literal(ast::Literal::Int(lit)) => {
+                        match &u.variants[0].matchers[0].kind {
+                            ast::UnionMatcherKind::Literal(ast::Literal::Int(lit)) => {
                                 assert_eq!(lit.value, 0xa1b2c3d4);
                                 assert_eq!(lit.ty, ast::IntType::Hex);
                             }
@@ -1148,10 +1313,22 @@ mod tests {
                 assert_eq!(s.attributes.len(), 2);
                 assert_eq!(s.attributes[0].name, "len");
                 assert_eq!(s.attributes[0].args.len(), 1);
-                assert_eq!(s.attributes[0].args[0], ast::Expr::Path(vec!["total_len"]));
+                assert_eq!(
+                    s.attributes[0].args[0],
+                    ast::Expr {
+                        kind: ast::ExprKind::Path(vec!["total_len".into()]),
+                        span: ast::Span::DUMMY
+                    }
+                );
                 assert_eq!(s.attributes[1].name, "endian");
                 assert_eq!(s.attributes[1].args.len(), 1);
-                assert_eq!(s.attributes[1].args[0], ast::Expr::Path(vec!["big"]));
+                assert_eq!(
+                    s.attributes[1].args[0],
+                    ast::Expr {
+                        kind: ast::ExprKind::Path(vec!["big".into()]),
+                        span: ast::Span::DUMMY
+                    }
+                );
             }
             _ => panic!("Expected struct"),
         }
@@ -1194,7 +1371,13 @@ mod tests {
                     assert_eq!(f.attributes.len(), 1);
                     assert_eq!(f.attributes[0].name, "len");
                     assert_eq!(f.attributes[0].args.len(), 1);
-                    assert_eq!(f.attributes[0].args[0], ast::Expr::Path(vec!["len"]));
+                    assert_eq!(
+                        f.attributes[0].args[0],
+                        ast::Expr {
+                            kind: ast::ExprKind::Path(vec!["len".into()]),
+                            span: ast::Span::DUMMY
+                        }
+                    );
                 }
                 _ => panic!("Expected field"),
             },
@@ -1219,7 +1402,13 @@ mod tests {
                     assert_eq!(f.attributes.len(), 1);
                     assert_eq!(f.attributes[0].name, "greedy");
                     assert_eq!(f.attributes[0].args.len(), 1);
-                    assert_eq!(f.attributes[0].args[0], ast::Expr::Path(vec!["unsafe_eof"]));
+                    assert_eq!(
+                        f.attributes[0].args[0],
+                        ast::Expr {
+                            kind: ast::ExprKind::Path(vec!["unsafe_eof".into()]),
+                            span: ast::Span::DUMMY
+                        }
+                    );
                 }
                 _ => panic!("Expected field"),
             },
@@ -1244,11 +1433,15 @@ mod tests {
                     assert_eq!(f.attributes[0].args.len(), 1);
                     assert_eq!(
                         f.attributes[0].args[0],
-                        ast::Expr::Literal(ast::Literal::Int(ast::IntLiteral {
-                            value: 0,
-                            width: 2,
-                            ty: ast::IntType::Hex
-                        }))
+                        ast::Expr {
+                            kind: ast::ExprKind::Literal(ast::Literal::Int(ast::IntLiteral {
+                                value: 0,
+                                width: 2,
+                                ty: ast::IntType::Hex,
+                                span: ast::Span::DUMMY
+                            })),
+                            span: ast::Span::DUMMY
+                        }
                     );
                 }
                 _ => panic!("Expected field"),
@@ -1268,14 +1461,35 @@ mod tests {
         match &defs[0] {
             ast::Definition::Struct(s) => match &s.items[0] {
                 ast::StructItem::Field(f) => match &f.value {
-                    ast::FieldValue::Type(ast::Type::Concat(items)) => {
+                    ast::FieldValue::Type(ast::Type {
+                        kind: ast::TypeKind::Concat(items),
+                        ..
+                    }) => {
                         assert_eq!(items.len(), 3);
-                        assert_eq!(items[0].ty, ast::Type::BitField(4));
+                        assert_eq!(
+                            items[0].ty,
+                            ast::Type {
+                                kind: ast::TypeKind::BitField(4),
+                                span: ast::Span::DUMMY
+                            }
+                        );
                         assert_eq!(items[0].attributes.len(), 0);
-                        assert_eq!(items[1].ty, ast::Type::BitField(4));
+                        assert_eq!(
+                            items[1].ty,
+                            ast::Type {
+                                kind: ast::TypeKind::BitField(4),
+                                span: ast::Span::DUMMY
+                            }
+                        );
                         assert_eq!(items[1].attributes.len(), 1);
                         assert_eq!(items[1].attributes[0].name, "skip");
-                        assert_eq!(items[2].ty, ast::Type::BitField(8));
+                        assert_eq!(
+                            items[2].ty,
+                            ast::Type {
+                                kind: ast::TypeKind::BitField(8),
+                                span: ast::Span::DUMMY
+                            }
+                        );
                     }
                     _ => panic!("Expected concat type"),
                 },
@@ -1331,11 +1545,21 @@ mod tests {
                     assert_eq!(f.attributes[0].args.len(), 2);
                     assert_eq!(
                         f.attributes[0].args[0],
-                        ast::Expr::Path(vec!["proto", "hooks", "dns_name"])
+                        ast::Expr {
+                            kind: ast::ExprKind::Path(vec![
+                                "proto".into(),
+                                "hooks".into(),
+                                "dns_name".into()
+                            ]),
+                            span: ast::Span::DUMMY
+                        }
                     );
                     assert_eq!(
                         f.attributes[0].args[1],
-                        ast::Expr::RawType("proto.hooks.NameRef<'a>")
+                        ast::Expr {
+                            kind: ast::ExprKind::RawType("proto.hooks.NameRef<'a>"),
+                            span: ast::Span::DUMMY
+                        }
                     );
                 }
                 _ => panic!("Expected field"),
@@ -1382,7 +1606,13 @@ mod tests {
                     ast::StructItem::Field(f) => {
                         assert_eq!(f.attributes[0].name, "endian");
                         assert_eq!(f.attributes[0].args.len(), 1);
-                        assert_eq!(f.attributes[0].args[0], ast::Expr::Path(vec!["little"]));
+                        assert_eq!(
+                            f.attributes[0].args[0],
+                            ast::Expr {
+                                kind: ast::ExprKind::Path(vec!["little".into()]),
+                                span: ast::Span::DUMMY
+                            }
+                        );
                     }
                     _ => panic!("Expected field"),
                 }
@@ -1391,7 +1621,13 @@ mod tests {
                     ast::StructItem::Field(f) => {
                         assert_eq!(f.attributes[0].name, "bit_order");
                         assert_eq!(f.attributes[0].args.len(), 1);
-                        assert_eq!(f.attributes[0].args[0], ast::Expr::Path(vec!["lsb"]));
+                        assert_eq!(
+                            f.attributes[0].args[0],
+                            ast::Expr {
+                                kind: ast::ExprKind::Path(vec!["lsb".into()]),
+                                span: ast::Span::DUMMY
+                            }
+                        );
                     }
                     _ => panic!("Expected field"),
                 }
@@ -1441,7 +1677,10 @@ mod tests {
                 match &s.items[1] {
                     ast::StructItem::Field(f) => {
                         match &f.value {
-                            ast::FieldValue::Type(ast::Type::Union(u)) => {
+                            ast::FieldValue::Type(ast::Type {
+                                kind: ast::TypeKind::Union(u),
+                                ..
+                            }) => {
                                 // The wildcard '_' is parsed as an identifier
                                 assert_eq!(u.variants.len(), 2);
                             }
@@ -1472,12 +1711,15 @@ mod tests {
                 match &s.items[1] {
                     ast::StructItem::Field(f) => {
                         match &f.value {
-                            ast::FieldValue::Type(ast::Type::Union(u)) => {
+                            ast::FieldValue::Type(ast::Type {
+                                kind: ast::TypeKind::Union(u),
+                                ..
+                            }) => {
                                 assert_eq!(u.variants.len(), 2);
                                 // Check the error variant
                                 match &u.variants[1].body {
                                     ast::UnionBody::Error(name, fields) => {
-                                        assert_eq!(name, &"MISSING_FLAG");
+                                        assert_eq!(*name, "MISSING_FLAG");
                                         assert_eq!(fields.len(), 2);
                                         assert_eq!(fields[0].0, "found");
                                         assert_eq!(fields[1].0, "expected");
@@ -1583,7 +1825,10 @@ mod tests {
                     assert_eq!(f.attributes[0].args.len(), 1);
                     assert_eq!(
                         f.attributes[0].args[0],
-                        ast::Expr::Path(vec!["inner", "flags"])
+                        ast::Expr {
+                            kind: ast::ExprKind::Path(vec!["inner".into(), "flags".into()]),
+                            span: ast::Span::DUMMY
+                        }
                     );
                 }
                 _ => panic!("Expected field"),

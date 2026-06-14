@@ -166,7 +166,7 @@ impl<'a> ParsedAttrs<'a> {
     pub fn parse(attrs: &[ast::Attribute<'a>]) -> Result<Self, Error> {
         let mut result = Self::default();
         for attr in attrs {
-            match attr.name {
+            match attr.name.text {
                 "endian" => result.endian = Some(Self::parse_endian(attr)?),
                 "bit_order" => result.bit_order = Some(Self::parse_bit_order(attr)?),
                 "hook" => result.hook = Some(Self::parse_hook(attr)?),
@@ -230,9 +230,9 @@ impl<'a> ParsedAttrs<'a> {
             return Ok(());
         }
         for arg in &attr.args {
-            match arg {
-                ast::Expr::Path(path) if path.as_slice() == ["len"] => result.cache_len = true,
-                ast::Expr::Path(path) if path.as_slice() == ["value"] => result.cache_value = true,
+            match &arg.kind {
+                ast::ExprKind::Path(path) if path.as_slice() == ["len"] => result.cache_len = true,
+                ast::ExprKind::Path(path) if path.as_slice() == ["value"] => result.cache_value = true,
                 _ => return Err(Error::InvalidCacheArg),
             }
         }
@@ -247,8 +247,8 @@ impl<'a> ParsedAttrs<'a> {
                 got: attr.args.len(),
             });
         };
-        match arg {
-            ast::Expr::Literal(ast::Literal::Int(lit)) if lit.value > 0 => Ok(lit.value),
+        match &arg.kind {
+            ast::ExprKind::Literal(ast::Literal::Int(lit)) if lit.value > 0 => Ok(lit.value),
             _ => Err(Error::InvalidPaddingArg(name)),
         }
     }
@@ -283,8 +283,8 @@ impl<'a> ParsedAttrs<'a> {
                 got: attr.args.len(),
             });
         };
-        match arg {
-            ast::Expr::Literal(ast::Literal::Int(lit)) if lit.value <= usize::from(u8::MAX) => {
+        match &arg.kind {
+            ast::ExprKind::Literal(ast::Literal::Int(lit)) if lit.value <= usize::from(u8::MAX) => {
                 Ok(lit.value as u8)
             }
             _ => Err(Error::InvalidUntilSentinel),
@@ -299,10 +299,10 @@ impl<'a> ParsedAttrs<'a> {
                 got: attr.args.len(),
             });
         }
-        match &attr.args[0] {
-            ast::Expr::Path(path) if path.as_slice() == ["unsafe_eof"] => Ok(()),
-            ast::Expr::Path(path) if path.len() == 1 => {
-                Err(Error::InvalidGreedyValue(path[0].to_string()))
+        match &attr.args[0].kind {
+            ast::ExprKind::Path(path) if path.as_slice() == ["unsafe_eof"] => Ok(()),
+            ast::ExprKind::Path(path) if path.len() == 1 => {
+                Err(Error::InvalidGreedyValue(path[0].text.to_string()))
             }
             _ => Err(Error::InvalidGreedyValue("<non-identifier>".to_string())),
         }
@@ -316,8 +316,8 @@ impl<'a> ParsedAttrs<'a> {
                 got: attr.args.len(),
             });
         }
-        match &attr.args[0] {
-            ast::Expr::Path(path) if path.len() == 1 => match path[0] {
+        match &attr.args[0].kind {
+            ast::ExprKind::Path(path) if path.len() == 1 => match path[0].text {
                 "big" => Ok(Endian::Big),
                 "little" => Ok(Endian::Little),
                 other => Err(Error::InvalidEndianValue(other.to_string())),
@@ -334,8 +334,8 @@ impl<'a> ParsedAttrs<'a> {
                 got: attr.args.len(),
             });
         }
-        match &attr.args[0] {
-            ast::Expr::Path(path) if path.len() == 1 => match path[0] {
+        match &attr.args[0].kind {
+            ast::ExprKind::Path(path) if path.len() == 1 => match path[0].text {
                 "msb" => Ok(BitOrder::Msb),
                 "lsb" => Ok(BitOrder::Lsb),
                 other => Err(Error::InvalidBitOrderValue(other.to_string())),
@@ -358,15 +358,18 @@ impl<'a> ParsedAttrs<'a> {
     }
 
     fn path_to_tokens(expr: &ast::Expr<'_>) -> Result<TokenStream, Error> {
-        match expr {
-            ast::Expr::Path(segments) => {
-                let idents: Vec<_> = segments.iter().map(|s| format_ident!("{}", s)).collect();
+        match &expr.kind {
+            ast::ExprKind::Path(segments) => {
+                let idents: Vec<_> = segments
+                    .iter()
+                    .map(|s| format_ident!("{}", s.text))
+                    .collect();
                 Ok(quote::quote! { #(#idents)::* })
             }
             // Raw type token (`@hook` return type): may carry references, generics,
             // slices, and lifetimes. The DSL spells path separators as `.`; rewrite
             // to `::` (a Rust type never legitimately contains a `.`) before lexing.
-            ast::Expr::RawType(raw) => raw
+            ast::ExprKind::RawType(raw) => raw
                 .replace('.', "::")
                 .parse::<TokenStream>()
                 .map_err(|_| Error::InvalidHookArg),
