@@ -1,0 +1,24 @@
+struct Icmpv6 {
+    icmp_type: u8,
+    code: u8,
+    checksum: u16,
+    body: union(icmp_type) {
+        1 => DestUnreach { unused: u32, @greedy(unsafe_eof) original: [u8] },
+        2 => PacketTooBig { mtu: u32, @greedy(unsafe_eof) original: [u8] },
+        3 => TimeExceeded { unused: u32, @greedy(unsafe_eof) original: [u8] },
+        4 => ParamProblem { pointer: u32, @greedy(unsafe_eof) original: [u8] },
+        128 | 129 => Echo { id: u16, seq: u16, @greedy(unsafe_eof) data: [u8] },
+        133 => RouterSolicit { reserved: u32, @greedy(unsafe_eof) options: [u8] },
+        134 => RouterAdvert {
+            cur_hop_limit: u8,
+            flags: u8,
+            router_lifetime: u16,
+            reachable_time: u32,
+            retrans_timer: u32,
+            @greedy(unsafe_eof) options: [u8],
+        },
+        135 => NeighborSolicit { reserved: u32, target: [u8; 16], @greedy(unsafe_eof) options: [u8] },
+        136 => NeighborAdvert { flags: u32, target: [u8; 16], @greedy(unsafe_eof) options: [u8] },
+        _ => Raw { @greedy(unsafe_eof) body: [u8] },
+    },
+}

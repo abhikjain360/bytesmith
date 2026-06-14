@@ -1,0 +1,14 @@
+struct SctpChunk {
+    chunk_type: u8,
+    flags: u8,
+    @range(4, 65535) length: u16,
+    @len(length - 4) @greedy(unsafe_eof) value: [u8],
+}
+
+struct Sctp {
+    src_port: u16,
+    dst_port: u16,
+    vtag: u32,
+    checksum: u32,
+    @greedy(unsafe_eof) @max_iter(256) chunks: [SctpChunk],
+}

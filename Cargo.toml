@@ -5,6 +5,7 @@ members = [
     "binparse-dsl-parse",
     "binparse-codegen",
     "binparse",
+    "binparse-protocols",
 ]
 
 [workspace.package]

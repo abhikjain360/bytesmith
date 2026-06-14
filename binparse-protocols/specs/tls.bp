@@ -1,0 +1,12 @@
+@len(length + 5)
+struct TlsRecord {
+    @range(20, 23) content_type: u8,
+    @check(legacy_major == 3) legacy_major: u8,
+    legacy_minor: u8,
+    @range(1, 16640) length: u16,
+    fragment: [u8],
+}
+
+struct TlsStream {
+    @greedy(unsafe_eof) @max_iter(8) records: [TlsRecord],
+}

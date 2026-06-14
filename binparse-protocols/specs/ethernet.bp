@@ -1,0 +1,6 @@
+struct EthernetII {
+    dst: [u8; 6],
+    src: [u8; 6],
+    @discriminator ethertype: u16,
+    @greedy(unsafe_eof) @payload payload: [u8],
+}

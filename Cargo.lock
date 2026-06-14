@@ -98,6 +98,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "binparse-protocols"
+version = "0.1.0"
+dependencies = [
+ "binparse",
+ "binparse-codegen",
+ "binparse-dsl-parse",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

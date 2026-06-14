@@ -1,0 +1,35 @@
+struct TcpOption {
+    kind: u8,
+    body: union(kind) {
+        0 => Eol { },
+        1 => Nop { },
+        _ => Generic { len: u8, data: [u8; len - 2] },
+    },
+}
+
+struct TcpOptionList {
+    @greedy(unsafe_eof) @max_iter(40) opts: [TcpOption],
+}
+
+struct Tcp {
+    @discriminator src_port: u16,
+    @discriminator dst_port: u16,
+    seq: u32,
+    ack_no: u32,
+    @range(5, 15) data_offset: b<4>,
+    reserved: b<3>,
+    ns: b<1>,
+    cwr: b<1>,
+    ece: b<1>,
+    urg: b<1>,
+    ack: b<1>,
+    psh: b<1>,
+    rst: b<1>,
+    syn: b<1>,
+    fin: b<1>,
+    window: u16,
+    checksum: u16,
+    urgent_ptr: u16,
+    @len((data_offset - 5) * 4) options: TcpOptionList,
+    @greedy(unsafe_eof) @payload payload: [u8],
+}

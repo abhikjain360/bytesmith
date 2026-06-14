@@ -1,0 +1,27 @@
+struct DhcpOption {
+    code: u8,
+    body: union(code) {
+        0 => Pad { },
+        255 => End { },
+        _ => Generic { len: u8, data: [u8; len] },
+    },
+}
+
+struct Dhcp {
+    op: u8,
+    htype: u8,
+    hlen: u8,
+    hops: u8,
+    xid: u32,
+    secs: u16,
+    flags: u16,
+    ciaddr: [u8; 4],
+    yiaddr: [u8; 4],
+    siaddr: [u8; 4],
+    giaddr: [u8; 4],
+    chaddr: [u8; 16],
+    sname: [u8; 64],
+    file: [u8; 128],
+    magic = x63825363,
+    @greedy(unsafe_eof) @max_iter(256) options: [DhcpOption],
+}

@@ -1,0 +1,7 @@
+struct Udp {
+    @discriminator src_port: u16,
+    @discriminator dst_port: u16,
+    @range(8, 65535) length: u16,
+    checksum: u16,
+    @payload payload: [u8; length - 8],
+}

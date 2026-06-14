@@ -1,0 +1,35 @@
+@len(total_len)
+struct Ipv4 {
+    @check(version == 4) version: b<4>,
+    @range(5, 15) ihl: b<4>,
+    dscp: b<6>,
+    ecn: b<2>,
+    @range(20, 65535) total_len: u16,
+    ident: u16,
+    flags: b<3>,
+    frag_hi: b<5>,
+    frag_lo: u8,
+    ttl: u8,
+    @discriminator proto: u8,
+    checksum: u16,
+    src: [u8; 4],
+    dst: [u8; 4],
+    if (ihl > 5) {
+        options: [u8; (ihl - 5) * 4],
+    }
+    @payload payload: [u8],
+}
+
+struct Ipv6 {
+    @check(version == 6) version: b<4>,
+    tc_hi: b<4>,
+    tc_lo: b<4>,
+    flow_hi: b<4>,
+    flow_lo: u16,
+    payload_len: u16,
+    @discriminator next_header: u8,
+    hop_limit: u8,
+    src: [u8; 16],
+    dst: [u8; 16],
+    @payload payload: [u8; payload_len],
+}

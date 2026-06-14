@@ -1,0 +1,11 @@
+struct Icmpv4 {
+    icmp_type: u8,
+    code: u8,
+    checksum: u16,
+    body: union(icmp_type, code) {
+        (0, 0) | (8, 0) => Echo { id: u16, seq: u16, @greedy(unsafe_eof) data: [u8] },
+        (3, _) => DestUnreach { unused: u32, @greedy(unsafe_eof) original: [u8] },
+        (11, _) => TimeExceeded { unused: u32 },
+        (_, _) => Raw { },
+    },
+}

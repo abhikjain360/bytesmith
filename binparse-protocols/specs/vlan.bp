@@ -1,0 +1,11 @@
+struct Vlan {
+    dst: [u8; 6],
+    src: [u8; 6],
+    tpid = x8100,
+    pcp: b<3>,
+    dei: b<1>,
+    vid_hi: b<4>,
+    vid_lo: u8,
+    ethertype: u16,
+    @greedy(unsafe_eof) payload: [u8],
+}

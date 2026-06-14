@@ -1,0 +1,11 @@
+struct Arp {
+    htype: u16,
+    ptype: u16,
+    hlen: u8,
+    plen: u8,
+    @range(1, 2) oper: u16,
+    sha: [u8; hlen],
+    spa: [u8; plen],
+    tha: [u8; hlen],
+    tpa: [u8; plen],
+}
