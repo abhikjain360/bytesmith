@@ -132,6 +132,22 @@ fn writer_union() {
 }
 
 #[test]
+fn writer_counted_array_of_structs() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Pair { a: u8, b: u16 } @endian(big) struct Rec { n: u8, items: [Pair; n], crc: u16 }"#,
+        "writer_counted_array_of_structs",
+    );
+}
+
+#[test]
+fn writer_greedy_array_of_structs() {
+    assert_generated_writers_eq(
+        r#"@endian(big) struct Pair { a: u8, b: u16 } @endian(big) struct Rec { tag: u8, @greedy(unsafe_eof) items: [Pair] }"#,
+        "writer_greedy_array_of_structs",
+    );
+}
+
+#[test]
 fn writer_greedy_open_tail() {
     assert_generated_writers_eq(
         r#"struct Vlan {

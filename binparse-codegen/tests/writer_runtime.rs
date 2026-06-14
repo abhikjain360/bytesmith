@@ -1140,3 +1140,151 @@ fn generated_writer_len_region_value_too_large_errors() {
     "#;
     run_round_trip("len-region-value-too-large", dsl, test_body);
 }
+
+#[test]
+fn generated_writer_counted_array_of_structs_round_trips() {
+    let dsl = r#"
+@endian(big) struct Pair { a: u8, b: u16 }
+@endian(big) struct Rec { n: u8, items: [Pair; n] }
+"#;
+    let test_body = r#"
+        let content = RecContent {
+            items: &[
+                PairContent { a: 0x11, b: 0x2233 },
+                PairContent { a: 0x44, b: 0x5566 },
+            ],
+        };
+        // 1 (n) + 2 * Pair::SIZE (3) = 7
+        let lens = RecLens { items: 2 };
+        assert_eq!(RecWriter::encoded_len(&lens), 7);
+
+        let bytes = RecWriter::to_vec(&content);
+        // n is DERIVED = element count = 2, then each Pair written sequentially.
+        assert_eq!(bytes, vec![0x02, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
+
+        let (rec, rem) = Rec::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        // derived count field == number of supplied elements.
+        assert_eq!(rec.n(), 2);
+        let items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
+        assert_eq!(items.len(), 2);
+        assert_eq!((items[0].a(), items[0].b()), (0x11, 0x2233));
+        assert_eq!((items[1].a(), items[1].b()), (0x44, 0x5566));
+
+        // Empty array edge: derived count == 0, just the count byte.
+        let empty = RecContent { items: &[] };
+        let bytes = RecWriter::to_vec(&empty);
+        assert_eq!(bytes, vec![0x00]);
+        let (rec, _) = Rec::parse(&bytes).unwrap();
+        assert_eq!(rec.n(), 0);
+        assert_eq!(rec.items().unwrap().count(), 0);
+
+        assert!(matches!(
+            RecWriter::new(&mut [0u8; 4], RecLens { items: 2 }),
+            Err(binparse::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("counted-array-of-structs", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_counted_array_of_structs_with_trailer_round_trips() {
+    let dsl = r#"
+@endian(big) struct Pair { a: u8, b: u16 }
+@endian(big) struct Rec { n: u8, items: [Pair; n], crc: u16 }
+"#;
+    let test_body = r#"
+        let content = RecContent {
+            items: &[
+                PairContent { a: 0x11, b: 0x2233 },
+                PairContent { a: 0x44, b: 0x5566 },
+            ],
+            crc: 0xBEEF,
+        };
+        // 1 (n) + 2 * 3 (items) + 2 (crc) = 9
+        let lens = RecLens { items: 2 };
+        assert_eq!(RecWriter::encoded_len(&lens), 9);
+
+        let bytes = RecWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x02, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0xBE, 0xEF]);
+
+        let (rec, rem) = Rec::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(rec.n(), 2);
+        let items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
+        assert_eq!(items.len(), 2);
+        assert_eq!((items[1].a(), items[1].b()), (0x44, 0x5566));
+        // trailer sits AFTER the array region.
+        assert_eq!(rec.crc(), 0xBEEF);
+    "#;
+    run_round_trip("counted-array-of-structs-trailer", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_counted_array_of_structs_value_too_large_errors() {
+    // count field is u8: supplying more than u8::MAX elements overflows it.
+    let dsl = r#"
+@endian(big) struct Pair { a: u8, b: u16 }
+@endian(big) struct Rec { n: u8, items: [Pair; n] }
+"#;
+    let test_body = r#"
+        let elems: Vec<PairContent> = (0..256).map(|_| PairContent { a: 0, b: 0 }).collect();
+        let content = RecContent { items: &elems };
+        let mut buf = vec![0u8; RecWriter::encoded_len(&RecLens { items: 256 })];
+        assert!(matches!(
+            RecWriter::write_into(&mut buf, &content),
+            Err(binparse::WriteError::ValueTooLarge { .. })
+        ));
+    "#;
+    run_round_trip("counted-array-of-structs-too-large", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_greedy_array_of_structs_round_trips() {
+    let dsl = r#"
+@endian(big) struct Pair { a: u8, b: u16 }
+@endian(big) struct Rec { tag: u8, @greedy(unsafe_eof) items: [Pair] }
+"#;
+    let test_body = r#"
+        let content = RecContent {
+            tag: 0x99,
+            items: &[
+                PairContent { a: 0x11, b: 0x2233 },
+                PairContent { a: 0x44, b: 0x5566 },
+                PairContent { a: 0x77, b: 0x8899 },
+            ],
+        };
+        // 1 (tag) + 3 * 3 (items) = 10
+        let lens = RecLens { items: 3 };
+        assert_eq!(RecWriter::encoded_len(&lens), 10);
+
+        let bytes = RecWriter::to_vec(&content);
+        assert_eq!(
+            bytes,
+            vec![0x99, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99],
+        );
+
+        let (rec, rem) = Rec::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(rec.tag(), 0x99);
+        let items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
+        // no count field; all supplied elements are recovered by reading to EOF.
+        assert_eq!(items.len(), 3);
+        assert_eq!((items[0].a(), items[0].b()), (0x11, 0x2233));
+        assert_eq!((items[2].a(), items[2].b()), (0x77, 0x8899));
+
+        // Empty tail: just the prefix byte.
+        let empty = RecContent { tag: 0x01, items: &[] };
+        let bytes = RecWriter::to_vec(&empty);
+        assert_eq!(bytes, vec![0x01]);
+        let (rec, _) = Rec::parse(&bytes).unwrap();
+        assert_eq!(rec.tag(), 0x01);
+        assert_eq!(rec.items().unwrap().count(), 0);
+
+        assert!(matches!(
+            RecWriter::new(&mut [0u8; 5], RecLens { items: 3 }),
+            Err(binparse::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("greedy-array-of-structs", dsl, test_body);
+}

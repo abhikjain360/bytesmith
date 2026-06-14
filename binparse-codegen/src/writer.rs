@@ -78,6 +78,15 @@ struct DynamicTailOpen {
     prefix_size: usize,
 }
 
+struct GreedyStructTail {
+    fields: Vec<WriterField>,
+    array_field: syn::Ident,
+    prefix_size: usize,
+    child_writer: syn::Ident,
+    child_content: syn::Ident,
+    size: usize,
+}
+
 struct UnionVariantInfo {
     name: syn::Ident,
     reader_variant: syn::Ident,
@@ -110,6 +119,11 @@ enum RegionKind {
         child_content: syn::Ident,
         size: usize,
     },
+    ArrayOfStructs {
+        child_writer: syn::Ident,
+        child_content: syn::Ident,
+        size: usize,
+    },
 }
 
 struct ForwardLayout {
@@ -134,6 +148,7 @@ enum Layout {
     Union(UnionLayout),
     Forward(ForwardLayout),
     LenUnion(LenUnionLayout),
+    GreedyStructTail(GreedyStructTail),
 }
 
 pub(crate) fn generate(
@@ -154,6 +169,9 @@ pub(crate) fn generate(
         Some(Layout::Union(layout)) => (emit_union(ast.name, &layout), None),
         Some(Layout::Forward(layout)) => (emit_forward(ast.name, &layout), None),
         Some(Layout::LenUnion(layout)) => (emit_len_union(ast.name, &layout), None),
+        Some(Layout::GreedyStructTail(layout)) => {
+            (emit_greedy_struct_tail(ast.name, &layout), None)
+        }
         None => (TokenStream::new(), None),
     })
 }
@@ -174,6 +192,10 @@ fn classify(
         return Ok(None);
     }
     let struct_inherited = struct_attrs.merge_inherited(Inherited::default());
+
+    if let Some(layout) = classify_greedy_struct_tail(ast, struct_inherited, writer_sizes) {
+        return Ok(Some(Layout::GreedyStructTail(layout)));
+    }
 
     if let Some(layout) = classify_forward(ast, struct_inherited, writer_sizes) {
         return Ok(Some(Layout::Forward(layout)));
@@ -470,6 +492,37 @@ fn classify_forward(
                 continue;
             }
 
+            if let ast::FieldValue::Type(ast::Type::Array(array)) = &field.value
+                && let ast::ArrayElemType::StructRef(child_name) = &array.elem_ty
+                && field_attrs_supported(&field_attrs)
+                && bit_offset.is_multiple_of(8)
+                && let Some(size) = array.size.as_ref()
+                && expr::lower(size, ExprType::Numeric, &[])
+                    .ok()
+                    .and_then(|lowered| lowered.const_value)
+                    .is_none()
+                && let Some((len_field_str, len_adjust)) = affine_size_shape(size)
+                && let Some(child_size) = writer_sizes.get(child_name).copied()
+            {
+                let len_field = prefix_fields.iter().find(|f: &&WriterField| f.name == len_field_str)?;
+                let (len_primitive, len_endian) = forward_len_field(len_field)?;
+                region = Some(ForwardRegion {
+                    region_field: format_ident!("{}", field.name),
+                    region_kind: RegionKind::ArrayOfStructs {
+                        child_writer: format_ident!("{}Writer", child_name),
+                        child_content: format_ident!("{}Content", child_name),
+                        size: child_size,
+                    },
+                    len_field_str: len_field_str.to_string(),
+                    len_primitive,
+                    len_offset: len_field.bit_offset / 8,
+                    len_endian,
+                    len_adjust,
+                    region_offset: bit_offset / 8,
+                });
+                continue;
+            }
+
             let (writer_field, width) =
                 classify_fixed_field(field, bit_offset, struct_inherited, writer_sizes)?;
             prefix_fields.push(writer_field);
@@ -513,6 +566,51 @@ fn forward_len_field(len_field: &WriterField) -> Option<(ast::Primitive, Endian)
         }
         _ => None,
     }
+}
+
+fn classify_greedy_struct_tail(
+    ast: &ast::Struct,
+    struct_inherited: Inherited,
+    writer_sizes: &HashMap<&str, usize>,
+) -> Option<GreedyStructTail> {
+    let last_index = ast.items.len().checked_sub(1)?;
+    let mut fields = Vec::new();
+    let mut bit_offset = 0usize;
+
+    for (index, item) in ast.items.iter().enumerate() {
+        let ast::StructItem::Field(field) = item else {
+            return None;
+        };
+        let field_attrs = ParsedAttrs::parse(&field.attributes).ok()?;
+
+        if index == last_index
+            && let ast::FieldValue::Type(ast::Type::Array(array)) = &field.value
+            && let ast::ArrayElemType::StructRef(child_name) = &array.elem_ty
+            && array.size.is_none()
+            && field_attrs.greedy
+            && field_attrs.until.is_none()
+            && field_attrs.hook.is_none()
+            && field_attrs.max_iter.is_none()
+            && bit_offset.is_multiple_of(8)
+            && let Some(size) = writer_sizes.get(child_name).copied()
+        {
+            return Some(GreedyStructTail {
+                fields,
+                array_field: format_ident!("{}", field.name),
+                prefix_size: bit_offset / 8,
+                child_writer: format_ident!("{}Writer", child_name),
+                child_content: format_ident!("{}Content", child_name),
+                size,
+            });
+        }
+
+        let (writer_field, width) =
+            classify_fixed_field(field, bit_offset, struct_inherited, writer_sizes)?;
+        fields.push(writer_field);
+        bit_offset += width;
+    }
+
+    None
 }
 
 fn len_only_attr_supported(attrs: &ParsedAttrs<'_>) -> bool {
@@ -1484,6 +1582,142 @@ fn emit_dynamic_tail_open(
     }
 }
 
+fn emit_greedy_struct_tail(name: &str, tail: &GreedyStructTail) -> TokenStream {
+    let writer_name = format_ident!("{}Writer", name);
+    let content_name = format_ident!("{}Content", name);
+    let lens_name = format_ident!("{}Lens", name);
+
+    let fields = &tail.fields;
+    let array_field = &tail.array_field;
+    let prefix_size = tail.prefix_size;
+    let child_writer = &tail.child_writer;
+    let child_content = &tail.child_content;
+    let size = tail.size;
+
+    let setters = fields
+        .iter()
+        .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
+        .map(|field| match &field.kind {
+            FieldKind::ByteArray { len } => {
+                let accessor_name = format_ident!("{}_mut", field.name);
+                let offset = field.bit_offset / 8;
+                let end = offset + len;
+                quote! {
+                    pub fn #accessor_name(&mut self) -> &mut [u8] {
+                        &mut self.data[#offset..#end]
+                    }
+                }
+            }
+            FieldKind::StructRef { name: child_writer, size } => {
+                let accessor_name = format_ident!("{}_mut", field.name);
+                let offset = field.bit_offset / 8;
+                let end = offset + size;
+                quote! {
+                    pub fn #accessor_name(&mut self) -> #child_writer<'_> {
+                        #child_writer { data: &mut self.data[#offset..#end] }
+                    }
+                }
+            }
+            FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
+                let setter_name = format_ident!("set_{}", field.name);
+                let ty = field_type(field);
+                let body = setter_body(field);
+                quote! {
+                    pub fn #setter_name(&mut self, value: #ty) -> &mut Self {
+                        #body
+                        self
+                    }
+                }
+            }
+            FieldKind::Constant { .. } => unreachable!(),
+        });
+
+    let write_calls = fields.iter().map(|field| {
+        let field_name = &field.name;
+        match &field.kind {
+            FieldKind::ByteArray { .. } => {
+                let accessor_name = format_ident!("{}_mut", field.name);
+                quote! { w.#accessor_name().copy_from_slice(&content.#field_name); }
+            }
+            FieldKind::StructRef { name: child_writer, size } => {
+                let offset = field.bit_offset / 8;
+                let end = offset + size;
+                quote! { #child_writer::write_into(&mut w.data[#offset..#end], &content.#field_name)?; }
+            }
+            FieldKind::Primitive { .. } | FieldKind::BitField { .. } => {
+                let setter_name = format_ident!("set_{}", field.name);
+                quote! { w.#setter_name(content.#field_name); }
+            }
+            FieldKind::Constant { .. } => constant_write_call(field, &quote! { w.data }),
+        }
+    });
+
+    let content_fields = fields
+        .iter()
+        .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
+        .map(|field| {
+            let field_name = &field.name;
+            let ty = field_type(field);
+            quote! { pub #field_name: #ty }
+        });
+
+    quote! {
+        #[derive(Clone, Copy)]
+        pub struct #lens_name {
+            pub #array_field: usize,
+        }
+
+        pub struct #writer_name<'a> {
+            data: &'a mut [u8],
+            lens: #lens_name,
+        }
+
+        impl<'a> #writer_name<'a> {
+            pub fn encoded_len(lens: &#lens_name) -> usize {
+                #prefix_size + lens.#array_field * #size
+            }
+
+            pub fn new(data: &'a mut [u8], lens: #lens_name) -> ::binparse::WriteResult<Self> {
+                let need = Self::encoded_len(&lens);
+                if data.len() < need {
+                    return Err(::binparse::WriteError::NotEnoughSpace {
+                        expected: need,
+                        got: data.len(),
+                    });
+                }
+                Ok(Self { data, lens })
+            }
+
+            #(#setters)*
+
+            pub fn write_into(data: &'a mut [u8], content: &#content_name) -> ::binparse::WriteResult<usize> {
+                let lens = #lens_name { #array_field: content.#array_field.len() };
+                let need = Self::encoded_len(&lens);
+                let mut w = Self::new(data, lens)?;
+                #(#write_calls)*
+                let base = #prefix_size;
+                for (i, c) in content.#array_field.iter().enumerate() {
+                    let start = base + i * #size;
+                    #child_writer::write_into(&mut w.data[start..start + #size], c)?;
+                }
+                Ok(need)
+            }
+
+            pub fn to_vec(content: &#content_name) -> ::std::vec::Vec<u8> {
+                let lens = #lens_name { #array_field: content.#array_field.len() };
+                let mut buf = ::std::vec![0u8; Self::encoded_len(&lens)];
+                let _ = #writer_name::write_into(&mut buf, content);
+                buf
+            }
+        }
+
+        pub struct #content_name<'a> {
+            #(#content_fields,)*
+            pub #array_field: &'a [#child_content],
+        }
+    }
+}
+
 fn emit_dynamic_tail_hook(
     name: &str,
     fields: &[WriterField],
@@ -2033,6 +2267,14 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
     let len_value = len_value_expr(&quote! { self.lens.#region_field }, layout.len_adjust);
     let len_value_param = len_value_expr(&quote! { lens.#region_field }, layout.len_adjust);
 
+    let region_bytes = |lens_field: TokenStream| match &layout.region_kind {
+        RegionKind::Bytes | RegionKind::StructRef { .. } => lens_field,
+        RegionKind::ArrayOfStructs { size, .. } => quote! { (#lens_field * #size) },
+    };
+    let self_region_bytes = region_bytes(quote! { self.lens.#region_field });
+    let w_region_bytes = region_bytes(quote! { w.lens.#region_field });
+    let lens_region_bytes = region_bytes(quote! { lens.#region_field });
+
     let write_len = {
         let len_offset = layout.len_offset;
         let single_byte = crate::single_byte_read(&layout.len_primitive);
@@ -2105,7 +2347,7 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
         .iter()
         .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
         .map(|field| {
-            let base = quote! { let base = #region_offset + self.lens.#region_field; };
+            let base = quote! { let base = #region_offset + #self_region_bytes; };
             match &field.kind {
                 FieldKind::ByteArray { len } => {
                     let accessor_name = format_ident!("{}_mut", field.name);
@@ -2218,15 +2460,15 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
         TokenStream::new()
     } else {
         quote! {
-            let trailer_base = #region_offset + w.lens.#region_field;
+            let trailer_base = #region_offset + #w_region_bytes;
             #(#trailer_write_calls)*
         }
     };
 
     let encoded_len_body = if trailer_prefix_size == 0 {
-        quote! { #region_offset + lens.#region_field }
+        quote! { #region_offset + #lens_region_bytes }
     } else {
-        quote! { #region_offset + lens.#region_field + #trailer_prefix_size }
+        quote! { #region_offset + #lens_region_bytes + #trailer_prefix_size }
     };
 
     let prefix_content_fields = layout
@@ -2291,6 +2533,23 @@ fn emit_forward(name: &str, layout: &ForwardLayout) -> TokenStream {
             },
             quote! { pub #region_field: #child_content },
             quote! {},
+        ),
+        RegionKind::ArrayOfStructs {
+            child_writer,
+            child_content,
+            size,
+        } => (
+            TokenStream::new(),
+            quote! { #lens_name { #region_field: content.#region_field.len() } },
+            quote! {
+                let base = #region_offset;
+                for (i, c) in content.#region_field.iter().enumerate() {
+                    let start = base + i * #size;
+                    #child_writer::write_into(&mut w.data[start..start + #size], c)?;
+                }
+            },
+            quote! { pub #region_field: &'a [#child_content] },
+            quote! { <'a> },
         ),
     };
 
