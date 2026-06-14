@@ -1448,9 +1448,7 @@ fn classify_variant_layout(
                     continue;
                 }
             } else if field_attrs.hook.is_some() {
-                let Some((encode_fn, width_fn)) = parse_write_hook(&field.attributes) else {
-                    return None;
-                };
+                let (encode_fn, width_fn) = parse_write_hook(&field.attributes)?;
                 let Some(hook) = &field_attrs.hook else {
                     return None;
                 };

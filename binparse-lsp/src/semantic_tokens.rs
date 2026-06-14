@@ -437,7 +437,7 @@ mod tests {
         out
     }
 
-    fn at<'a>(d: &'a [Decoded], line: u32, col: u32) -> &'a Decoded {
+    fn at(d: &[Decoded], line: u32, col: u32) -> &Decoded {
         d.iter()
             .find(|t| t.line == line && t.col == col)
             .unwrap_or_else(|| panic!("no token at {line}:{col}"))
