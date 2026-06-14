@@ -165,6 +165,7 @@ enum Layout {
     DynamicTail { fields: Vec<WriterField>, tail: DynamicTail },
     DynamicTailHook { fields: Vec<WriterField>, tail: DynamicTailHook },
     ContentHook { fields: Vec<WriterField>, hook: ContentHook },
+    ContentHookNoWidth { fields: Vec<WriterField>, hook: ContentHookNoWidth },
     DynamicTailOpen { fields: Vec<WriterField>, tail: DynamicTailOpen },
     Union(UnionLayout),
     Forward(ForwardLayout),
@@ -188,6 +189,9 @@ pub(crate) fn generate(
         }
         Some(Layout::ContentHook { fields, hook }) => {
             (emit_content_hook(ast.name, &fields, &hook), None)
+        }
+        Some(Layout::ContentHookNoWidth { fields, hook }) => {
+            (emit_content_hook_no_width(ast.name, &fields, &hook), None)
         }
         Some(Layout::DynamicTailOpen { fields, tail }) => {
             (emit_dynamic_tail_open(ast.name, &fields, &tail), None)
@@ -214,6 +218,13 @@ struct ContentHook {
     prefix_size: usize,
     encode_fn: TokenStream,
     width_fn: TokenStream,
+    value_ty: TokenStream,
+}
+
+struct ContentHookNoWidth {
+    field: syn::Ident,
+    prefix_size: usize,
+    encode_fn: TokenStream,
     value_ty: TokenStream,
 }
 
@@ -1786,17 +1797,34 @@ fn classify_content_hook(
     if !pending.is_last || !fields_all_simple(&fields) {
         return Ok(None);
     }
-    let Some((encode_fn, width_fn)) = parse_write_hook(&pending.field.attributes) else {
+    if let Some((encode_fn, width_fn)) = parse_write_hook(&pending.field.attributes) {
+        let hook = ContentHook {
+            field: format_ident!("{}", pending.field.name),
+            prefix_size: pending.prefix_size,
+            encode_fn,
+            width_fn,
+            value_ty: hook.return_ty,
+        };
+        return Ok(Some(Layout::ContentHook { fields, hook }));
+    }
+    let Some(encode_fn) = parse_write_hook_encode_only(&pending.field.attributes) else {
         return Ok(None);
     };
-    let hook = ContentHook {
+    let hook = ContentHookNoWidth {
         field: format_ident!("{}", pending.field.name),
         prefix_size: pending.prefix_size,
         encode_fn,
-        width_fn,
         value_ty: hook.return_ty,
     };
-    Ok(Some(Layout::ContentHook { fields, hook }))
+    Ok(Some(Layout::ContentHookNoWidth { fields, hook }))
+}
+
+fn parse_write_hook_encode_only(attrs: &[ast::Attribute<'_>]) -> Option<TokenStream> {
+    let attr = attrs.iter().find(|attr| attr.name == "write_hook")?;
+    let [encode] = attr.args.as_slice() else {
+        return None;
+    };
+    path_to_tokens(encode)
 }
 
 fn parse_write_hook_present(attrs: &[ast::Attribute<'_>]) -> bool {
@@ -3056,6 +3084,97 @@ fn emit_content_hook(name: &str, fields: &[WriterField], hook: &ContentHook) -> 
                 let written = #writer_name::write_into(&mut buf, content).unwrap_or(0);
                 buf.truncate(written);
                 buf
+            }
+        }
+
+        pub struct #content_name #content_lifetime {
+            #(#prefix_content_fields,)*
+            pub #field: #value_ty,
+        }
+    }
+}
+
+fn emit_content_hook_no_width(
+    name: &str,
+    fields: &[WriterField],
+    hook: &ContentHookNoWidth,
+) -> TokenStream {
+    let writer_name = format_ident!("{}Writer", name);
+    let content_name = format_ident!("{}Content", name);
+
+    let field = &hook.field;
+    let prefix_size = hook.prefix_size;
+    let encode_fn = &hook.encode_fn;
+    let value_ty = &hook.value_ty;
+
+    let setters = fields
+        .iter()
+        .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
+        .map(fixed_field_setter);
+
+    let prefix_write_calls = fields.iter().map(fixed_field_write_call);
+
+    let prefix_content_fields = fields
+        .iter()
+        .filter(|field| !matches!(field.kind, FieldKind::Constant { .. }))
+        .map(|field| {
+            let field_name = &field.name;
+            let ty = field_type(field);
+            quote! { pub #field_name: #ty }
+        });
+
+    let content_lifetime = if value_ty.to_string().contains('\'') {
+        quote! { <'a> }
+    } else {
+        quote! {}
+    };
+
+    quote! {
+        pub struct #writer_name<'a> {
+            data: &'a mut [u8],
+        }
+
+        impl<'a> #writer_name<'a> {
+            #(#setters)*
+
+            pub fn write_into(data: &'a mut [u8], content: &#content_name) -> ::binparse::WriteResult<usize> {
+                if data.len() < #prefix_size {
+                    return Err(::binparse::WriteError::NotEnoughSpace {
+                        expected: #prefix_size,
+                        got: data.len(),
+                    });
+                }
+                let mut w = Self { data };
+                #(#prefix_write_calls)*
+                let mut cursor = #prefix_size;
+                let (head, tail) = w.data.split_at_mut(cursor);
+                let written = #encode_fn(
+                    content.#field,
+                    tail,
+                    ::binparse::WriteHookContext {
+                        offset: cursor,
+                        written: &*head,
+                    },
+                )?;
+                cursor += written;
+                Ok(cursor)
+            }
+
+            pub fn to_vec(content: &#content_name) -> ::std::vec::Vec<u8> {
+                let mut cap = 64usize;
+                loop {
+                    let mut buf = ::std::vec![0u8; cap];
+                    match #writer_name::write_into(&mut buf, content) {
+                        Ok(written) => {
+                            buf.truncate(written);
+                            return buf;
+                        }
+                        Err(_) if cap < (1usize << 24) => {
+                            cap *= 2;
+                        }
+                        Err(_) => return ::std::vec::Vec::new(),
+                    }
+                }
             }
         }
 

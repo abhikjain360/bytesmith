@@ -470,6 +470,64 @@ struct Msg {
 }
 
 #[test]
+fn generated_writer_content_hook_no_width_round_trips() {
+    let dsl = r#"
+struct Msg {
+    header: [u8; 8],
+    @hook(binparse.hooks.backref_blob, &'a [u8]) @write_hook(binparse.hooks.write_backref_blob) name: [u8],
+}
+"#;
+    let test_body = r#"
+        let inline = MsgContent { header: [0u8; 8], name: b"hello" };
+        let inline_bytes = MsgWriter::to_vec(&inline);
+        assert_eq!(
+            inline_bytes,
+            vec![0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x05, b'h', b'e', b'l', b'l', b'o']
+        );
+
+        let mut buf = vec![0u8; 64];
+        let written = MsgWriter::write_into(&mut buf, &inline).unwrap();
+        assert_eq!(written, inline_bytes.len());
+        let (msg, rest) = Msg::parse(&buf[..written]).unwrap();
+        assert_eq!(rest.len(), 0);
+        assert_eq!(buf[..written].len() - rest.len(), written);
+        assert_eq!(
+            msg.header().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![0u8; 8]
+        );
+        assert_eq!(msg.name().unwrap(), b"hello");
+
+        let compressed = MsgContent {
+            header: [0x01, 0x05, b'h', b'e', b'l', b'l', b'o', 0x00],
+            name: b"hello",
+        };
+        let compressed_bytes = MsgWriter::to_vec(&compressed);
+        assert_eq!(
+            compressed_bytes,
+            vec![0x01, 0x05, b'h', b'e', b'l', b'l', b'o', 0x00, 0x00, 0x00, 0x00]
+        );
+        assert!(compressed_bytes.len() < inline_bytes.len());
+
+        let mut buf2 = vec![0u8; 64];
+        let written2 = MsgWriter::write_into(&mut buf2, &compressed).unwrap();
+        assert_eq!(written2, compressed_bytes.len());
+        let (msg2, rest2) = Msg::parse(&buf2[..written2]).unwrap();
+        assert_eq!(buf2[..written2].len() - rest2.len(), written2);
+        assert_eq!(
+            msg2.header().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![0x01, 0x05, b'h', b'e', b'l', b'l', b'o', 0x00]
+        );
+        assert_eq!(msg2.name().unwrap(), b"hello");
+
+        assert!(matches!(
+            MsgWriter::write_into(&mut [0u8; 4], &inline),
+            Err(binparse::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("content-hook-no-width", dsl, test_body);
+}
+
+#[test]
 fn generated_writer_union_connect_variant_round_trips() {
     let dsl = r#"
 @endian(big)

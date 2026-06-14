@@ -170,6 +170,95 @@ pub fn length_prefixed_bytes_len(value: &[u8]) -> usize {
     1 + value.len()
 }
 
+pub fn backref_blob<'a>(data: &'a [u8], ctx: HookContext<'a>) -> ParseResult<(&'a [u8], usize)> {
+    let fail = |reason| {
+        Err(ParseError::HookFailed {
+            field: "backref_blob",
+            reason,
+        })
+    };
+    match data.first() {
+        Some(0x01) => {
+            let Some(&len) = data.get(1) else {
+                return fail("truncated inline length");
+            };
+            let len = usize::from(len);
+            let end = 2 + len;
+            if data.len() < end {
+                return fail("truncated inline bytes");
+            }
+            Ok((&data[2..end], end))
+        }
+        Some(0x00) => {
+            let (Some(&hi), Some(&lo)) = (data.get(1), data.get(2)) else {
+                return fail("truncated pointer");
+            };
+            let target = usize::from(u16::from_be_bytes([hi, lo]));
+            let Some(&0x01) = ctx.enclosing.get(target) else {
+                return fail("pointer to non-inline");
+            };
+            let Some(&len) = ctx.enclosing.get(target + 1) else {
+                return fail("truncated pointer target length");
+            };
+            let len = usize::from(len);
+            let start = target + 2;
+            let end = start + len;
+            if ctx.enclosing.len() < end {
+                return fail("truncated pointer target bytes");
+            }
+            Ok((&ctx.enclosing[start..end], 3))
+        }
+        _ => fail("invalid tag"),
+    }
+}
+
+pub fn write_backref_blob(
+    value: &[u8],
+    dst: &mut [u8],
+    ctx: WriteHookContext<'_>,
+) -> WriteResult<usize> {
+    if value.len() > usize::from(u8::MAX) {
+        return Err(WriteError::ValueTooLarge {
+            field: "backref_blob",
+            value: value.len(),
+            max: usize::from(u8::MAX),
+        });
+    }
+    let inline_len = 2 + value.len();
+    let mut inline = ::std::vec::Vec::with_capacity(inline_len);
+    inline.push(0x01);
+    inline.push(value.len() as u8);
+    inline.extend_from_slice(value);
+    if let Some(target) = find_subslice(ctx.written, &inline)
+        && let Ok(target) = u16::try_from(target)
+    {
+        if dst.len() < 3 {
+            return Err(WriteError::NotEnoughSpace {
+                expected: 3,
+                got: dst.len(),
+            });
+        }
+        dst[0] = 0x00;
+        dst[1..3].copy_from_slice(&target.to_be_bytes());
+        return Ok(3);
+    }
+    if dst.len() < inline_len {
+        return Err(WriteError::NotEnoughSpace {
+            expected: inline_len,
+            got: dst.len(),
+        });
+    }
+    dst[..inline_len].copy_from_slice(&inline);
+    Ok(inline_len)
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len()).find(|&i| &haystack[i..i + needle.len()] == needle)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,6 +514,58 @@ mod tests {
             Err(WriteError::NotEnoughSpace {
                 expected: 2,
                 got: 1
+            })
+        );
+    }
+
+    #[test]
+    fn test_backref_blob_inline_round_trip() {
+        let mut buf = [0u8; 64];
+        let written = write_backref_blob(b"hello", &mut buf, wctx()).unwrap();
+        assert_eq!(written, 2 + 5);
+        assert_eq!(&buf[..written], &[0x01, 0x05, b'h', b'e', b'l', b'l', b'o']);
+        let (decoded, consumed) = backref_blob(&buf[..written], ctx(&buf[..written])).unwrap();
+        assert_eq!(decoded, b"hello");
+        assert_eq!(consumed, written);
+    }
+
+    #[test]
+    fn test_backref_blob_pointer_round_trip() {
+        let mut buf = [0u8; 64];
+        let first = write_backref_blob(b"hello", &mut buf, wctx()).unwrap();
+        let (head, tail) = buf.split_at_mut(first);
+        let second = write_backref_blob(
+            b"hello",
+            tail,
+            WriteHookContext {
+                offset: first,
+                written: &*head,
+            },
+        )
+        .unwrap();
+        assert_eq!(second, 3);
+        assert!(second < first);
+        assert_eq!(&buf[first..first + second], &[0x00, 0x00, 0x00]);
+        let (decoded, consumed) = backref_blob(
+            &buf[first..first + second],
+            HookContext {
+                field: "Test.field",
+                offset: first,
+                enclosing: &buf[..first + second],
+            },
+        )
+        .unwrap();
+        assert_eq!(decoded, b"hello");
+        assert_eq!(consumed, 3);
+    }
+
+    #[test]
+    fn test_backref_blob_not_enough_space() {
+        assert_eq!(
+            write_backref_blob(b"abc", &mut [0u8; 3], wctx()),
+            Err(WriteError::NotEnoughSpace {
+                expected: 5,
+                got: 3
             })
         );
     }

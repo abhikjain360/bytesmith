@@ -332,11 +332,23 @@ fn writer_content_hook() {
 }
 
 #[test]
-fn writer_content_hook_without_width_skipped() {
+fn writer_content_hook_no_width() {
+    assert_generated_writers_eq(
+        r#"struct Msg {
+            count: u8,
+            @hook(binparse.hooks.backref_blob, &'a [u8]) @write_hook(binparse.hooks.write_backref_blob) name: [u8],
+        }"#,
+        "writer_content_hook_no_width",
+    );
+}
+
+#[test]
+fn writer_content_hook_no_width_not_last_skipped() {
     let code = generate_writers(
         r#"struct Msg {
             count: u8,
-            @hook(binparse.hooks.length_prefixed_bytes, &'a [u8]) @write_hook(binparse.hooks.write_length_prefixed_bytes) body: [u8],
+            @hook(binparse.hooks.backref_blob, &'a [u8]) @write_hook(binparse.hooks.write_backref_blob) name: [u8],
+            trailer: u8,
         }"#,
     );
     syn::parse_str::<syn::File>(&code).expect("generated writer code is not valid Rust");
