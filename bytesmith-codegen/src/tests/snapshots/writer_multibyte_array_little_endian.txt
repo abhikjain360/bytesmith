@@ -1,0 +1,263 @@
+#[allow(non_camel_case_types)]
+pub struct LeSamples_data_Iterator<'a> {
+    idx: usize,
+    count: usize,
+    data: &'a [u8],
+}
+
+impl<'a> ::bytesmith::Dissect<'a> for LeSamples<'a> {
+    fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        LeSamples::field_tree(self)
+    }
+    fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        LeSamples::handoff(self)
+    }
+}
+
+impl<'a> ::std::iter::Iterator for LeSamples_data_Iterator<'a> {
+    type Item = ::bytesmith::ParseResult<u32>;
+    fn next(&mut self) -> std::option::Option<Self::Item> {
+        if self.idx == self.count {
+            return None;
+        }
+        self.idx += 1;
+        let value = u32::from_le_bytes(self.data[..4usize].try_into().unwrap());
+        self.data = &self.data[4usize..];
+        Some(Ok(value))
+    }
+}
+
+impl<'a> LeSamples<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError> {
+        let mut me = Self { data };
+        me.data_fatal_check()?;
+        me.data_recoverable_check()?;
+        let len = me.data_end_offset();
+        if len.bit != 0 {
+            return Err(::bytesmith::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::bytesmith::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = &mut *self;
+            children.push(me.data_present_node());
+        }
+        let mut root = ::bytesmith::FieldNode::new(
+                "LeSamples",
+                "LeSamples",
+                0usize..self.data_end_offset().bits(),
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::bytesmith::FieldNode<'a> {
+        let mut me = Self { data };
+        let mut children: ::std::vec::Vec<::bytesmith::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::bytesmith::ParseError> = None;
+        if fatal.is_none() {
+            match me.data_fatal_check() {
+                Err(error) => {
+                    let start = me.data_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "data",
+                                    "[u32]",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.data_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.data_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "data",
+                                            "[u32]",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.data_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::bytesmith::FieldNode::new(
+                "LeSamples",
+                "LeSamples",
+                0usize..root_end,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::bytesmith::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn data_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.data_bit_range();
+        {
+            let mut elem_nodes = ::std::vec::Vec::new();
+            if let Ok(iter) = self.data() {
+                let mut start = bit_range.start;
+                for (i, elem) in iter.enumerate() {
+                    let end = start.saturating_add(32usize);
+                    match elem {
+                        Ok(value) => {
+                            elem_nodes
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                        i.to_string(),
+                                        "u32",
+                                        start..end,
+                                        ::bytesmith::Value::UInt(u128::from(value)),
+                                    ),
+                                )
+                        }
+                        Err(error) => {
+                            elem_nodes
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            i.to_string(),
+                                            "u32",
+                                            start..start,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                    }
+                    start = end;
+                }
+            }
+            ::bytesmith::FieldNode::new(
+                    "data",
+                    "[u32]",
+                    bit_range.clone(),
+                    ::bytesmith::Value::Array,
+                )
+                .with_children(elem_nodes)
+        }
+    }
+    #[allow(clippy::identity_op)]
+    pub fn data(&mut self) -> ::bytesmith::ParseResult<LeSamples_data_Iterator<'a>> {
+        Ok(LeSamples_data_Iterator {
+            idx: 0,
+            count: 2usize,
+            data: &self.data[0usize..],
+        })
+    }
+    pub fn data_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 8usize,
+            bit: 0usize,
+        }
+    }
+    pub fn data_start_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len::ZERO
+    }
+    pub fn data_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.data_start_offset().bits()..self.data_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn data_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.data_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn data_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+}
+
+impl<'a> LeSamplesWriter<'a> {
+    pub const SIZE: usize = 8usize;
+    pub fn new(data: &'a mut [u8]) -> ::bytesmith::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::bytesmith::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn writer_over(data: &'a mut [u8]) -> ::bytesmith::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::bytesmith::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn set_data(&mut self, value: [u32; 2usize]) -> &mut Self {
+        for __i in 0..2usize {
+            let __start = __i * 4usize;
+            self.data[__start..__start + 4usize]
+                .copy_from_slice(&value[__i].to_le_bytes());
+        }
+        self
+    }
+    pub fn write_into(
+        data: &'a mut [u8],
+        content: &LeSamplesContent,
+    ) -> ::bytesmith::WriteResult<usize> {
+        let mut w = Self::new(data)?;
+        w.set_data(content.data);
+        Ok(Self::SIZE)
+    }
+    pub fn to_vec(content: &LeSamplesContent) -> ::std::vec::Vec<u8> {
+        let mut buf = ::std::vec![0u8; Self::SIZE];
+        let _ = LeSamplesWriter::write_into(&mut buf, content);
+        buf
+    }
+}
+
+pub struct LeSamples<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
+pub struct LeSamplesContent {
+    pub data: [u32; 2usize],
+}
+
+pub struct LeSamplesWriter<'a> {
+    data: &'a mut [u8],
+}
+

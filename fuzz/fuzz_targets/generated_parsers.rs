@@ -4,31 +4,31 @@ use libfuzzer_sys::fuzz_target;
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-fn double_it(value: u16, _ctx: binparse::HookContext<'_>) -> binparse::ParseResult<u32> {
+fn double_it(value: u16, _ctx: bytesmith::HookContext<'_>) -> bytesmith::ParseResult<u32> {
     Ok(u32::from(value) * 2)
 }
 
-fn parse_cstring(data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseResult<(String, usize)> {
-    binparse::hooks::cstring(data, ctx)
+fn parse_cstring(data: &[u8], ctx: bytesmith::HookContext<'_>) -> bytesmith::ParseResult<(String, usize)> {
+    bytesmith::hooks::cstring(data, ctx)
 }
 
-fn read_leb128(data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseResult<(u64, usize)> {
-    binparse::hooks::leb128_unsigned(data, ctx)
+fn read_leb128(data: &[u8], ctx: bytesmith::HookContext<'_>) -> bytesmith::ParseResult<(u64, usize)> {
+    bytesmith::hooks::leb128_unsigned(data, ctx)
 }
 
-fn parse_dns_name(_data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseResult<(String, usize)> {
+fn parse_dns_name(_data: &[u8], ctx: bytesmith::HookContext<'_>) -> bytesmith::ParseResult<(String, usize)> {
     let msg = ctx.enclosing;
     let mut labels: Vec<String> = Vec::new();
     let mut pos = ctx.offset;
     let mut consumed = None;
     let mut jumps = 0;
     loop {
-        let len_byte = *msg.get(pos).ok_or(binparse::ParseError::NotEnoughData {
+        let len_byte = *msg.get(pos).ok_or(bytesmith::ParseError::NotEnoughData {
             expected: pos + 1,
             got: msg.len(),
         })?;
         if len_byte & 0xC0 == 0xC0 {
-            let second = *msg.get(pos + 1).ok_or(binparse::ParseError::NotEnoughData {
+            let second = *msg.get(pos + 1).ok_or(bytesmith::ParseError::NotEnoughData {
                 expected: pos + 2,
                 got: msg.len(),
             })?;
@@ -37,7 +37,7 @@ fn parse_dns_name(_data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::Par
             }
             jumps += 1;
             if jumps > 8 {
-                return Err(binparse::ParseError::HookFailed {
+                return Err(bytesmith::ParseError::HookFailed {
                     field: ctx.field,
                     reason: "too many DNS compression jumps",
                 });
@@ -48,7 +48,7 @@ fn parse_dns_name(_data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::Par
             return Ok((labels.join("."), consumed));
         } else {
             let end = pos + 1 + usize::from(len_byte);
-            let label = msg.get(pos + 1..end).ok_or(binparse::ParseError::NotEnoughData {
+            let label = msg.get(pos + 1..end).ok_or(bytesmith::ParseError::NotEnoughData {
                 expected: end,
                 got: msg.len(),
             })?;
@@ -89,14 +89,14 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.flag_a();
         let _ = packet.flag_b();
         if let Ok(fixed) = packet.fixed() {
-            let _ = fixed.collect::<binparse::ParseResult<Vec<_>>>();
+            let _ = fixed.collect::<bytesmith::ParseResult<Vec<_>>>();
         }
         if let Ok(inner) = packet.inner() {
             let _ = inner.a();
             let _ = inner.b();
         }
         if let Ok(dyns) = packet.dyns() {
-            let _ = dyns.collect::<binparse::ParseResult<Vec<_>>>();
+            let _ = dyns.collect::<bytesmith::ParseResult<Vec<_>>>();
         }
         let _ = packet.dyns_bit_range();
         let _ = packet.payload_bit_range();
@@ -132,7 +132,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.field_tree();
         let _ = packet.xs_bit_range();
         if let Ok(xs) = packet.xs() {
-            let _ = xs.collect::<binparse::ParseResult<Vec<_>>>();
+            let _ = xs.collect::<bytesmith::ParseResult<Vec<_>>>();
         }
     }
 
@@ -147,7 +147,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.high();
         let _ = packet.vals_bit_range();
         if let Ok(vals) = packet.vals() {
-            let _ = vals.collect::<binparse::ParseResult<Vec<_>>>();
+            let _ = vals.collect::<bytesmith::ParseResult<Vec<_>>>();
         }
     }
 
@@ -156,7 +156,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.version();
         let _ = packet.ihl();
         if let Some(Ok(options)) = packet.options() {
-            let _ = options.collect::<binparse::ParseResult<Vec<_>>>();
+            let _ = options.collect::<bytesmith::ParseResult<Vec<_>>>();
         }
         let _ = packet.big();
         let _ = packet.tail();
@@ -179,7 +179,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.n();
         let _ = packet.words_bit_range();
         if let Ok(words) = packet.words() {
-            let _ = words.collect::<binparse::ParseResult<Vec<_>>>();
+            let _ = words.collect::<bytesmith::ParseResult<Vec<_>>>();
         }
     }
 
@@ -188,7 +188,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.after();
         let _ = packet.name_bit_range();
         if let Ok(name) = packet.name() {
-            let _ = name.collect::<binparse::ParseResult<Vec<_>>>();
+            let _ = name.collect::<bytesmith::ParseResult<Vec<_>>>();
         }
     }
 
@@ -197,7 +197,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.count();
         let _ = packet.vals_bit_range();
         if let Ok(vals) = packet.vals() {
-            let _ = vals.collect::<binparse::ParseResult<Vec<_>>>();
+            let _ = vals.collect::<bytesmith::ParseResult<Vec<_>>>();
         }
     }
 
@@ -220,7 +220,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.data_bit_range();
         let _ = packet.tail_bit_range();
         if let Ok(items) = packet.data() {
-            let _ = items.collect::<binparse::ParseResult<Vec<_>>>();
+            let _ = items.collect::<bytesmith::ParseResult<Vec<_>>>();
         }
     }
 
@@ -232,7 +232,7 @@ fuzz_target!(|data: &[u8]| {
             Ok(Dispatch_body::Msg(msg)) => {
                 let _ = msg.msg_len();
                 if let Ok(bytes) = msg.data() {
-                    let _ = bytes.collect::<binparse::ParseResult<Vec<_>>>();
+                    let _ = bytes.collect::<bytesmith::ParseResult<Vec<_>>>();
                 }
             }
             Ok(Dispatch_body::Checked(checked)) => {
@@ -257,7 +257,7 @@ fuzz_target!(|data: &[u8]| {
         if let Ok(ConcatUnion_pair_2::Bytes(bytes)) = third {
             let _ = bytes.count();
             if let Ok(items) = bytes.data() {
-                let _ = items.collect::<binparse::ParseResult<Vec<_>>>();
+                let _ = items.collect::<bytesmith::ParseResult<Vec<_>>>();
             }
         }
     }
@@ -288,7 +288,7 @@ fuzz_target!(|data: &[u8]| {
             }
             Ok(BoundedUnion_value::Blob(b)) => {
                 if let Ok(bytes) = b.bytes() {
-                    let _ = bytes.collect::<binparse::ParseResult<Vec<_>>>();
+                    let _ = bytes.collect::<bytesmith::ParseResult<Vec<_>>>();
                 }
             }
             Ok(BoundedUnion_value::Unknown(_)) => {}
@@ -329,7 +329,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = packet.total_len();
         let _ = packet.payload_bit_range();
         if let Ok(payload) = packet.payload() {
-            let _ = payload.collect::<binparse::ParseResult<Vec<_>>>();
+            let _ = payload.collect::<bytesmith::ParseResult<Vec<_>>>();
         }
     }
 
@@ -339,7 +339,7 @@ fuzz_target!(|data: &[u8]| {
         if let Ok(inner) = packet.inner() {
             let _ = inner.n();
             if let Ok(body) = inner.body() {
-                let _ = body.collect::<binparse::ParseResult<Vec<_>>>();
+                let _ = body.collect::<bytesmith::ParseResult<Vec<_>>>();
             }
         }
     }

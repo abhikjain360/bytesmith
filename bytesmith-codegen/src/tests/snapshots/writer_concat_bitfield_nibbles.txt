@@ -1,0 +1,336 @@
+impl<'a> ::bytesmith::Dissect<'a> for Nib<'a> {
+    fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        Nib::field_tree(self)
+    }
+    fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        Nib::handoff(self)
+    }
+}
+
+impl<'a> Nib<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError> {
+        let mut me = Self { data };
+        me.combo_fatal_check()?;
+        me.combo_recoverable_check()?;
+        me.tail_fatal_check()?;
+        me.tail_recoverable_check()?;
+        let len = me.tail_end_offset();
+        if len.bit != 0 {
+            return Err(::bytesmith::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::bytesmith::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = &mut *self;
+            children.push(me.combo_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.tail_present_node());
+        }
+        let mut root = ::bytesmith::FieldNode::new(
+                "Nib",
+                "Nib",
+                0usize..self.tail_end_offset().bits(),
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::bytesmith::FieldNode<'a> {
+        let mut me = Self { data };
+        let mut children: ::std::vec::Vec<::bytesmith::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::bytesmith::ParseError> = None;
+        if fatal.is_none() {
+            match me.combo_fatal_check() {
+                Err(error) => {
+                    let start = me.combo_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "combo",
+                                    "concat",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.combo_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.combo_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "combo",
+                                            "concat",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.combo_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.tail_fatal_check() {
+                Err(error) => {
+                    let start = me.tail_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "tail",
+                                    "u8",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.tail_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.tail_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "tail",
+                                            "u8",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.tail_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::bytesmith::FieldNode::new(
+                "Nib",
+                "Nib",
+                0usize..root_end,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::bytesmith::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn combo_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.combo_bit_range();
+        {
+            let mut item_nodes = ::std::vec::Vec::new();
+            {
+                let bit_range = 0usize..4usize;
+                item_nodes
+                    .push(
+                        ::bytesmith::FieldNode::new(
+                            "combo_0",
+                            "b<4>",
+                            bit_range.clone(),
+                            ::bytesmith::Value::UInt(u128::from(self.combo_0())),
+                        ),
+                    );
+            }
+            {
+                let bit_range = 4usize..8usize;
+                item_nodes
+                    .push(
+                        ::bytesmith::FieldNode::new(
+                            "combo_1",
+                            "b<4>",
+                            bit_range.clone(),
+                            ::bytesmith::Value::UInt(u128::from(self.combo_1())),
+                        ),
+                    );
+            }
+            ::bytesmith::FieldNode::new(
+                    "combo",
+                    "concat",
+                    bit_range.clone(),
+                    ::bytesmith::Value::Struct,
+                )
+                .with_children(item_nodes)
+        }
+    }
+    #[allow(clippy::identity_op)]
+    pub fn combo_0(&mut self) -> u8 {
+        (self.data[0usize] >> 4usize) & 15u8
+    }
+    #[allow(clippy::identity_op)]
+    pub fn combo_1(&mut self) -> u8 {
+        (self.data[0usize] >> 0usize) & 15u8
+    }
+    #[allow(clippy::identity_op)]
+    pub fn combo(&mut self) -> (u8, u8) {
+        (self.combo_0(), self.combo_1())
+    }
+    pub fn combo_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+    }
+    pub fn combo_start_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len::ZERO
+    }
+    pub fn combo_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.combo_start_offset().bits()..self.combo_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn combo_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.combo_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn combo_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn tail_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.tail_bit_range();
+        ::bytesmith::FieldNode::new(
+            "tail",
+            "u8",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.tail())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn tail(&mut self) -> u8 {
+        self.data[1usize]
+    }
+    pub fn tail_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+    }
+    pub fn tail_start_offset(&mut self) -> bytesmith::Len {
+        self.combo_end_offset()
+    }
+    pub fn tail_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.tail_start_offset().bits()..self.tail_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn tail_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.tail_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn tail_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+}
+
+impl<'a> NibWriter<'a> {
+    pub const SIZE: usize = 2usize;
+    pub fn new(data: &'a mut [u8]) -> ::bytesmith::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::bytesmith::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn writer_over(data: &'a mut [u8]) -> ::bytesmith::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::bytesmith::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn set_combo(&mut self, value: (u8, u8)) -> &mut Self {
+        {
+            let value = value.0;
+            self.data[0usize] = (self.data[0usize] & 15u8) | ((value & 15u8) << 4usize);
+        }
+        {
+            let value = value.1;
+            self.data[0usize] = (self.data[0usize] & 240u8) | ((value & 15u8) << 0usize);
+        }
+        self
+    }
+    pub fn set_tail(&mut self, value: u8) -> &mut Self {
+        self.data[1usize] = value;
+        self
+    }
+    pub fn write_into(
+        data: &'a mut [u8],
+        content: &NibContent,
+    ) -> ::bytesmith::WriteResult<usize> {
+        let mut w = Self::new(data)?;
+        w.set_combo(content.combo);
+        w.set_tail(content.tail);
+        Ok(Self::SIZE)
+    }
+    pub fn to_vec(content: &NibContent) -> ::std::vec::Vec<u8> {
+        let mut buf = ::std::vec![0u8; Self::SIZE];
+        let _ = NibWriter::write_into(&mut buf, content);
+        buf
+    }
+}
+
+pub struct Nib<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
+pub struct NibContent {
+    pub combo: (u8, u8),
+    pub tail: u8,
+}
+
+pub struct NibWriter<'a> {
+    data: &'a mut [u8],
+}
+

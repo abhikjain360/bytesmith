@@ -1,5 +1,5 @@
 [package]
-name = "binparse-fuzz"
+name = "bytesmith-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
@@ -9,11 +9,11 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-binparse = { path = "../binparse" }
+bytesmith = { path = "../bytesmith" }
 
 [build-dependencies]
-binparse-codegen = { path = "../binparse-codegen" }
-binparse-dsl-parse = { path = "../binparse-dsl-parse" }
+bytesmith-codegen = { path = "../bytesmith-codegen" }
+bytesmith-dsl-parse = { path = "../bytesmith-dsl-parse" }
 
 [[bin]]
 name = "generated_parsers"

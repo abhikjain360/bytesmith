@@ -260,89 +260,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
-name = "binparse"
-version = "0.1.0"
-dependencies = [
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "binparse-bench"
-version = "0.1.0"
-dependencies = [
- "binparse",
- "binparse-protocols",
- "bytes",
- "criterion",
- "etherparse",
- "mqttbytes",
- "pnet_packet",
- "rumqttc-v4-next",
- "rumqttc-v5-next",
- "rumqttd",
- "simple-dns",
- "tls-parser",
-]
-
-[[package]]
-name = "binparse-cli"
-version = "0.1.0"
-dependencies = [
- "binparse-codegen",
- "binparse-dsl-parse",
- "clap",
-]
-
-[[package]]
-name = "binparse-codegen"
-version = "0.1.0"
-dependencies = [
- "binparse",
- "binparse-dsl",
- "binparse-dsl-parse",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn 2.0.111",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "binparse-dsl"
-version = "0.1.0"
-
-[[package]]
-name = "binparse-dsl-parse"
-version = "0.1.0"
-dependencies = [
- "ariadne",
- "binparse-dsl",
- "thiserror 2.0.17",
- "winnow 0.7.14",
-]
-
-[[package]]
-name = "binparse-lsp"
-version = "0.1.0"
-dependencies = [
- "binparse-codegen",
- "binparse-dsl",
- "binparse-dsl-parse",
- "dashmap 6.2.1",
- "tokio",
- "tower-lsp",
-]
-
-[[package]]
-name = "binparse-protocols"
-version = "0.1.0"
-dependencies = [
- "binparse",
- "binparse-codegen",
- "binparse-dsl-parse",
-]
-
-[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -379,6 +296,89 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "bytesmith"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "bytesmith-bench"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "bytesmith",
+ "bytesmith-protocols",
+ "criterion",
+ "etherparse",
+ "mqttbytes",
+ "pnet_packet",
+ "rumqttc-v4-next",
+ "rumqttc-v5-next",
+ "rumqttd",
+ "simple-dns",
+ "tls-parser",
+]
+
+[[package]]
+name = "bytesmith-cli"
+version = "0.1.0"
+dependencies = [
+ "bytesmith-codegen",
+ "bytesmith-dsl-parse",
+ "clap",
+]
+
+[[package]]
+name = "bytesmith-codegen"
+version = "0.1.0"
+dependencies = [
+ "bytesmith",
+ "bytesmith-dsl",
+ "bytesmith-dsl-parse",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "bytesmith-dsl"
+version = "0.1.0"
+
+[[package]]
+name = "bytesmith-dsl-parse"
+version = "0.1.0"
+dependencies = [
+ "ariadne",
+ "bytesmith-dsl",
+ "thiserror 2.0.17",
+ "winnow 0.7.14",
+]
+
+[[package]]
+name = "bytesmith-lsp"
+version = "0.1.0"
+dependencies = [
+ "bytesmith-codegen",
+ "bytesmith-dsl",
+ "bytesmith-dsl-parse",
+ "dashmap 6.2.1",
+ "tokio",
+ "tower-lsp",
+]
+
+[[package]]
+name = "bytesmith-protocols"
+version = "0.1.0"
+dependencies = [
+ "bytesmith",
+ "bytesmith-codegen",
+ "bytesmith-dsl-parse",
 ]
 
 [[package]]

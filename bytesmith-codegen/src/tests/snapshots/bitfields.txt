@@ -1,0 +1,416 @@
+impl<'a> ::bytesmith::Dissect<'a> for IpFlags<'a> {
+    fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        IpFlags::field_tree(self)
+    }
+    fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        IpFlags::handoff(self)
+    }
+}
+
+impl<'a> IpFlags<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError> {
+        let mut me = Self { data };
+        me.version_fatal_check()?;
+        me.version_recoverable_check()?;
+        me.ihl_fatal_check()?;
+        me.ihl_recoverable_check()?;
+        me.dscp_fatal_check()?;
+        me.dscp_recoverable_check()?;
+        me.ecn_fatal_check()?;
+        me.ecn_recoverable_check()?;
+        let len = me.ecn_end_offset();
+        if len.bit != 0 {
+            return Err(::bytesmith::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::bytesmith::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = &mut *self;
+            children.push(me.version_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.ihl_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.dscp_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.ecn_present_node());
+        }
+        let mut root = ::bytesmith::FieldNode::new(
+                "IpFlags",
+                "IpFlags",
+                0usize..self.ecn_end_offset().bits(),
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::bytesmith::FieldNode<'a> {
+        let mut me = Self { data };
+        let mut children: ::std::vec::Vec<::bytesmith::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::bytesmith::ParseError> = None;
+        if fatal.is_none() {
+            match me.version_fatal_check() {
+                Err(error) => {
+                    let start = me.version_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "version",
+                                    "b<4>",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.version_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.version_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "version",
+                                            "b<4>",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.version_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.ihl_fatal_check() {
+                Err(error) => {
+                    let start = me.ihl_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "ihl",
+                                    "b<4>",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.ihl_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.ihl_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "ihl",
+                                            "b<4>",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.ihl_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.dscp_fatal_check() {
+                Err(error) => {
+                    let start = me.dscp_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "dscp",
+                                    "b<6>",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.dscp_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.dscp_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "dscp",
+                                            "b<6>",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.dscp_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.ecn_fatal_check() {
+                Err(error) => {
+                    let start = me.ecn_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "ecn",
+                                    "b<2>",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.ecn_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.ecn_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "ecn",
+                                            "b<2>",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.ecn_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::bytesmith::FieldNode::new(
+                "IpFlags",
+                "IpFlags",
+                0usize..root_end,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::bytesmith::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn version_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.version_bit_range();
+        ::bytesmith::FieldNode::new(
+            "version",
+            "b<4>",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.version())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn version(&mut self) -> u8 {
+        (self.data[0usize] >> 4usize) & 15u8
+    }
+    pub fn version_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 0usize,
+            bit: 4usize,
+        }
+    }
+    pub fn version_start_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len::ZERO
+    }
+    pub fn version_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.version_start_offset().bits()..self.version_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn version_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.version_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn version_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn ihl_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.ihl_bit_range();
+        ::bytesmith::FieldNode::new(
+            "ihl",
+            "b<4>",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.ihl())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn ihl(&mut self) -> u8 {
+        (self.data[0usize] >> 0usize) & 15u8
+    }
+    pub fn ihl_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+    }
+    pub fn ihl_start_offset(&mut self) -> bytesmith::Len {
+        self.version_end_offset()
+    }
+    pub fn ihl_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.ihl_start_offset().bits()..self.ihl_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn ihl_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.ihl_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn ihl_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn dscp_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.dscp_bit_range();
+        ::bytesmith::FieldNode::new(
+            "dscp",
+            "b<6>",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.dscp())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn dscp(&mut self) -> u8 {
+        (self.data[1usize] >> 2usize) & 63u8
+    }
+    pub fn dscp_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 1usize,
+            bit: 6usize,
+        }
+    }
+    pub fn dscp_start_offset(&mut self) -> bytesmith::Len {
+        self.ihl_end_offset()
+    }
+    pub fn dscp_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.dscp_start_offset().bits()..self.dscp_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn dscp_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.dscp_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn dscp_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn ecn_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.ecn_bit_range();
+        ::bytesmith::FieldNode::new(
+            "ecn",
+            "b<2>",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.ecn())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn ecn(&mut self) -> u8 {
+        (self.data[1usize] >> 0usize) & 3u8
+    }
+    pub fn ecn_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+    }
+    pub fn ecn_start_offset(&mut self) -> bytesmith::Len {
+        self.dscp_end_offset()
+    }
+    pub fn ecn_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.ecn_start_offset().bits()..self.ecn_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn ecn_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.ecn_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn ecn_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+}
+
+pub struct IpFlags<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+

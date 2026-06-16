@@ -1,0 +1,415 @@
+impl<'a> ::bytesmith::Dissect<'a> for WithLenHook<'a> {
+    fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        WithLenHook::field_tree(self)
+    }
+    fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        WithLenHook::handoff(self)
+    }
+}
+
+impl<'a> WithLenHook<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError> {
+        let mut me = Self { data };
+        me.len_fatal_check()?;
+        me.len_recoverable_check()?;
+        me.value_fatal_check()?;
+        me.value_recoverable_check()?;
+        me.after_fatal_check()?;
+        me.after_recoverable_check()?;
+        let len = me.after_end_offset();
+        if len.bit != 0 {
+            return Err(::bytesmith::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::bytesmith::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = &mut *self;
+            children.push(me.len_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.value_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.after_present_node());
+        }
+        let mut root = ::bytesmith::FieldNode::new(
+                "WithLenHook",
+                "WithLenHook",
+                0usize..self.after_end_offset().bits(),
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::bytesmith::FieldNode<'a> {
+        let mut me = Self { data };
+        let mut children: ::std::vec::Vec<::bytesmith::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::bytesmith::ParseError> = None;
+        if fatal.is_none() {
+            match me.len_fatal_check() {
+                Err(error) => {
+                    let start = me.len_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "len",
+                                    "u8",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.len_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.len_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "len",
+                                            "u8",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.len_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.value_fatal_check() {
+                Err(error) => {
+                    let start = me.value_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "value",
+                                    "[u8]",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.value_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.value_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "value",
+                                            "[u8]",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.value_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.after_fatal_check() {
+                Err(error) => {
+                    let start = me.after_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "after",
+                                    "u8",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.after_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.after_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "after",
+                                            "u8",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.after_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::bytesmith::FieldNode::new(
+                "WithLenHook",
+                "WithLenHook",
+                0usize..root_end,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::bytesmith::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn len_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.len_bit_range();
+        ::bytesmith::FieldNode::new(
+            "len",
+            "u8",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.len())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn len(&mut self) -> u8 {
+        self.data[0usize]
+    }
+    pub fn len_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+    }
+    pub fn len_start_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len::ZERO
+    }
+    pub fn len_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.len_start_offset().bits()..self.len_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn len_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.len_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn len_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn value_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.value_bit_range();
+        match self.value_raw() {
+            Ok((value, consumed)) => {
+                let consumed_end = bit_range
+                    .start
+                    .saturating_add(consumed.saturating_mul(8))
+                    .min(bit_range.end);
+                let mut node = ::bytesmith::FieldNode::new(
+                    "value",
+                    "u64",
+                    bit_range.clone(),
+                    ::bytesmith::Value::UInt(u128::from(value)),
+                );
+                if let Ok(rest) = self.value_rest() && !rest.is_empty() {
+                    node.children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                "rest",
+                                "[u8]",
+                                consumed_end..bit_range.end,
+                                ::bytesmith::Value::Bytes(rest),
+                            ),
+                        );
+                }
+                node
+            }
+            Err(error) => {
+                ::bytesmith::FieldNode::new(
+                        "value",
+                        "u64",
+                        bit_range.clone(),
+                        ::bytesmith::Value::Opaque,
+                    )
+                    .with_status(::bytesmith::Status::Error(error))
+            }
+        }
+    }
+    fn value_raw(&mut self) -> ::bytesmith::ParseResult<(u64, usize)> {
+        let start = 1usize;
+        let window = start.saturating_add(self.len() as usize).min(self.data.len());
+        let (value, consumed) = read_leb128(
+            &self.data[start.min(window)..window],
+            ::bytesmith::HookContext {
+                field: "WithLenHook.value",
+                offset: start,
+                enclosing: self.data,
+            },
+        )?;
+        let end = start.saturating_add(consumed);
+        if end > window {
+            return Err(::bytesmith::ParseError::NotEnoughData {
+                expected: end,
+                got: window,
+            });
+        }
+        Ok((value, consumed))
+    }
+    pub fn value_rest(&mut self) -> ::bytesmith::ParseResult<&'a [u8]> {
+        let start = 1usize;
+        let window = start.saturating_add(self.len() as usize).min(self.data.len());
+        let (_, consumed) = self.value_raw()?;
+        let rest_start = start.saturating_add(consumed).min(window);
+        Ok(&self.data[rest_start..window])
+    }
+    pub fn value(&mut self) -> ::bytesmith::ParseResult<u64> {
+        self.value_raw().map(|(value, _)| value)
+    }
+    pub fn value_end_offset(&mut self) -> bytesmith::Len {
+        ::bytesmith::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+            + ({
+                ::bytesmith::Len {
+                    byte: self.len() as usize,
+                    bit: 0,
+                }
+            })
+    }
+    pub fn value_start_offset(&mut self) -> bytesmith::Len {
+        self.len_end_offset()
+    }
+    pub fn value_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.value_start_offset().bits()..self.value_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn value_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        self.value_raw()?;
+        {
+            let len = self.value_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn value_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn after_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.after_bit_range();
+        ::bytesmith::FieldNode::new(
+            "after",
+            "u8",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.after())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn after(&mut self) -> u8 {
+        {
+            let offset = ::bytesmith::Len {
+                byte: 1usize,
+                bit: 0usize,
+            }
+                + ({
+                    ::bytesmith::Len {
+                        byte: self.len() as usize,
+                        bit: 0,
+                    }
+                });
+            debug_assert!(offset.bit == 0, "primitive requires byte alignment");
+            self.data[offset.byte]
+        }
+    }
+    pub fn after_end_offset(&mut self) -> bytesmith::Len {
+        ::bytesmith::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+            + ({
+                ::bytesmith::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+                    + ({
+                        ::bytesmith::Len {
+                            byte: self.len() as usize,
+                            bit: 0,
+                        }
+                    })
+            })
+    }
+    pub fn after_start_offset(&mut self) -> bytesmith::Len {
+        self.value_end_offset()
+    }
+    pub fn after_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.after_start_offset().bits()..self.after_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn after_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.after_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn after_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+}
+
+pub struct WithLenHook<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+

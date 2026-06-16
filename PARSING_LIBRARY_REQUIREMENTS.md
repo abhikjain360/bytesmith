@@ -1,6 +1,6 @@
-# Binparse Parsing Library Requirements
+# Bytesmith Parsing Library Requirements
 
-This document scopes `binparse` as a parsing library that can be used behind a Wireshark-like application.
+This document scopes `bytesmith` as a parsing library that can be used behind a Wireshark-like application.
 
 The library is not responsible for packet capture, UI, columns, filtering, persistence, stream reassembly, protocol preferences, or expert workflows. A separate crate may build those features on top of the parsing and dissection APIs described here.
 
@@ -322,11 +322,11 @@ Goal: stabilize the library boundary after the parser is useful enough to publis
 
 Requirements:
 
-- `binparse` provides documented runtime types needed by generated parsers and downstream applications.
-- `binparse-dsl` provides only the AST.
-- `binparse-dsl-parse` parses source into AST and diagnostics.
-- `binparse-codegen` converts AST into Rust parser code.
-- Generated code depends on `binparse`, not on UI/application crates.
+- `bytesmith` provides documented runtime types needed by generated parsers and downstream applications.
+- `bytesmith-dsl` provides only the AST.
+- `bytesmith-dsl-parse` parses source into AST and diagnostics.
+- `bytesmith-codegen` converts AST into Rust parser code.
+- Generated code depends on `bytesmith`, not on UI/application crates.
 - No public API introduces UI rendering, packet capture, display filters, persistence, protocol preferences, or session tracking into this crate.
 - Public runtime types have documented semantics.
 - Generated code uses stable runtime APIs.
@@ -337,7 +337,7 @@ Requirements:
 
 Done when:
 
-- A separate application crate can depend on `binparse` and generated protocol parsers without using private codegen internals.
+- A separate application crate can depend on `bytesmith` and generated protocol parsers without using private codegen internals.
 - Public crate responsibilities are documented.
 - Application-facing APIs do not depend on generated concrete protocol types.
 

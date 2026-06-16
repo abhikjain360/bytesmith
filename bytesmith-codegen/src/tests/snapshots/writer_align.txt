@@ -1,0 +1,294 @@
+impl<'a> ::bytesmith::Dissect<'a> for Al<'a> {
+    fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        Al::field_tree(self)
+    }
+    fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        Al::handoff(self)
+    }
+}
+
+impl<'a> Al<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError> {
+        let mut me = Self { data };
+        me.a_fatal_check()?;
+        me.a_recoverable_check()?;
+        me.b_fatal_check()?;
+        me.b_recoverable_check()?;
+        let len = me.b_end_offset();
+        if len.bit != 0 {
+            return Err(::bytesmith::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::bytesmith::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = &mut *self;
+            children.push(me.a_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.b_present_node());
+        }
+        let mut root = ::bytesmith::FieldNode::new(
+                "Al",
+                "Al",
+                0usize..self.b_end_offset().bits(),
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::bytesmith::FieldNode<'a> {
+        let mut me = Self { data };
+        let mut children: ::std::vec::Vec<::bytesmith::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::bytesmith::ParseError> = None;
+        if fatal.is_none() {
+            match me.a_fatal_check() {
+                Err(error) => {
+                    let start = me.a_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "a",
+                                    "u16",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.a_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.a_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "a",
+                                            "u16",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.a_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.b_fatal_check() {
+                Err(error) => {
+                    let start = me.b_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "b",
+                                    "u16",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.b_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.b_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "b",
+                                            "u16",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.b_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::bytesmith::FieldNode::new(
+                "Al",
+                "Al",
+                0usize..root_end,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::bytesmith::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn a_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.a_bit_range();
+        ::bytesmith::FieldNode::new(
+            "a",
+            "u16",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.a())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn a(&mut self) -> u16 {
+        u16::from_be_bytes(self.data[0usize..2usize].try_into().unwrap())
+    }
+    pub fn a_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+    }
+    pub fn a_start_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len::ZERO
+    }
+    pub fn a_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.a_start_offset().bits()..self.a_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn a_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.a_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn a_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn b_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.b_bit_range();
+        ::bytesmith::FieldNode::new(
+            "b",
+            "u16",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.b())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn b(&mut self) -> u16 {
+        u16::from_be_bytes(self.data[2usize..4usize].try_into().unwrap())
+    }
+    pub fn b_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 4usize,
+            bit: 0usize,
+        }
+    }
+    pub fn b_start_offset(&mut self) -> bytesmith::Len {
+        self.a_end_offset()
+    }
+    pub fn b_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.b_start_offset().bits()..self.b_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn b_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.b_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn b_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+}
+
+impl<'a> AlWriter<'a> {
+    pub const SIZE: usize = 4usize;
+    pub fn new(data: &'a mut [u8]) -> ::bytesmith::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::bytesmith::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn writer_over(data: &'a mut [u8]) -> ::bytesmith::WriteResult<Self> {
+        if data.len() < Self::SIZE {
+            return Err(::bytesmith::WriteError::NotEnoughSpace {
+                expected: Self::SIZE,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+    pub fn set_a(&mut self, value: u16) -> &mut Self {
+        self.data[0usize..2usize].copy_from_slice(&value.to_be_bytes());
+        self
+    }
+    pub fn set_b(&mut self, value: u16) -> &mut Self {
+        self.data[2usize..4usize].copy_from_slice(&value.to_be_bytes());
+        self
+    }
+    pub fn write_into(
+        data: &'a mut [u8],
+        content: &AlContent,
+    ) -> ::bytesmith::WriteResult<usize> {
+        let mut w = Self::new(data)?;
+        w.data[..Self::SIZE].fill(0);
+        w.set_a(content.a);
+        w.set_b(content.b);
+        Ok(Self::SIZE)
+    }
+    pub fn to_vec(content: &AlContent) -> ::std::vec::Vec<u8> {
+        let mut buf = ::std::vec![0u8; Self::SIZE];
+        let _ = AlWriter::write_into(&mut buf, content);
+        buf
+    }
+}
+
+pub struct Al<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
+pub struct AlContent {
+    pub a: u16,
+    pub b: u16,
+}
+
+pub struct AlWriter<'a> {
+    data: &'a mut [u8],
+}
+

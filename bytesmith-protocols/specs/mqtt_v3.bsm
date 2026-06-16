@@ -1,0 +1,30 @@
+struct MqttPacket {
+    packet_type: b<4>,
+    flags: b<4>,
+    @hook(bytesmith.hooks.leb128_unsigned, u64) @cache @write_hook(bytesmith.hooks.write_leb128_unsigned, bytesmith.hooks.leb128_unsigned_len) remaining_length: [u8],
+    @len(remaining_length) @cache body: union(packet_type) {
+        1 => Connect {
+            proto_name_len: u16,
+            proto_name: [u8; proto_name_len],
+            proto_level: u8,
+            connect_flags: u8,
+            keep_alive: u16,
+            @greedy(unsafe_eof) payload: [u8],
+        },
+        2 => Connack { ack_flags: u8, return_code: u8 },
+        3 => Publish {
+            topic_len: u16,
+            topic: [u8; topic_len],
+            @greedy(unsafe_eof) payload: [u8],
+        },
+        4 | 5 | 6 | 7 => PubAck { packet_id: u16 },
+        8 => Subscribe { packet_id: u16, @greedy(unsafe_eof) payload: [u8] },
+        9 => SubAck { packet_id: u16, @greedy(unsafe_eof) return_codes: [u8] },
+        10 => Unsubscribe { packet_id: u16, @greedy(unsafe_eof) payload: [u8] },
+        11 => UnsubAck { packet_id: u16 },
+        12 => PingReq { },
+        13 => PingResp { },
+        14 => Disconnect { },
+        _ => Raw { @greedy(unsafe_eof) body: [u8] },
+    },
+}

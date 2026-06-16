@@ -1,0 +1,14 @@
+[package]
+name = "bytesmith"
+description = "Runtime types for bytesmith-generated parsers: offsets, parse errors, dissection tree, hooks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme.workspace = true
+license.workspace = true
+keywords = ["binary", "parser", "zero-copy", "parsing", "codegen"]
+categories = ["parsing", "encoding", "network-programming"]
+
+[dependencies]
+thiserror = "2.0.17"

@@ -1,0 +1,25 @@
+[package]
+name = "bytesmith-codegen"
+description = "Rust parser code generator for bytesmith DSL specs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme.workspace = true
+license.workspace = true
+keywords = ["binary", "parser", "codegen", "zero-copy", "dsl"]
+categories = ["parsing", "development-tools", "parser-implementations"]
+exclude = ["/tests/", "/src/tests/", "/examples/tmp.rs"]
+
+[dependencies]
+bytesmith = { path = "../bytesmith", version = "0.1.0" }
+bytesmith-dsl = { path = "../bytesmith-dsl", version = "0.1.0" }
+
+prettyplease = "0.2.37"
+proc-macro2 = "1.0.103"
+quote = "1.0.42"
+syn = { version = "2.0.111", default-features = false, features = ["parsing"] }
+thiserror = "2.0.17"
+
+[dev-dependencies]
+bytesmith-dsl-parse = { path = "../bytesmith-dsl-parse", version = "0.1.0" }

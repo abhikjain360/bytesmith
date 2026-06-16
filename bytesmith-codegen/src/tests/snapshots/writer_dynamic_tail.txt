@@ -1,0 +1,483 @@
+#[allow(non_camel_case_types)]
+pub struct Frame_payload_Iterator<'a> {
+    idx: usize,
+    count: usize,
+    data: &'a [u8],
+}
+
+#[derive(Clone, Copy)]
+pub struct FrameLens {
+    pub payload: usize,
+}
+
+impl<'a> ::bytesmith::Dissect<'a> for Frame<'a> {
+    fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        Frame::field_tree(self)
+    }
+    fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        Frame::handoff(self)
+    }
+}
+
+impl<'a> ::std::iter::Iterator for Frame_payload_Iterator<'a> {
+    type Item = ::bytesmith::ParseResult<u8>;
+    fn next(&mut self) -> std::option::Option<Self::Item> {
+        if self.idx == self.count {
+            return None;
+        }
+        self.idx += 1;
+        let value = self.data[0];
+        self.data = &self.data[1..];
+        Some(Ok(value))
+    }
+}
+
+impl<'a> Frame<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError> {
+        let mut me = Self { data };
+        me.kind_fatal_check()?;
+        me.kind_recoverable_check()?;
+        me.len_fatal_check()?;
+        me.len_recoverable_check()?;
+        me.payload_fatal_check()?;
+        me.payload_recoverable_check()?;
+        let len = me.payload_end_offset();
+        if len.bit != 0 {
+            return Err(::bytesmith::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::bytesmith::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = &mut *self;
+            children.push(me.kind_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.len_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.payload_present_node());
+        }
+        let mut root = ::bytesmith::FieldNode::new(
+                "Frame",
+                "Frame",
+                0usize..self.payload_end_offset().bits(),
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::bytesmith::FieldNode<'a> {
+        let mut me = Self { data };
+        let mut children: ::std::vec::Vec<::bytesmith::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::bytesmith::ParseError> = None;
+        if fatal.is_none() {
+            match me.kind_fatal_check() {
+                Err(error) => {
+                    let start = me.kind_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "kind",
+                                    "u8",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.kind_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.kind_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "kind",
+                                            "u8",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.kind_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.len_fatal_check() {
+                Err(error) => {
+                    let start = me.len_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "len",
+                                    "u8",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.len_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.len_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "len",
+                                            "u8",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.len_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.payload_fatal_check() {
+                Err(error) => {
+                    let start = me.payload_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "payload",
+                                    "[u8]",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.payload_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.payload_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "payload",
+                                            "[u8]",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.payload_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::bytesmith::FieldNode::new(
+                "Frame",
+                "Frame",
+                0usize..root_end,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::bytesmith::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn kind_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.kind_bit_range();
+        ::bytesmith::FieldNode::new(
+            "kind",
+            "u8",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.kind())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn kind(&mut self) -> u8 {
+        self.data[0usize]
+    }
+    pub fn kind_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+    }
+    pub fn kind_start_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len::ZERO
+    }
+    pub fn kind_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.kind_start_offset().bits()..self.kind_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn kind_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.kind_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn kind_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn len_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.len_bit_range();
+        ::bytesmith::FieldNode::new(
+            "len",
+            "u8",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.len())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn len(&mut self) -> u8 {
+        self.data[1usize]
+    }
+    pub fn len_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+    }
+    pub fn len_start_offset(&mut self) -> bytesmith::Len {
+        self.kind_end_offset()
+    }
+    pub fn len_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.len_start_offset().bits()..self.len_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn len_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.len_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn len_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn payload_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.payload_bit_range();
+        {
+            let mut elem_nodes = ::std::vec::Vec::new();
+            if let Ok(iter) = self.payload() {
+                let mut start = bit_range.start;
+                for (i, elem) in iter.enumerate() {
+                    let end = start.saturating_add(8usize);
+                    match elem {
+                        Ok(value) => {
+                            elem_nodes
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                        i.to_string(),
+                                        "u8",
+                                        start..end,
+                                        ::bytesmith::Value::UInt(u128::from(value)),
+                                    ),
+                                )
+                        }
+                        Err(error) => {
+                            elem_nodes
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            i.to_string(),
+                                            "u8",
+                                            start..start,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                    }
+                    start = end;
+                }
+            }
+            ::bytesmith::FieldNode::new(
+                    "payload",
+                    "[u8]",
+                    bit_range.clone(),
+                    ::bytesmith::Value::Array,
+                )
+                .with_children(elem_nodes)
+        }
+    }
+    #[allow(clippy::identity_op)]
+    pub fn payload(&mut self) -> ::bytesmith::ParseResult<Frame_payload_Iterator<'a>> {
+        Ok(Frame_payload_Iterator {
+            idx: 0,
+            count: self.len() as usize,
+            data: &self.data[2usize..],
+        })
+    }
+    pub fn payload_end_offset(&mut self) -> bytesmith::Len {
+        ::bytesmith::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+            + ({
+                ::bytesmith::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                } * (self.len() as usize)
+            })
+    }
+    pub fn payload_start_offset(&mut self) -> bytesmith::Len {
+        self.len_end_offset()
+    }
+    pub fn payload_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.payload_start_offset().bits()..self.payload_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn payload_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.payload_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn payload_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+}
+
+impl<'a> FrameWriter<'a> {
+    pub fn encoded_len(lens: &FrameLens) -> usize {
+        2usize + lens.payload
+    }
+    pub fn new(data: &'a mut [u8], lens: FrameLens) -> ::bytesmith::WriteResult<Self> {
+        let need = Self::encoded_len(&lens);
+        if data.len() < need {
+            return Err(::bytesmith::WriteError::NotEnoughSpace {
+                expected: need,
+                got: data.len(),
+            });
+        }
+        if lens.payload > (u8::MAX as usize) {
+            return Err(::bytesmith::WriteError::ValueTooLarge {
+                field: "Frame.len",
+                value: lens.payload,
+                max: u8::MAX as usize,
+            });
+        }
+        let mut me = Self { data, lens };
+        me.write_len();
+        Ok(me)
+    }
+    pub fn writer_over(data: &'a mut [u8]) -> ::bytesmith::WriteResult<Self> {
+        let lens = {
+            let (mut view, _) = Frame::parse(data)
+                .map_err(|_| ::bytesmith::WriteError::InvalidContent)?;
+            let region_bytes = view.payload_end_offset().byte
+                - view.payload_start_offset().byte;
+            FrameLens { payload: region_bytes }
+        };
+        let need = Self::encoded_len(&lens);
+        if data.len() < need {
+            return Err(::bytesmith::WriteError::NotEnoughSpace {
+                expected: need,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data, lens })
+    }
+    fn write_len(&mut self) {
+        self.data[1usize] = self.lens.payload as u8;
+    }
+    pub fn set_kind(&mut self, value: u8) -> &mut Self {
+        self.data[0usize] = value;
+        self
+    }
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        let off = 2usize;
+        &mut self.data[off..off + self.lens.payload]
+    }
+    pub fn write_into(
+        data: &'a mut [u8],
+        content: &FrameContent,
+    ) -> ::bytesmith::WriteResult<usize> {
+        let lens = FrameLens {
+            payload: content.payload.len(),
+        };
+        let need = Self::encoded_len(&lens);
+        let mut w = Self::new(data, lens)?;
+        w.set_kind(content.kind);
+        w.payload_mut().copy_from_slice(content.payload);
+        Ok(need)
+    }
+    pub fn to_vec(content: &FrameContent) -> ::std::vec::Vec<u8> {
+        let lens = FrameLens {
+            payload: content.payload.len(),
+        };
+        let mut buf = ::std::vec![0u8; Self::encoded_len(& lens)];
+        let _ = FrameWriter::write_into(&mut buf, content);
+        buf
+    }
+}
+
+pub struct Frame<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
+pub struct FrameContent<'a> {
+    pub kind: u8,
+    pub payload: &'a [u8],
+}
+
+pub struct FrameWriter<'a> {
+    data: &'a mut [u8],
+    lens: FrameLens,
+}
+

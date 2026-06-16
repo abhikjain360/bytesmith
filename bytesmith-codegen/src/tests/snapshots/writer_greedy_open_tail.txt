@@ -1,0 +1,1171 @@
+#[allow(non_camel_case_types)]
+pub struct Vlan_dst_Iterator<'a> {
+    idx: usize,
+    count: usize,
+    data: &'a [u8],
+}
+
+#[allow(non_camel_case_types)]
+pub struct Vlan_payload_Iterator<'a> {
+    idx: usize,
+    count: usize,
+    data: &'a [u8],
+}
+
+#[allow(non_camel_case_types)]
+pub struct Vlan_src_Iterator<'a> {
+    idx: usize,
+    count: usize,
+    data: &'a [u8],
+}
+
+#[derive(Clone, Copy)]
+pub struct VlanLens {
+    pub payload: usize,
+}
+
+impl<'a> ::bytesmith::Dissect<'a> for Vlan<'a> {
+    fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        Vlan::field_tree(self)
+    }
+    fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        Vlan::handoff(self)
+    }
+}
+
+impl<'a> ::std::iter::Iterator for Vlan_dst_Iterator<'a> {
+    type Item = ::bytesmith::ParseResult<u8>;
+    fn next(&mut self) -> std::option::Option<Self::Item> {
+        if self.idx == self.count {
+            return None;
+        }
+        self.idx += 1;
+        let value = self.data[0];
+        self.data = &self.data[1..];
+        Some(Ok(value))
+    }
+}
+
+impl<'a> ::std::iter::Iterator for Vlan_payload_Iterator<'a> {
+    type Item = ::bytesmith::ParseResult<u8>;
+    fn next(&mut self) -> std::option::Option<Self::Item> {
+        if self.idx == self.count {
+            return None;
+        }
+        self.idx += 1;
+        let value = self.data[0];
+        self.data = &self.data[1..];
+        Some(Ok(value))
+    }
+}
+
+impl<'a> ::std::iter::Iterator for Vlan_src_Iterator<'a> {
+    type Item = ::bytesmith::ParseResult<u8>;
+    fn next(&mut self) -> std::option::Option<Self::Item> {
+        if self.idx == self.count {
+            return None;
+        }
+        self.idx += 1;
+        let value = self.data[0];
+        self.data = &self.data[1..];
+        Some(Ok(value))
+    }
+}
+
+impl<'a> Vlan<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError> {
+        let mut me = Self { data };
+        me.dst_fatal_check()?;
+        me.dst_recoverable_check()?;
+        me.src_fatal_check()?;
+        me.src_recoverable_check()?;
+        me.tpid_fatal_check()?;
+        me.tpid_recoverable_check()?;
+        me.pcp_fatal_check()?;
+        me.pcp_recoverable_check()?;
+        me.dei_fatal_check()?;
+        me.dei_recoverable_check()?;
+        me.vid_hi_fatal_check()?;
+        me.vid_hi_recoverable_check()?;
+        me.vid_lo_fatal_check()?;
+        me.vid_lo_recoverable_check()?;
+        me.ethertype_fatal_check()?;
+        me.ethertype_recoverable_check()?;
+        me.payload_fatal_check()?;
+        me.payload_recoverable_check()?;
+        let len = me.payload_end_offset();
+        if len.bit != 0 {
+            return Err(::bytesmith::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::bytesmith::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = &mut *self;
+            children.push(me.dst_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.src_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.tpid_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.pcp_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.dei_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.vid_hi_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.vid_lo_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.ethertype_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.payload_present_node());
+        }
+        let mut root = ::bytesmith::FieldNode::new(
+                "Vlan",
+                "Vlan",
+                0usize..self.payload_end_offset().bits(),
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::bytesmith::FieldNode<'a> {
+        let mut me = Self { data };
+        let mut children: ::std::vec::Vec<::bytesmith::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::bytesmith::ParseError> = None;
+        if fatal.is_none() {
+            match me.dst_fatal_check() {
+                Err(error) => {
+                    let start = me.dst_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "dst",
+                                    "[u8]",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.dst_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.dst_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "dst",
+                                            "[u8]",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.dst_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.src_fatal_check() {
+                Err(error) => {
+                    let start = me.src_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "src",
+                                    "[u8]",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.src_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.src_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "src",
+                                            "[u8]",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.src_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.tpid_fatal_check() {
+                Err(error) => {
+                    let start = me.tpid_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "tpid",
+                                    "u16",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.tpid_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.tpid_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "tpid",
+                                            "u16",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.tpid_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.pcp_fatal_check() {
+                Err(error) => {
+                    let start = me.pcp_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "pcp",
+                                    "b<3>",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.pcp_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.pcp_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "pcp",
+                                            "b<3>",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.pcp_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.dei_fatal_check() {
+                Err(error) => {
+                    let start = me.dei_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "dei",
+                                    "b<1>",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.dei_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.dei_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "dei",
+                                            "b<1>",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.dei_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.vid_hi_fatal_check() {
+                Err(error) => {
+                    let start = me.vid_hi_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "vid_hi",
+                                    "b<4>",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.vid_hi_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.vid_hi_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "vid_hi",
+                                            "b<4>",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.vid_hi_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.vid_lo_fatal_check() {
+                Err(error) => {
+                    let start = me.vid_lo_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "vid_lo",
+                                    "u8",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.vid_lo_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.vid_lo_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "vid_lo",
+                                            "u8",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.vid_lo_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.ethertype_fatal_check() {
+                Err(error) => {
+                    let start = me.ethertype_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "ethertype",
+                                    "u16",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.ethertype_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.ethertype_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "ethertype",
+                                            "u16",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.ethertype_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.payload_fatal_check() {
+                Err(error) => {
+                    let start = me.payload_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "payload",
+                                    "[u8]",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.payload_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.payload_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "payload",
+                                            "[u8]",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.payload_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::bytesmith::FieldNode::new(
+                "Vlan",
+                "Vlan",
+                0usize..root_end,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::bytesmith::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn dst_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.dst_bit_range();
+        {
+            let mut elem_nodes = ::std::vec::Vec::new();
+            if let Ok(iter) = self.dst() {
+                let mut start = bit_range.start;
+                for (i, elem) in iter.enumerate() {
+                    let end = start.saturating_add(8usize);
+                    match elem {
+                        Ok(value) => {
+                            elem_nodes
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                        i.to_string(),
+                                        "u8",
+                                        start..end,
+                                        ::bytesmith::Value::UInt(u128::from(value)),
+                                    ),
+                                )
+                        }
+                        Err(error) => {
+                            elem_nodes
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            i.to_string(),
+                                            "u8",
+                                            start..start,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                    }
+                    start = end;
+                }
+            }
+            ::bytesmith::FieldNode::new(
+                    "dst",
+                    "[u8]",
+                    bit_range.clone(),
+                    ::bytesmith::Value::Array,
+                )
+                .with_children(elem_nodes)
+        }
+    }
+    #[allow(clippy::identity_op)]
+    pub fn dst(&mut self) -> ::bytesmith::ParseResult<Vlan_dst_Iterator<'a>> {
+        Ok(Vlan_dst_Iterator {
+            idx: 0,
+            count: 6usize,
+            data: &self.data[0usize..],
+        })
+    }
+    pub fn dst_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 6usize,
+            bit: 0usize,
+        }
+    }
+    pub fn dst_start_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len::ZERO
+    }
+    pub fn dst_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.dst_start_offset().bits()..self.dst_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn dst_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.dst_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn dst_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn src_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.src_bit_range();
+        {
+            let mut elem_nodes = ::std::vec::Vec::new();
+            if let Ok(iter) = self.src() {
+                let mut start = bit_range.start;
+                for (i, elem) in iter.enumerate() {
+                    let end = start.saturating_add(8usize);
+                    match elem {
+                        Ok(value) => {
+                            elem_nodes
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                        i.to_string(),
+                                        "u8",
+                                        start..end,
+                                        ::bytesmith::Value::UInt(u128::from(value)),
+                                    ),
+                                )
+                        }
+                        Err(error) => {
+                            elem_nodes
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            i.to_string(),
+                                            "u8",
+                                            start..start,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                    }
+                    start = end;
+                }
+            }
+            ::bytesmith::FieldNode::new(
+                    "src",
+                    "[u8]",
+                    bit_range.clone(),
+                    ::bytesmith::Value::Array,
+                )
+                .with_children(elem_nodes)
+        }
+    }
+    #[allow(clippy::identity_op)]
+    pub fn src(&mut self) -> ::bytesmith::ParseResult<Vlan_src_Iterator<'a>> {
+        Ok(Vlan_src_Iterator {
+            idx: 0,
+            count: 6usize,
+            data: &self.data[6usize..],
+        })
+    }
+    pub fn src_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 12usize,
+            bit: 0usize,
+        }
+    }
+    pub fn src_start_offset(&mut self) -> bytesmith::Len {
+        self.dst_end_offset()
+    }
+    pub fn src_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.src_start_offset().bits()..self.src_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn src_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.src_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn src_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn tpid_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.tpid_bit_range();
+        ::bytesmith::FieldNode::new(
+            "tpid",
+            "u16",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.tpid())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn tpid(&mut self) -> u16 {
+        u16::from_be_bytes(self.data[12usize..14usize].try_into().unwrap())
+    }
+    pub fn tpid_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 14usize,
+            bit: 0usize,
+        }
+    }
+    pub fn tpid_start_offset(&mut self) -> bytesmith::Len {
+        self.src_end_offset()
+    }
+    pub fn tpid_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.tpid_start_offset().bits()..self.tpid_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn tpid_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.tpid_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(clippy::unnecessary_cast)]
+    fn tpid_validate(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        if self.tpid() as usize != 33024 {
+            return Err(::bytesmith::ParseError::ValidationFailed {
+                field: "Vlan.tpid",
+                actual: self.tpid() as u128,
+            });
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn tpid_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        self.tpid_validate()?;
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn pcp_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.pcp_bit_range();
+        ::bytesmith::FieldNode::new(
+            "pcp",
+            "b<3>",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.pcp())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn pcp(&mut self) -> u8 {
+        (self.data[14usize] >> 5usize) & 7u8
+    }
+    pub fn pcp_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 14usize,
+            bit: 3usize,
+        }
+    }
+    pub fn pcp_start_offset(&mut self) -> bytesmith::Len {
+        self.tpid_end_offset()
+    }
+    pub fn pcp_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.pcp_start_offset().bits()..self.pcp_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn pcp_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.pcp_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn pcp_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn dei_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.dei_bit_range();
+        ::bytesmith::FieldNode::new(
+            "dei",
+            "b<1>",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.dei())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn dei(&mut self) -> u8 {
+        (self.data[14usize] >> 4usize) & 1u8
+    }
+    pub fn dei_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 14usize,
+            bit: 4usize,
+        }
+    }
+    pub fn dei_start_offset(&mut self) -> bytesmith::Len {
+        self.pcp_end_offset()
+    }
+    pub fn dei_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.dei_start_offset().bits()..self.dei_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn dei_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.dei_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn dei_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn vid_hi_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.vid_hi_bit_range();
+        ::bytesmith::FieldNode::new(
+            "vid_hi",
+            "b<4>",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.vid_hi())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn vid_hi(&mut self) -> u8 {
+        (self.data[14usize] >> 0usize) & 15u8
+    }
+    pub fn vid_hi_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 15usize,
+            bit: 0usize,
+        }
+    }
+    pub fn vid_hi_start_offset(&mut self) -> bytesmith::Len {
+        self.dei_end_offset()
+    }
+    pub fn vid_hi_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.vid_hi_start_offset().bits()..self.vid_hi_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn vid_hi_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.vid_hi_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn vid_hi_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn vid_lo_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.vid_lo_bit_range();
+        ::bytesmith::FieldNode::new(
+            "vid_lo",
+            "u8",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.vid_lo())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn vid_lo(&mut self) -> u8 {
+        self.data[15usize]
+    }
+    pub fn vid_lo_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 16usize,
+            bit: 0usize,
+        }
+    }
+    pub fn vid_lo_start_offset(&mut self) -> bytesmith::Len {
+        self.vid_hi_end_offset()
+    }
+    pub fn vid_lo_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.vid_lo_start_offset().bits()..self.vid_lo_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn vid_lo_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.vid_lo_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn vid_lo_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn ethertype_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.ethertype_bit_range();
+        ::bytesmith::FieldNode::new(
+            "ethertype",
+            "u16",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.ethertype())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn ethertype(&mut self) -> u16 {
+        u16::from_be_bytes(self.data[16usize..18usize].try_into().unwrap())
+    }
+    pub fn ethertype_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 18usize,
+            bit: 0usize,
+        }
+    }
+    pub fn ethertype_start_offset(&mut self) -> bytesmith::Len {
+        self.vid_lo_end_offset()
+    }
+    pub fn ethertype_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.ethertype_start_offset().bits()..self.ethertype_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn ethertype_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.ethertype_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn ethertype_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn payload_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.payload_bit_range();
+        {
+            let mut elem_nodes = ::std::vec::Vec::new();
+            if let Ok(iter) = self.payload() {
+                let mut start = bit_range.start;
+                for (i, elem) in iter.enumerate() {
+                    let end = start.saturating_add(8usize);
+                    match elem {
+                        Ok(value) => {
+                            elem_nodes
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                        i.to_string(),
+                                        "u8",
+                                        start..end,
+                                        ::bytesmith::Value::UInt(u128::from(value)),
+                                    ),
+                                )
+                        }
+                        Err(error) => {
+                            elem_nodes
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            i.to_string(),
+                                            "u8",
+                                            start..start,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                    }
+                    start = end;
+                }
+            }
+            ::bytesmith::FieldNode::new(
+                    "payload",
+                    "[u8]",
+                    bit_range.clone(),
+                    ::bytesmith::Value::Array,
+                )
+                .with_children(elem_nodes)
+        }
+    }
+    #[allow(clippy::identity_op)]
+    pub fn payload(&mut self) -> ::bytesmith::ParseResult<Vlan_payload_Iterator<'a>> {
+        Ok(Vlan_payload_Iterator {
+            idx: 0,
+            count: self.data.len().saturating_sub(18usize),
+            data: &self.data[18usize..],
+        })
+    }
+    pub fn payload_end_offset(&mut self) -> bytesmith::Len {
+        ::bytesmith::Len {
+            byte: 18usize,
+            bit: 0usize,
+        }
+            + ({
+                {
+                    let start = 18usize;
+                    ::bytesmith::Len {
+                        byte: self.data.len().saturating_sub(start),
+                        bit: 0,
+                    }
+                }
+            })
+    }
+    pub fn payload_start_offset(&mut self) -> bytesmith::Len {
+        self.ethertype_end_offset()
+    }
+    pub fn payload_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.payload_start_offset().bits()..self.payload_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn payload_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.payload_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn payload_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+}
+
+impl<'a> VlanWriter<'a> {
+    pub fn encoded_len(lens: &VlanLens) -> usize {
+        18usize + lens.payload
+    }
+    pub fn new(data: &'a mut [u8], lens: VlanLens) -> ::bytesmith::WriteResult<Self> {
+        let need = Self::encoded_len(&lens);
+        if data.len() < need {
+            return Err(::bytesmith::WriteError::NotEnoughSpace {
+                expected: need,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data, lens })
+    }
+    pub fn writer_over(data: &'a mut [u8]) -> ::bytesmith::WriteResult<Self> {
+        let lens = {
+            let (mut view, _) = Vlan::parse(data)
+                .map_err(|_| ::bytesmith::WriteError::InvalidContent)?;
+            let region_bytes = view.payload_end_offset().byte
+                - view.payload_start_offset().byte;
+            VlanLens { payload: region_bytes }
+        };
+        let need = Self::encoded_len(&lens);
+        if data.len() < need {
+            return Err(::bytesmith::WriteError::NotEnoughSpace {
+                expected: need,
+                got: data.len(),
+            });
+        }
+        Ok(Self { data, lens })
+    }
+    pub fn dst_mut(&mut self) -> &mut [u8] {
+        &mut self.data[0usize..6usize]
+    }
+    pub fn src_mut(&mut self) -> &mut [u8] {
+        &mut self.data[6usize..12usize]
+    }
+    pub fn set_pcp(&mut self, value: u8) -> &mut Self {
+        self.data[14usize] = (self.data[14usize] & 31u8) | ((value & 7u8) << 5usize);
+        self
+    }
+    pub fn set_dei(&mut self, value: u8) -> &mut Self {
+        self.data[14usize] = (self.data[14usize] & 239u8) | ((value & 1u8) << 4usize);
+        self
+    }
+    pub fn set_vid_hi(&mut self, value: u8) -> &mut Self {
+        self.data[14usize] = (self.data[14usize] & 240u8) | ((value & 15u8) << 0usize);
+        self
+    }
+    pub fn set_vid_lo(&mut self, value: u8) -> &mut Self {
+        self.data[15usize] = value;
+        self
+    }
+    pub fn set_ethertype(&mut self, value: u16) -> &mut Self {
+        self.data[16usize..18usize].copy_from_slice(&value.to_be_bytes());
+        self
+    }
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        let off = 18usize;
+        &mut self.data[off..off + self.lens.payload]
+    }
+    pub fn write_into(
+        data: &'a mut [u8],
+        content: &VlanContent,
+    ) -> ::bytesmith::WriteResult<usize> {
+        let lens = VlanLens {
+            payload: content.payload.len(),
+        };
+        let need = Self::encoded_len(&lens);
+        let mut w = Self::new(data, lens)?;
+        w.dst_mut().copy_from_slice(&content.dst);
+        w.src_mut().copy_from_slice(&content.src);
+        {
+            let value: u16 = 33024;
+            w.data[12usize..14usize].copy_from_slice(&value.to_be_bytes());
+        }
+        w.set_pcp(content.pcp);
+        w.set_dei(content.dei);
+        w.set_vid_hi(content.vid_hi);
+        w.set_vid_lo(content.vid_lo);
+        w.set_ethertype(content.ethertype);
+        w.payload_mut().copy_from_slice(content.payload);
+        Ok(need)
+    }
+    pub fn to_vec(content: &VlanContent) -> ::std::vec::Vec<u8> {
+        let lens = VlanLens {
+            payload: content.payload.len(),
+        };
+        let mut buf = ::std::vec![0u8; Self::encoded_len(& lens)];
+        let _ = VlanWriter::write_into(&mut buf, content);
+        buf
+    }
+}
+
+pub struct Vlan<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
+pub struct VlanContent<'a> {
+    pub dst: [u8; 6usize],
+    pub src: [u8; 6usize],
+    pub pcp: u8,
+    pub dei: u8,
+    pub vid_hi: u8,
+    pub vid_lo: u8,
+    pub ethertype: u16,
+    pub payload: &'a [u8],
+}
+
+pub struct VlanWriter<'a> {
+    data: &'a mut [u8],
+    lens: VlanLens,
+}
+

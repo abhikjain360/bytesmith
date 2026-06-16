@@ -19,18 +19,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "binparse"
+name = "bytesmith"
 version = "0.1.0"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
-name = "binparse-codegen"
+name = "bytesmith-codegen"
 version = "0.1.0"
 dependencies = [
- "binparse",
- "binparse-dsl",
+ "bytesmith",
+ "bytesmith-dsl",
  "prettyplease",
  "proc-macro2",
  "quote",
@@ -39,26 +39,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "binparse-dsl"
+name = "bytesmith-dsl"
 version = "0.1.0"
 
 [[package]]
-name = "binparse-dsl-parse"
+name = "bytesmith-dsl-parse"
 version = "0.1.0"
 dependencies = [
  "ariadne",
- "binparse-dsl",
+ "bytesmith-dsl",
  "thiserror",
  "winnow",
 ]
 
 [[package]]
-name = "binparse-fuzz"
+name = "bytesmith-fuzz"
 version = "0.0.0"
 dependencies = [
- "binparse",
- "binparse-codegen",
- "binparse-dsl-parse",
+ "bytesmith",
+ "bytesmith-codegen",
+ "bytesmith-dsl-parse",
  "libfuzzer-sys",
 ]
 

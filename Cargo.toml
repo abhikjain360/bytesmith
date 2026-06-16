@@ -1,20 +1,20 @@
 [workspace]
 resolver = "3"
 members = [
-    "binparse-dsl",
-    "binparse-dsl-parse",
-    "binparse-codegen",
-    "binparse-cli",
-    "binparse",
-    "binparse-protocols",
-    "binparse-bench",
-    "binparse-lsp",
+    "bytesmith-dsl",
+    "bytesmith-dsl-parse",
+    "bytesmith-codegen",
+    "bytesmith-cli",
+    "bytesmith",
+    "bytesmith-protocols",
+    "bytesmith-bench",
+    "bytesmith-lsp",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.87"
-repository = "https://github.com/abhikjain360/binparse2"
+repository = "https://github.com/abhikjain360/bytesmith"
 readme = "README.md"
 license = "MIT OR Apache-2.0"

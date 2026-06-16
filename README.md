@@ -1,27 +1,27 @@
 <div align="center">
 
-# binparse
+# bytesmith
 
 **Describe a binary format once. Get a zero-copy parser, a writer, and a packet dissector — for free.**
 
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![rust](https://img.shields.io/badge/rust-edition%202024-orange.svg?logo=rust)](https://www.rust-lang.org)
-[![zero-copy](https://img.shields.io/badge/parsing-zero--copy-success.svg)](#why-binparse)
+[![zero-copy](https://img.shields.io/badge/parsing-zero--copy-success.svg)](#why-bytesmith)
 [![status](https://img.shields.io/badge/status-WIP-yellow.svg)](#status)
 
 </div>
 
 ---
 
-binparse turns a tiny declarative spec into hand-written-quality Rust. You write the
-wire format in a `.bp` file; codegen gives you back parsers that never copy, never
+bytesmith turns a tiny declarative spec into hand-written-quality Rust. You write the
+wire format in a `.bsm` file; codegen gives you back parsers that never copy, never
 allocate, and never panic on bad input — plus matching writers and a generic field
 tree for tooling.
 
 A parsed value is just a typed view over `&[u8]`. Accessors compute their offsets on
 demand, so you only pay for the fields you touch.
 
-## Why binparse
+## Why bytesmith
 
 - **Zero-copy by construction.** A parse result borrows the input — getters read
   straight out of the original bytes. No intermediate structs, no heap.
@@ -71,14 +71,14 @@ Far more than fixed structs:
 If the parser accepts a spec, codegen either fully supports it or rejects it with a
 precise diagnostic. No silent surprises.
 
-## Batteries included: `binparse-protocols`
+## Batteries included: `bytesmith-protocols`
 
 Fifteen real protocols, generated at build time, each behind its own Cargo feature:
 
 > Ethernet · VLAN · ARP · IPv4/IPv6 · ICMP/ICMPv6 · UDP · TCP · DNS · TLS · DHCP · SCTP · BGP · MQTT v3.1.1 & v5
 
 ```toml
-binparse-protocols = { features = ["dns", "tcp"] }
+bytesmith-protocols = { features = ["dns", "tcp"] }
 ```
 
 Nothing is enabled by default — turn on what you need, or `all`.
@@ -93,25 +93,25 @@ each niche:
 - **MQTT** — wins outright; decoding-into-owned can't keep up with reading in place
   (~2.5–3× faster than `mqttbytes`/`rumqttc`/`rumqttd` on writes).
 
-`binparse-bench` runs the head-to-heads against `etherparse`, `pnet_packet`,
+`bytesmith-bench` runs the head-to-heads against `etherparse`, `pnet_packet`,
 `tls-parser`, `simple-dns`, `mqttbytes`, `rumqttc`, and `rumqttd`.
 
 ## The workspace
 
 | Crate | What it does |
 |---|---|
-| `binparse-dsl` | The AST — the language definition. |
-| `binparse-dsl-parse` | Text `.bp` → AST. |
-| `binparse-codegen` | AST → Rust. The heart of the project. |
-| `binparse` | The runtime: offsets, errors, hooks, field tree. |
-| `binparse-protocols` | The 15 shipped protocol parsers. |
-| `binparse-bench` | Criterion benchmarks vs. the field. |
-| `binparse-lsp` | Language server: parse + codegen diagnostics. |
+| `bytesmith-dsl` | The AST — the language definition. |
+| `bytesmith-dsl-parse` | Text `.bsm` → AST. |
+| `bytesmith-codegen` | AST → Rust. The heart of the project. |
+| `bytesmith` | The runtime: offsets, errors, hooks, field tree. |
+| `bytesmith-protocols` | The 15 shipped protocol parsers. |
+| `bytesmith-bench` | Criterion benchmarks vs. the field. |
+| `bytesmith-lsp` | Language server: parse + codegen diagnostics. |
 
 ## Hacking
 
 ```bash
-cargo run -p binparse-codegen --example test   # dump the generated Rust
+cargo run -p bytesmith-codegen --example test   # dump the generated Rust
 cargo test
 cargo clippy --all-targets
 ```

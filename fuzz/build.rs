@@ -238,7 +238,7 @@ struct WLenMid {
 
 struct WVarint {
     tag: u8,
-    @hook(read_leb128, u64) @write_hook(binparse.hooks.write_leb128_unsigned, binparse.hooks.leb128_unsigned_len) len: [u8],
+    @hook(read_leb128, u64) @write_hook(bytesmith.hooks.write_leb128_unsigned, bytesmith.hooks.leb128_unsigned_len) len: [u8],
     body: [u8; len],
 }
 
@@ -275,14 +275,14 @@ struct WVlan {
 fn main() {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
 
-    let ast = binparse_dsl_parse::parse_str(BASELINE_DSL).expect("failed to parse baseline DSL");
-    let code = binparse_codegen::CodeGen::generate(&ast).expect("failed to generate baseline code");
+    let ast = bytesmith_dsl_parse::parse_str(BASELINE_DSL).expect("failed to parse baseline DSL");
+    let code = bytesmith_codegen::CodeGen::generate(&ast).expect("failed to generate baseline code");
     std::fs::write(std::path::Path::new(&out_dir).join("generated.rs"), code)
         .expect("failed to write generated code");
 
-    let writer_ast = binparse_dsl_parse::parse_str(WRITER_BASELINE_DSL)
+    let writer_ast = bytesmith_dsl_parse::parse_str(WRITER_BASELINE_DSL)
         .expect("failed to parse writer baseline DSL");
-    let writer_code = binparse_codegen::CodeGen::generate_writers(&writer_ast)
+    let writer_code = bytesmith_codegen::CodeGen::generate_writers(&writer_ast)
         .expect("failed to generate writer baseline code");
     std::fs::write(
         std::path::Path::new(&out_dir).join("generated_writers.rs"),

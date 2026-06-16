@@ -1,0 +1,51 @@
+[package]
+name = "bytesmith-bench"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+bench = false
+
+[dependencies]
+bytesmith = { path = "../bytesmith" }
+bytesmith-protocols = { path = "../bytesmith-protocols", features = ["all"] }
+
+[dev-dependencies]
+criterion = "0.8"
+etherparse = "0.20"
+pnet_packet = "0.35"
+mqttbytes = "0.6"
+rumqttc_v4_next = { package = "rumqttc-v4-next", version = "0.33" }
+rumqttc_v5_next = { package = "rumqttc-v5-next", version = "0.33" }
+bytes = "1"
+tls-parser = "0.12"
+simple-dns = "0.11"
+rumqttd = { version = "0.20", default-features = false }
+
+[[bench]]
+name = "network"
+harness = false
+
+[[bench]]
+name = "mqtt"
+harness = false
+
+[[bench]]
+name = "tls"
+harness = false
+
+[[bench]]
+name = "dns"
+harness = false
+
+# Standalone head-to-head programs (under comparison/) for deterministic
+# profiling — callgrind/perf instruction + allocation counts. Run with an
+# iteration count: `cargo run -p bytesmith-bench --example dns_bytesmith --release -- 1000`.
+[[example]]
+name = "dns_bytesmith"
+path = "comparison/dns_bytesmith.rs"
+
+[[example]]
+name = "dns_simpledns"
+path = "comparison/dns_simpledns.rs"

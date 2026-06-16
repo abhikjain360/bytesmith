@@ -1,0 +1,419 @@
+impl<'a> ::bytesmith::Dissect<'a> for Foo<'a> {
+    fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        Foo::field_tree(self)
+    }
+    fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        Foo::handoff(self)
+    }
+}
+
+impl<'a> Foo<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError> {
+        let mut me = Self {
+            data,
+            body_value_cache: None,
+        };
+        me.count_fatal_check()?;
+        me.count_recoverable_check()?;
+        me.body_fatal_check()?;
+        me.body_recoverable_check()?;
+        me.trailer_fatal_check()?;
+        me.trailer_recoverable_check()?;
+        let len = me.trailer_end_offset();
+        if len.bit != 0 {
+            return Err(::bytesmith::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::bytesmith::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = &mut *self;
+            children.push(me.count_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.body_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.trailer_present_node());
+        }
+        let mut root = ::bytesmith::FieldNode::new(
+                "Foo",
+                "Foo",
+                0usize..self.trailer_end_offset().bits(),
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::bytesmith::FieldNode<'a> {
+        let mut me = Self {
+            data,
+            body_value_cache: None,
+        };
+        let mut children: ::std::vec::Vec<::bytesmith::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::bytesmith::ParseError> = None;
+        if fatal.is_none() {
+            match me.count_fatal_check() {
+                Err(error) => {
+                    let start = me.count_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "count",
+                                    "u8",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.count_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.count_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "count",
+                                            "u8",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.count_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.body_fatal_check() {
+                Err(error) => {
+                    let start = me.body_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "body",
+                                    "[u8]",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.body_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.body_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "body",
+                                            "[u8]",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.body_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.trailer_fatal_check() {
+                Err(error) => {
+                    let start = me.trailer_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "trailer",
+                                    "u16",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.trailer_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.trailer_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "trailer",
+                                            "u16",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.trailer_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::bytesmith::FieldNode::new(
+                "Foo",
+                "Foo",
+                0usize..root_end,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::bytesmith::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn count_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.count_bit_range();
+        ::bytesmith::FieldNode::new(
+            "count",
+            "u8",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.count())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn count(&mut self) -> u8 {
+        self.data[0usize]
+    }
+    pub fn count_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+    }
+    pub fn count_start_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len::ZERO
+    }
+    pub fn count_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.count_start_offset().bits()..self.count_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn count_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.count_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn count_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn body_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.body_bit_range();
+        match self.body_raw() {
+            Ok((_, _)) => {
+                ::bytesmith::FieldNode::new(
+                    "body",
+                    "String",
+                    bit_range.clone(),
+                    ::bytesmith::Value::Opaque,
+                )
+            }
+            Err(error) => {
+                ::bytesmith::FieldNode::new(
+                        "body",
+                        "String",
+                        bit_range.clone(),
+                        ::bytesmith::Value::Opaque,
+                    )
+                    .with_status(::bytesmith::Status::Error(error))
+            }
+        }
+    }
+    fn body_raw(&mut self) -> ::bytesmith::ParseResult<(&String, usize)> {
+        if self.body_value_cache.is_none() {
+            let start = 1usize;
+            let (value, consumed) = parse_cstring(
+                &self.data[start..],
+                ::bytesmith::HookContext {
+                    field: "Foo.body",
+                    offset: start,
+                    enclosing: self.data,
+                },
+            )?;
+            let end = start.saturating_add(consumed);
+            if end > self.data.len() {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected: end,
+                    got: self.data.len(),
+                });
+            }
+            self.body_value_cache = Some((value, consumed));
+        }
+        let (value, consumed) = self.body_value_cache.as_ref().unwrap();
+        Ok((value, *consumed))
+    }
+    pub fn body(&mut self) -> ::bytesmith::ParseResult<&String> {
+        self.body_raw().map(|(value, _)| value)
+    }
+    pub fn body_end_offset(&mut self) -> bytesmith::Len {
+        ::bytesmith::Len {
+            byte: 1usize,
+            bit: 0usize,
+        }
+            + ({
+                match self.body_raw() {
+                    Ok((_, consumed)) => {
+                        bytesmith::Len {
+                            byte: consumed,
+                            bit: 0,
+                        }
+                    }
+                    Err(_) => bytesmith::Len::ZERO,
+                }
+            })
+    }
+    pub fn body_start_offset(&mut self) -> bytesmith::Len {
+        self.count_end_offset()
+    }
+    pub fn body_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.body_start_offset().bits()..self.body_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn body_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        self.body_raw()?;
+        {
+            let len = self.body_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn body_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn trailer_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.trailer_bit_range();
+        ::bytesmith::FieldNode::new(
+            "trailer",
+            "u16",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.trailer())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn trailer(&mut self) -> u16 {
+        {
+            let offset = ::bytesmith::Len {
+                byte: 1usize,
+                bit: 0usize,
+            }
+                + ({
+                    match self.body_raw() {
+                        Ok((_, consumed)) => {
+                            bytesmith::Len {
+                                byte: consumed,
+                                bit: 0,
+                            }
+                        }
+                        Err(_) => bytesmith::Len::ZERO,
+                    }
+                });
+            debug_assert!(offset.bit == 0, "primitive requires byte alignment");
+            let start = offset.byte;
+            let end = start + 2usize;
+            u16::from_be_bytes(self.data[start..end].try_into().unwrap())
+        }
+    }
+    pub fn trailer_end_offset(&mut self) -> bytesmith::Len {
+        ::bytesmith::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+            + ({
+                ::bytesmith::Len {
+                    byte: 1usize,
+                    bit: 0usize,
+                }
+                    + ({
+                        match self.body_raw() {
+                            Ok((_, consumed)) => {
+                                bytesmith::Len {
+                                    byte: consumed,
+                                    bit: 0,
+                                }
+                            }
+                            Err(_) => bytesmith::Len::ZERO,
+                        }
+                    })
+            })
+    }
+    pub fn trailer_start_offset(&mut self) -> bytesmith::Len {
+        self.body_end_offset()
+    }
+    pub fn trailer_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.trailer_start_offset().bits()..self.trailer_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn trailer_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.trailer_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn trailer_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+}
+
+pub struct Foo<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+    body_value_cache: Option<(String, usize)>,
+}
+

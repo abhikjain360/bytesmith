@@ -1,4 +1,4 @@
-# Binparse DSL Roadmap
+# Bytesmith DSL Roadmap
 
 ## Why This Over AI-Generated Code?
 
@@ -128,7 +128,7 @@ The goal is to provide **guarantees AI cannot**, **automation AI cannot maintain
 ### IDE Support
 
 - [ ] Tree-sitter grammar for syntax highlighting
-- [x] LSP server (`binparse-lsp`) with multi-error parse recovery
+- [x] LSP server (`bytesmith-lsp`) with multi-error parse recovery
 - [x] Diagnostics (parse + codegen errors)
 - [ ] Go-to-definition / hover info
 - [ ] Auto-complete for attribute names

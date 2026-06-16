@@ -15,8 +15,8 @@ Add, alongside the current `parse()`:
 
 ```rust
 impl<'a> Packet<'a> {
-    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::binparse::ParseError>;       // lazy, unchanged
-    pub fn parse_full(data: &'a [u8]) -> Result<(PacketParsed<'a>, &'a [u8]), ::binparse::ParseError>; // NEW: eager
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError>;       // lazy, unchanged
+    pub fn parse_full(data: &'a [u8]) -> Result<(PacketParsed<'a>, &'a [u8]), ::bytesmith::ParseError>; // NEW: eager
 }
 ```
 
@@ -44,10 +44,10 @@ check — nearly free. But `@cache(value)` on it stores
 `parse()` then returns **by value** — so every parse moves a struct that's 2–3×
 bigger, and locality suffers for all other field accesses.
 
-**Benchmark (verified).** Isolated throwaway clone, a custom binparse-only
+**Benchmark (verified).** Isolated throwaway clone, a custom bytesmith-only
 `mqtt_cache` bench (no rumqtt deps), single-core-pinned (`taskset`), quiet 16-core
 Zen4 Linux box. Toggled **only** `@cache` on the `body:` union in
-`mqtt_v3.bp`/`mqtt_v5.bp` (kept it on the varint `remaining_length`/`prop_len`):
+`mqtt_v3.bsm`/`mqtt_v5.bsm` (kept it on the varint `remaining_length`/`prop_len`):
 
 | group | `parse()` with `@cache` | `parse()` no body-cache | Δ |
 |---|---|---|---|
@@ -76,13 +76,13 @@ view fixes that wart for free.
 
 ## Companion quick win (separable — can land before/without eager)
 
-**Drop `@cache` from the `body:` union** in `binparse-protocols/specs/mqtt_v3.bp:5`
-and `mqtt_v5.bp:5` (keep it on `remaining_length` and `prop_len` — varints *are* the
+**Drop `@cache` from the `body:` union** in `bytesmith-protocols/specs/mqtt_v3.bsm:5`
+and `mqtt_v5.bsm:5` (keep it on `remaining_length` and `prop_len` — varints *are* the
 expensive-recompute case that caching wins). Measured ~2× faster `parse()`.
 
 Caveat: this changes `body()`'s return from `&mut MqttPacket_body` to owned
 `MqttPacket_body`, so update the by-value match bindings in
-`binparse-bench/benches/mqtt.rs` (the arms that do `MqttPacket_body::Connect(c) =>
+`bytesmith-bench/benches/mqtt.rs` (the arms that do `MqttPacket_body::Connect(c) =>
 c.keep_alive()` will need `mut c` once `body()` returns owned), then run the GATE.
 Pure memoization change — no behavior/wire change.
 
@@ -119,11 +119,11 @@ field; keeps zero-copy borrows where practical.
 ```rust
 pub struct PacketParsed<'a> {
     data: &'a [u8],
-    len: ::binparse::Len,
+    len: ::bytesmith::Len,
     // one decoded member + one ::core::ops::Range<usize> bit-range per field
 }
 impl<'a> PacketParsed<'a> {
-    pub fn len(&self) -> ::binparse::Len;
+    pub fn len(&self) -> ::bytesmith::Len;
     pub fn ttl(&self) -> u8;                       // Copy: by value
     pub fn qname(&self) -> &NameRef<'a>;           // non-Copy: by ref
     pub fn options(&self) -> Option<&'a [u8]>;     // conditional
@@ -208,7 +208,7 @@ offset = need;
 ## Where to generate — file map (read path; `grep` names, **lines drift**)
 
 Architecture: `lib.rs → struct_.rs → field.rs → type_/mod.rs → type_/*.rs`.
-`use binparse_dsl as ast;` everywhere. Start by generating `parse_full` + the parsed
+`use bytesmith_dsl as ast;` everywhere. Start by generating `parse_full` + the parsed
 type inside `struct_::generate_struct` after the lazy tokens; split into
 `full.rs`/`full/field.rs`/`full/type_.rs` if it grows.
 
@@ -219,7 +219,7 @@ type inside `struct_::generate_struct` after the lazy tokens; split into
 | `type_/mod.rs` | dispatch :1, `GeneratedTypeInfo` | parallel eager dispatch |
 | `type_/primitive.rs` `bitfield.rs` `array.rs` (`generate` :35, `tree_node` :492) `struct_ref.rs` `union_.rs` (`generate` :42, value-cache :341) `concat.rs` | per-type eager emitters |
 | `expr.rs` | `lower` | add `lower_full` (field ref → local/stored, not `self.#f()`) |
-| runtime `binparse/src/lib.rs` | `Len` :33, `ParseError` :84 (`NotEnoughData{expected,got}` :86), `HookContext` :76, `ParseResult` :106, `Dissect` :27; `FieldNode`/`Value`/`Status` in `tree.rs` | author sketches' field names are correct against these |
+| runtime `bytesmith/src/lib.rs` | `Len` :33, `ParseError` :84 (`NotEnoughData{expected,got}` :86), `HookContext` :76, `ParseResult` :106, `Dissect` :27; `FieldNode`/`Value`/`Status` in `tree.rs` | author sketches' field names are correct against these |
 
 ---
 
@@ -228,21 +228,21 @@ type inside `struct_::generate_struct` after the lazy tokens; split into
 `build.rs` runs codegen for all 15 protocols, so a read-codegen regression breaks the
 protocol crate too.
 
-1. `cargo run -p binparse-codegen --example test`     (codegen smoke)
-2. `cargo test  -p binparse-codegen`                  (golden/runtime tests)
-3. `cargo build -p binparse-protocols --features all` (build.rs codegen, all 15)
-4. `cargo test  -p binparse-protocols --features all` (smoke + round-trips + dissect)
+1. `cargo run -p bytesmith-codegen --example test`     (codegen smoke)
+2. `cargo test  -p bytesmith-codegen`                  (golden/runtime tests)
+3. `cargo build -p bytesmith-protocols --features all` (build.rs codegen, all 15)
+4. `cargo test  -p bytesmith-protocols --features all` (smoke + round-trips + dissect)
 5. `cargo clippy --all-targets`
 
 Goldens: several tests `assert_generated_eq!` against pinned generated code; adding
 `parse_full` will need new goldens (or regenerate). New eager behavior gets its own
-tests in `binparse-codegen/src/tests/` + `binparse-protocols/tests/`.
+tests in `bytesmith-codegen/src/tests/` + `bytesmith-protocols/tests/`.
 
 ---
 
 ## In-flight / don't collide
 
-- **Another agent owns the writer codegen** (`binparse-codegen/src/writer.rs`, a
+- **Another agent owns the writer codegen** (`bytesmith-codegen/src/writer.rs`, a
   separate pass). Eager read work is mostly orthogonal, but both touch `struct_.rs`
   and `field.rs` — coordinate, re-grep line numbers before editing.
 - The `@cache(value)` work has **landed** (hooks + unions, `&mut self` accessors,
@@ -255,8 +255,8 @@ tests in `binparse-codegen/src/tests/` + `binparse-protocols/tests/`.
 
 ## Reproduce the benchmark
 
-Custom `binparse-only` bench (no rumqtt deps → fast iterate). In a throwaway clone:
-add `binparse-bench/benches/mqtt_cache.rs` with two arms per packet — `parse`
+Custom `bytesmith-only` bench (no rumqtt deps → fast iterate). In a throwaway clone:
+add `bytesmith-bench/benches/mqtt_cache.rs` with two arms per packet — `parse`
 (`MqttPacket::parse(..)` + `black_box`) and `full_dissect` (`MqttPacket::dissect(..)`),
 register `[[bench]] name="mqtt_cache" harness=false`. Then:
 `taskset -c <core> cargo bench --bench mqtt_cache -- --save-baseline withcache`;

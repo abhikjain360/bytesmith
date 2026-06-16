@@ -2,7 +2,7 @@
 
 A staged plan to take fuzzing from "two synthetic, panic-only-ish targets" to a real
 harness that fuzzes the **compiler** (DSL parse + codegen), the **product**
-(`binparse-protocols` with real hooks), and adds **semantic oracles** (field-tree /
+(`bytesmith-protocols` with real hooks), and adds **semantic oracles** (field-tree /
 handoff invariants, writer round-trips, narrow differential checks).
 
 This doc is written so a coding agent can pick up any single phase and execute it
@@ -27,7 +27,7 @@ Re-ordered from the original by **signal-to-noise** and **reuse of existing asse
 | 1 | Seed corpus + dicts + `fuzz/README.md` | Makes every later target effective; pure data | low | §4.0 |
 | 2 | `dsl_parser` target | Parser has exactly **1** known panic site (`lib.rs:205`); clean high-value oracle | low | §4.1 |
 | 3 | `dsl_codegen` target | Probes 31 `unreachable!()` + 11 unwrap/expect in codegen | low | §4.1 |
-| 4 | Add `binparse-protocols` dep + `protocols_raw` | Closes the biggest gap: exercises **real hooks** (DNS) the synthetic target never touches | med | §4.2 |
+| 4 | Add `bytesmith-protocols` dep + `protocols_raw` | Closes the biggest gap: exercises **real hooks** (DNS) the synthetic target never touches | med | §4.2 |
 | 5 | Field-tree + handoff invariant helpers | Turns `protocols_raw`/`protocol_chain` from panic-only into semantic | med | §4.3 |
 | 6 | `protocol_chain` (handoff dispatch) | Recursive layer chaining via `handoff()` | med | §4.4 |
 | 7 | Strengthen `generated_writers` (negative + modes 1/2) | Cheap; covers `NotEnoughSpace` + the under-fuzzed builder/in-place modes | low | §4.5 |
@@ -53,18 +53,18 @@ fuzz/
   .gitignore          # ignores: target, corpus, artifacts, coverage
 ```
 
-- **`fuzz/Cargo.toml`** deps: `libfuzzer-sys = "0.4"`, `binparse = { path = ".." }`.
-  Build-deps: `binparse-codegen`, `binparse-dsl-parse`. ⚠️ **No
-  `binparse-protocols` dependency yet** (the old plan assumed otherwise in places).
+- **`fuzz/Cargo.toml`** deps: `libfuzzer-sys = "0.4"`, `bytesmith = { path = ".." }`.
+  Build-deps: `bytesmith-codegen`, `bytesmith-dsl-parse`. ⚠️ **No
+  `bytesmith-protocols` dependency yet** (the old plan assumed otherwise in places).
   `arbitrary` is present only transitively via `libfuzzer-sys` (unused directly).
 - **`fuzz/build.rs`** holds `BASELINE_DSL` and `WRITER_BASELINE_DSL` as inline
-  `const &str`, parses each via `binparse_dsl_parse::parse_str`, codegens via
+  `const &str`, parses each via `bytesmith_dsl_parse::parse_str`, codegens via
   `CodeGen::generate` / `CodeGen::generate_writers`, writes `$OUT_DIR/generated.rs`
   and `$OUT_DIR/generated_writers.rs`. Each target `include!`s its file.
 - **`generated_parsers`** — oracle is **panic-only**: `dissect()` then `parse()` on
   ~21 synthetic types, walks getters, no `assert!`. Contains a **local, hand-written
   `parse_dns_name`** hook — it does **not** exercise the shipping
-  `binparse_protocols::hooks::dns_name`. (Closing that gap is the point of
+  `bytesmith_protocols::hooks::dns_name`. (Closing that gap is the point of
   `protocols_raw`.)
 - **`generated_writers`** — oracle is **round-trip**: a hand-rolled `Cursor` decodes
   fuzz bytes into `*Content` structs, encodes via `to_vec`/`write_into`, asserts
@@ -73,23 +73,23 @@ fuzz/
 - **No `corpus/`, no `dict/`, no `README.md`.** No seed inputs are checked in.
 
 ### Existing assets to REUSE (do not reinvent)
-- **Bench fixtures** — `binparse-bench/src/lib.rs`, 10 `pub const &[u8]`:
+- **Bench fixtures** — `bytesmith-bench/src/lib.rs`, 10 `pub const &[u8]`:
   `ETH_FRAME`, `IPV4_PACKET`, `IPV6_PACKET`, `UDP_PACKET`, `TCP_PACKET`,
   `MQTT_V3_CONNECT`, `MQTT_V3_PUBLISH`, `MQTT_V5_CONNACK`, `TLS_RECORD`,
   `DNS_RESPONSE`. (No standalone ARP fixture — ARP appears only as the ethertype
   inside `ETH_FRAME`.) → seed the packet corpus.
-- **Wireshark pcap corpus + soak test** — `binparse-codegen/tests/pcap_dogfood.rs`
-  ⚠️ (lives under `binparse-codegen/tests/`, *not* `binparse-bench`). It generates a
+- **Wireshark pcap corpus + soak test** — `bytesmith-codegen/tests/pcap_dogfood.rs`
+  ⚠️ (lives under `bytesmith-codegen/tests/`, *not* `bytesmith-bench`). It generates a
   throwaway crate from an embedded DSL and soaks `third_party/wireshark/test/captures/`
   (a git submodule: 66 `*.pcap` + 42 `*.pcapng`), asserting no panic on every
   truncation prefix and over the whole pcap corpus. → mine the `.pcap` files (skip the
   pcapng-magic ones) for `protocols_raw` seeds, and keep this test running in CI.
-- **Reference codecs** — `binparse-bench/Cargo.toml` `[dev-dependencies]`:
+- **Reference codecs** — `bytesmith-bench/Cargo.toml` `[dev-dependencies]`:
   `etherparse 0.20`, `pnet_packet 0.35`, `mqttbytes 0.6`, ⚠️ `rumqttc-v4-next 0.33`
   and `rumqttc-v5-next 0.33` (**not** plain `rumqttc`), `tls-parser 0.12`,
   `simple-dns 0.11`, `rumqttd 0.20`. → the differential targets (§4.6) add these to
   `fuzz/Cargo.toml`.
-- **Specs** — `binparse-protocols/specs/*.bp`, **15** files → seed the DSL corpus.
+- **Specs** — `bytesmith-protocols/specs/*.bsm`, **15** files → seed the DSL corpus.
 
 ---
 
@@ -101,10 +101,10 @@ trait methods (except where noted). `'a` is the input-buffer lifetime.
 ### Read / dissect
 ```rust
 // inherent, generated per struct (struct_.rs:354 / :306):
-Type::parse(data: &'a [u8]) -> Result<(Type<'a>, &'a [u8]), binparse::ParseError>;
-Type::dissect(data: &'a [u8]) -> binparse::FieldNode<'a>;   // never returns Result
+Type::parse(data: &'a [u8]) -> Result<(Type<'a>, &'a [u8]), bytesmith::ParseError>;
+Type::dissect(data: &'a [u8]) -> bytesmith::FieldNode<'a>;   // never returns Result
 
-// the Dissect trait (binparse/src/lib.rs:27) — &mut self on BOTH:
+// the Dissect trait (bytesmith/src/lib.rs:27) — &mut self on BOTH:
 trait Dissect<'a> {
     fn field_tree(&mut self) -> FieldNode<'a>;
     fn handoff(&mut self) -> Option<Handoff<'a>>;
@@ -112,11 +112,11 @@ trait Dissect<'a> {
 ```
 - **Field getters take `&mut self`** → bind the parsed view as `mut`. Scalar getters
   return the value (`u8`/`u16`/…). Byte/array/hook fields return
-  `ParseResult<Iterator>`; collect with `.collect::<binparse::ParseResult<Vec<_>>>()`.
+  `ParseResult<Iterator>`; collect with `.collect::<bytesmith::ParseResult<Vec<_>>>()`.
   Union bodies: `view.body().unwrap()` → `<Struct>_body` enum.
 - `dissect(data)` does **not** need a binding and never returns `Result`.
 
-### `Handoff` (binparse/src/lib.rs:15)
+### `Handoff` (bytesmith/src/lib.rs:15)
 ```rust
 pub struct Handoff<'a> {
     pub keys: Vec<u128>,            // each @discriminator value widened to u128, decl order
@@ -129,7 +129,7 @@ payload offsets are not byte-aligned (struct_.rs:319-332). So
 `payload == &data[payload_byte_range]` holds **by construction** and ranges are always
 in-bounds. `handoff()` returns `None` for any struct without an `@payload` field.
 
-### Field tree (binparse/src/tree.rs:10)
+### Field tree (bytesmith/src/tree.rs:10)
 ```rust
 pub struct FieldNode<'a> {
     pub name: String,
@@ -158,7 +158,7 @@ pub enum Value<'a> { UInt(u128), Int(i128), Bool(bool), Bytes(&'a [u8]), String(
 
 ### Errors
 ```rust
-pub enum ParseError {  // binparse/src/lib.rs:82, #[non_exhaustive]
+pub enum ParseError {  // bytesmith/src/lib.rs:82, #[non_exhaustive]
     NotEnoughData { expected: usize, got: usize },
     UnalignedLength(Len),
     ValidationFailed { field: &'static str, actual: u128 },
@@ -166,7 +166,7 @@ pub enum ParseError {  // binparse/src/lib.rs:82, #[non_exhaustive]
     Misaligned { field: &'static str, align: usize, offset: Len },
     HookFailed { field: &'static str, reason: &'static str },
 }
-pub enum WriteError {  // binparse/src/lib.rs:122, #[non_exhaustive]
+pub enum WriteError {  // bytesmith/src/lib.rs:122, #[non_exhaustive]
     NotEnoughSpace { expected: usize, got: usize },
     ValueTooLarge { field: &'static str, value: usize, max: usize },
     InvalidContent,
@@ -178,12 +178,12 @@ Per writable `Foo`, codegen emits `FooWriter`, `FooContent`, and — **for
 variable-length types only** — `FooLens`. Union body content is a `<Struct>BodyContent`
 enum (e.g. `MqttPacketBodyContent`, `TcpOptionBodyContent`), distinct from the parsed
 `<Struct>_body`. Three usage modes (all verified in
-`binparse-protocols/tests/writers.rs`):
+`bytesmith-protocols/tests/writers.rs`):
 
 ```rust
 // Mode 3 — content struct → bytes (the only mode currently fuzzed):
 FooWriter::to_vec(content: &FooContent) -> Vec<u8>;
-FooWriter::write_into(buf: &mut [u8], content: &FooContent) -> binparse::WriteResult<usize>;
+FooWriter::write_into(buf: &mut [u8], content: &FooContent) -> bytesmith::WriteResult<usize>;
 
 // length (⚠️ signature differs by shape):
 FooWriter::encoded_len(content: &FooContent) -> usize;  // FIXED-size types
@@ -205,7 +205,7 @@ setter** — the writer computes them. `encoded_len(content|lens)`-vs-shape is t
 common compile error when writing writer fuzz code; check the generated module.
 
 ### Protocol modules & top-level types ⚠️
-Module name = feature = spec stem. Access as `binparse_protocols::<module>::<Type>`.
+Module name = feature = spec stem. Access as `bytesmith_protocols::<module>::<Type>`.
 
 | module | top-level parser type(s) |
 |--------|--------------------------|
@@ -230,23 +230,23 @@ Build with `--features all`. Each module is generated at build time into
 `$OUT_DIR/protocols.rs`.
 
 ### Hooks ⚠️
-- **DNS** (`binparse_protocols::hooks`): `dns_name(&[u8], HookContext) -> ParseResult<(NameRef<'a>, usize)>`,
+- **DNS** (`bytesmith_protocols::hooks`): `dns_name(&[u8], HookContext) -> ParseResult<(NameRef<'a>, usize)>`,
   `write_dns_name(..)`, types `NameRef<'a>` (`.labels() -> DnsLabelIter`), `DnsLabelIter`.
   Compression-pointer walk capped at **8 jumps** → `HookFailed { reason: "too many DNS
   compression jumps" }`. Exercised by `Dns::parse` then `dns.qname()?.labels()`.
-- **LEB128 / varint** (`binparse::hooks`, ⚠️ the *runtime* crate, not protocols):
+- **LEB128 / varint** (`bytesmith::hooks`, ⚠️ the *runtime* crate, not protocols):
   `leb128_unsigned`, `leb128_signed`, `zigzag_varint`, `quic_varint`,
   `length_prefixed_bytes`, `backref_blob`, plus `cstring`, and write/len helpers
   (`write_leb128_unsigned`, `leb128_unsigned_len`, …). MQTT specs reference these.
 
 ### DSL parse / codegen API
 ```rust
-binparse_dsl_parse::parse_str(src: &str)          -> Result<Vec<ast::Definition<'_>>, String>;
-binparse_dsl_parse::parse_str_located(src: &str)  -> Result<Vec<ast::Definition<'_>>, ParseError>;  // {offset, message}
-binparse_dsl_parse::parse_str_recover(src: &str)  -> (Vec<ast::Definition<'_>>, Vec<ParseError>);   // editor recovery
+bytesmith_dsl_parse::parse_str(src: &str)          -> Result<Vec<ast::Definition<'_>>, String>;
+bytesmith_dsl_parse::parse_str_located(src: &str)  -> Result<Vec<ast::Definition<'_>>, ParseError>;  // {offset, message}
+bytesmith_dsl_parse::parse_str_recover(src: &str)  -> (Vec<ast::Definition<'_>>, Vec<ParseError>);   // editor recovery
 
-binparse_codegen::CodeGen::generate(ast: &[ast::Definition]) -> Result<String, Error>;
-binparse_codegen::CodeGen::generate_writers(ast: &[ast::Definition]) -> Result<String, Error>;
+bytesmith_codegen::CodeGen::generate(ast: &[ast::Definition]) -> Result<String, Error>;
+bytesmith_codegen::CodeGen::generate_writers(ast: &[ast::Definition]) -> Result<String, Error>;
 ```
 - ⚠️ The returned `Vec<Definition>` **borrows `src`** — keep `src` alive across the
   `generate` call.
@@ -255,11 +255,11 @@ binparse_codegen::CodeGen::generate_writers(ast: &[ast::Definition]) -> Result<S
   **not** a panic.
 
 ### Panic surface (what the compiler targets will actually find)
-- **`binparse-dsl-parse`**: exactly **one** panic site in parser logic —
-  `exprs.pop().unwrap()` at `binparse-dsl-parse/src/lib.rs:205` (expression parsing).
+- **`bytesmith-dsl-parse`**: exactly **one** panic site in parser logic —
+  `exprs.pop().unwrap()` at `bytesmith-dsl-parse/src/lib.rs:205` (expression parsing).
   All other `panic!`s are in the `#[cfg(test)]` module (line 771+). So `dsl_parser` is
   low-noise: a panic ≈ a real robustness bug.
-- **`binparse-codegen`**: **31 `unreachable!()` + 11 `panic!`/`unwrap`/`expect`, zero
+- **`bytesmith-codegen`**: **31 `unreachable!()` + 11 `panic!`/`unwrap`/`expect`, zero
   `todo!()`** in `src/`. A tripped `unreachable!()` on parser-accepted DSL is a genuine
   bug (a wrong invariant or missing case). So `dsl_codegen`'s no-panic oracle is
   meaningful, **not** swamped by `todo!()` noise.
@@ -279,7 +279,7 @@ binparse_codegen::CodeGen::generate_writers(ast: &[ast::Definition]) -> Result<S
 - any `Err` return — `ParseError`, codegen `Error` (**including
   `InvalidGeneratedCode`**), `WriteError`. The DSL/specs are intentionally partial,
   lazy, and may be looser/tighter than a full reference library.
-- a partial parse (non-empty `rest`), or binparse accepting/rejecting bytes a
+- a partial parse (non-empty `rest`), or bytesmith accepting/rejecting bytes a
   reference library does not (until §4.6 proves the languages match for a subset).
 
 **Discipline:**
@@ -302,7 +302,7 @@ binparse_codegen::CodeGen::generate_writers(ast: &[ast::Definition]) -> Result<S
 **Create:**
 ```
 fuzz/README.md
-fuzz/dict/binparse_dsl.dict
+fuzz/dict/bytesmith_dsl.dict
 fuzz/dict/network.dict
 fuzz/corpus/dsl_parser/
 fuzz/corpus/dsl_codegen/
@@ -317,20 +317,20 @@ fuzz/corpus/protocol_chain/
 > inputs.)
 
 **Seed sources (script it; don't hand-copy):**
-- `corpus/dsl_parser/` and `corpus/dsl_codegen/`: every `binparse-protocols/specs/*.bp`
+- `corpus/dsl_parser/` and `corpus/dsl_codegen/`: every `bytesmith-protocols/specs/*.bsm`
   (15 files) + the two inline DSLs from `fuzz/build.rs`.
 - `corpus/generated_parsers/`, `corpus/protocols_raw/`, `corpus/protocol_chain/`: the 10
-  `&[u8]` consts from `binparse-bench/src/lib.rs`, written as raw binary files; plus
+  `&[u8]` consts from `bytesmith-bench/src/lib.rs`, written as raw binary files; plus
   raw `.pcap`-extracted frames from `third_party/wireshark/test/captures/` (skip files
   whose first 4 bytes are the pcapng magic `0a 0d 0d 0a`). Reuse the magic-classify
-  logic in `binparse-codegen/tests/pcap_dogfood.rs` as a guide. **Do not** make the
+  logic in `bytesmith-codegen/tests/pcap_dogfood.rs` as a guide. **Do not** make the
   raw targets parse pcap containers — extract frames offline.
 - `corpus/generated_writers/`: a handful of small random byte files (the `Cursor`
   driver tolerates any length).
 
 **Dictionaries** (libFuzzer `-dict=`):
-- `binparse_dsl.dict` — DSL keywords/attributes/tokens. Source of truth for the token
-  set is `binparse-dsl-parse/src/lib.rs` and the AST in `binparse-dsl/src/lib.rs`;
+- `bytesmith_dsl.dict` — DSL keywords/attributes/tokens. Source of truth for the token
+  set is `bytesmith-dsl-parse/src/lib.rs` and the AST in `bytesmith-dsl/src/lib.rs`;
   enumerate the real attribute names rather than guessing. Seed list (verify against
   the parser, prune anything it doesn't accept):
   `"struct" "union" "error" "concat" "if" "else" "u8" "u16" "u32" "u64" "i8" "i16"
@@ -355,14 +355,14 @@ fuzz build` still succeeds; README runnable verbatim.
 
 ### 4.1 — Compiler targets: `dsl_parser`, `dsl_codegen`
 
-Deps already present (`binparse-dsl-parse`, `binparse-codegen` are build-deps; promote
+Deps already present (`bytesmith-dsl-parse`, `bytesmith-codegen` are build-deps; promote
 to `[dependencies]` of the fuzz crate so the targets can call them at runtime).
 
 Add to `fuzz/Cargo.toml`:
 ```toml
 [dependencies]
-binparse-dsl-parse = { path = "../binparse-dsl-parse" }
-binparse-codegen   = { path = "../binparse-codegen" }
+bytesmith-dsl-parse = { path = "../bytesmith-dsl-parse" }
+bytesmith-codegen   = { path = "../bytesmith-codegen" }
 
 [[bin]]
 name = "dsl_parser"
@@ -386,8 +386,8 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     let Ok(src) = std::str::from_utf8(data) else { return };
-    let _ = binparse_dsl_parse::parse_str(src);
-    let _ = binparse_dsl_parse::parse_str_recover(src); // also fuzz the recovery path
+    let _ = bytesmith_dsl_parse::parse_str(src);
+    let _ = bytesmith_dsl_parse::parse_str_recover(src); // also fuzz the recovery path
 });
 ```
 
@@ -398,9 +398,9 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     let Ok(src) = std::str::from_utf8(data) else { return };
-    let Ok(ast) = binparse_dsl_parse::parse_str(src) else { return }; // src kept alive below
-    let _ = binparse_codegen::CodeGen::generate(&ast);
-    let _ = binparse_codegen::CodeGen::generate_writers(&ast);
+    let Ok(ast) = bytesmith_dsl_parse::parse_str(src) else { return }; // src kept alive below
+    let _ = bytesmith_codegen::CodeGen::generate(&ast);
+    let _ = bytesmith_codegen::CodeGen::generate_writers(&ast);
 });
 ```
 
@@ -426,7 +426,7 @@ crashes (real crashes are tickets, not blockers); clippy clean.
 Add to `fuzz/Cargo.toml`:
 ```toml
 [dependencies]
-binparse-protocols = { path = "../binparse-protocols", features = ["all"] }
+bytesmith-protocols = { path = "../bytesmith-protocols", features = ["all"] }
 
 [[bin]]
 name = "protocols_raw"
@@ -442,8 +442,8 @@ the full surface, importing real hooks (no duplicated synthetic hooks):
 ```rust
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use binparse::ParseResult;
-use binparse_protocols as bp;
+use bytesmith::ParseResult;
+use bytesmith_protocols as bp;
 
 // helper: drain an iterator-returning getter without keeping the Vec
 macro_rules! drain { ($e:expr) => { if let Ok(it) = $e { let _ = it.collect::<ParseResult<Vec<_>>>(); } } }
@@ -469,7 +469,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = ip.field_tree();
     }
 
-    // DNS exercises the REAL binparse_protocols::hooks::dns_name + label iterator:
+    // DNS exercises the REAL bytesmith_protocols::hooks::dns_name + label iterator:
     let _ = bp::dns::Dns::dissect(data);
     if let Ok((mut dns, _)) = bp::dns::Dns::parse(data) {
         let _ = (dns.id(), dns.qdcount(), dns.ancount());
@@ -497,7 +497,7 @@ fuzz_target!(|data: &[u8]| {
 lands.)
 
 **Acceptance:** builds with `--features all`; runs on the packet corpus with no crash;
-manually confirm via coverage that `binparse_protocols::hooks::dns_name` is reached.
+manually confirm via coverage that `bytesmith_protocols::hooks::dns_name` is reached.
 
 ---
 
@@ -508,7 +508,7 @@ Create `fuzz/fuzz_targets/common/mod.rs`; include in a target with
 `Handoff` (no per-struct knowledge). `FieldNode`/`Handoff` fields are `pub`.
 
 ```rust
-use binparse::{FieldNode, Handoff, Status};
+use bytesmith::{FieldNode, Handoff, Status};
 
 /// Structural invariants for any dissection tree. `input_len` is data.len().
 pub fn check_field_tree(node: &FieldNode<'_>, input_len: usize) {
@@ -531,7 +531,7 @@ pub fn check_field_tree(node: &FieldNode<'_>, input_len: usize) {
     }
     for child in &node.children {
         // paths are set via root.set_paths("") in codegen; confirm exact root/child
-        // path semantics against binparse/src/tree.rs:114 before tightening this.
+        // path semantics against bytesmith/src/tree.rs:114 before tightening this.
         check_field_tree(child, input_len);
     }
 }
@@ -594,7 +594,7 @@ Udp/Tcp by port (src or dst):
 ```rust
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use binparse_protocols as bp;
+use bytesmith_protocols as bp;
 
 const MAX_DEPTH: u32 = 8;
 
@@ -640,7 +640,7 @@ Keep the existing target; add properties (before any `Arbitrary` rewrite):
    if need > 0 {
        let mut small = vec![0u8; need - 1];
        assert!(matches!(FooWriter::write_into(&mut small, &content),
-                        Err(binparse::WriteError::NotEnoughSpace { .. })));
+                        Err(bytesmith::WriteError::NotEnoughSpace { .. })));
    }
    ```
 2. **Stability:** `assert_eq!(FooWriter::to_vec(&content), FooWriter::to_vec(&content))`.
@@ -652,8 +652,8 @@ Keep the existing target; add properties (before any `Arbitrary` rewrite):
    writer (e.g. `EthernetII`, `Udp`) so this overlaps `protocols_raw` coverage.
 
 **Note:** the synthetic `WRITER_BASELINE_DSL` already covers fixed/var/union/bits/varint
-shapes; you can also point a writer fuzz target at real `binparse-protocols` writers
-once `binparse-protocols` is a dep (§4.2). Prefer that over growing the synthetic DSL.
+shapes; you can also point a writer fuzz target at real `bytesmith-protocols` writers
+once `bytesmith-protocols` is a dep (§4.2). Prefer that over growing the synthetic DSL.
 
 **Acceptance:** new asserts pass on the corpus; `NotEnoughSpace` path proven; clippy
 clean.
@@ -685,7 +685,7 @@ zero-copy iterator contents wholesale. Suggested fields:
 - **MQTT:** packet type, remaining length; selected CONNECT/CONNACK/PUBLISH fields for
   valid packets.
 
-Only promote a protocol to "success/failure agreement" after you've **proved** binparse
+Only promote a protocol to "success/failure agreement" after you've **proved** bytesmith
 and the reference accept the same sub-language for that subset.
 
 **Acceptance per target:** builds; runs on the seeded packet corpus; any mismatch
@@ -702,10 +702,10 @@ cargo +nightly fuzz build
 for t in dsl_parser dsl_codegen protocols_raw protocol_chain generated_parsers generated_writers; do
   cargo +nightly fuzz run "$t" fuzz/corpus/"$t" -- \
     -max_total_time=30 -rss_limit_mb=2048 -timeout=10 \
-    ${DICT:+-dict=$DICT}   # binparse_dsl.dict for dsl_*, network.dict for raw/chain
+    ${DICT:+-dict=$DICT}   # bytesmith_dsl.dict for dsl_*, network.dict for raw/chain
 done
 ```
-Also keep `cargo test -p binparse-codegen --test pcap_dogfood` in CI — it already soaks
+Also keep `cargo test -p bytesmith-codegen --test pcap_dogfood` in CI — it already soaks
 the wireshark corpus for no-panic.
 
 **Nightly/dev:** long runs (`-max_total_time=3600+`), `cargo +nightly fuzz coverage`,
@@ -735,9 +735,9 @@ real-protocol coverage.
 
 Do **not** compile arbitrary generated Rust inside libFuzzer. For compile-checking
 *curated valid* DSL, reuse the existing throwaway-runtime-crate pattern in
-`binparse-codegen/tests/pcap_dogfood.rs` (it writes a temp crate under
+`bytesmith-codegen/tests/pcap_dogfood.rs` (it writes a temp crate under
 `target/generated-runtime-tests/` and shells `cargo test`). Add curated cases there or
-in `binparse-codegen/tests/`, not in a fuzz target.
+in `bytesmith-codegen/tests/`, not in a fuzz target.
 
 ---
 
@@ -759,7 +759,7 @@ in `binparse-codegen/tests/`, not in a fuzz target.
 - **OOM/alloc:** iterator getters and `field_tree` allocate proportional to input; set
   `-rss_limit_mb`. Array growth is bounded by `@max_iter`.
 - **DNS hook divergence:** the synthetic `generated_parsers` `parse_dns_name` is a
-  *local copy* and does not exercise `binparse_protocols::hooks::dns_name`. Only
+  *local copy* and does not exercise `bytesmith_protocols::hooks::dns_name`. Only
   `protocols_raw`/`protocol_chain`/`diff_dns` hit the real hook.
 - `dissect()` exists and is generated unconditionally (`struct_.rs:306`) — earlier
   "no dissect" claims came from grepping only hand-written source, not codegen output.
@@ -773,17 +773,17 @@ Context: read docs/fuzzing-plan.md §2 (API ground truth) and §3 (bug rules) fi
 The fuzz/ crate is its own workspace; run `cargo +nightly fuzz build` to verify, and
 `cargo clippy --all-targets` at the end. Keep existing targets intact.
 
-§4.0  Add fuzz/README.md, fuzz/dict/{binparse_dsl,network}.dict, corpus dirs, and a
-      committed seeding script (specs/*.bp + build.rs DSLs → dsl corpora; bench consts
+§4.0  Add fuzz/README.md, fuzz/dict/{bytesmith_dsl,network}.dict, corpus dirs, and a
+      committed seeding script (specs/*.bsm + build.rs DSLs → dsl corpora; bench consts
       + extracted wireshark .pcap frames → packet corpora). Resolve the corpus
       .gitignore decision in the README.
 
-§4.1  Promote binparse-dsl-parse + binparse-codegen to [dependencies]; add dsl_parser
+§4.1  Promote bytesmith-dsl-parse + bytesmith-codegen to [dependencies]; add dsl_parser
       and dsl_codegen targets (see skeletons). Oracle: no panic/hang/OOM; Err is fine;
       do NOT compile generated code. Triage any crash (parser lib.rs:205; codegen
       unreachable!/unwrap) into a typed Err or a real fix.
 
-§4.2  Add binparse-protocols { features=["all"] }; add protocols_raw feeding the same
+§4.2  Add bytesmith-protocols { features=["all"] }; add protocols_raw feeding the same
       bytes into every §2 top-level type, calling dissect/parse/field_tree/handoff,
       representative getters, and the real DNS hook via Dns::qname().labels(). Qualify
       MqttPacket by module. Set -rss_limit_mb.

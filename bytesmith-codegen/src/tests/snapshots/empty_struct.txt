@@ -1,0 +1,48 @@
+impl<'a> ::bytesmith::Dissect<'a> for Empty<'a> {
+    fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        Empty::field_tree(self)
+    }
+    fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        Empty::handoff(self)
+    }
+}
+
+impl<'a> Empty<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError> {
+        Ok((Self { data }, data))
+    }
+    pub fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let children = ::std::vec::Vec::new();
+        let mut root = ::bytesmith::FieldNode::new(
+                "Empty",
+                "Empty",
+                0usize..0usize,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::bytesmith::FieldNode<'a> {
+        let _ = Self { data };
+        let children: ::std::vec::Vec<::bytesmith::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut root = ::bytesmith::FieldNode::new(
+                "Empty",
+                "Empty",
+                0usize..0usize,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        None
+    }
+}
+
+pub struct Empty<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+

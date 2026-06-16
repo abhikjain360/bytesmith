@@ -1,0 +1,1941 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
+
+fn generated_code(dsl: &str) -> String {
+    let ast = bytesmith_dsl_parse::parse_str(dsl).expect("failed to parse DSL");
+    bytesmith_codegen::CodeGen::generate_writers(&ast).expect("failed to generate code")
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("bytesmith-codegen should have a workspace parent")
+        .to_path_buf()
+}
+
+fn write_runtime_crate(name: &str, code: &str, test_body: &str) -> PathBuf {
+    let root = workspace_root();
+    let test_dir = root
+        .join("target")
+        .join("writer-runtime-tests")
+        .join(format!("runtime-{}-{}", name, std::process::id()));
+
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(test_dir.join("src")).expect("failed to create runtime test crate");
+
+    let bytesmith_path = root.join("bytesmith");
+    fs::write(
+        test_dir.join("Cargo.toml"),
+        format!(
+            r#"[package]
+name = "writer-runtime-test"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+bytesmith = {{ path = "{}" }}
+
+[workspace]
+"#,
+            bytesmith_path.display()
+        ),
+    )
+    .expect("failed to write runtime Cargo.toml");
+
+    fs::write(
+        test_dir.join("src/lib.rs"),
+        format!(
+            r#"
+{code}
+
+#[cfg(test)]
+mod tests {{
+    use super::*;
+
+    #[test]
+    fn round_trip() {{
+        {test_body}
+    }}
+}}
+"#
+        ),
+    )
+    .expect("failed to write runtime lib.rs");
+
+    test_dir
+}
+
+fn run_round_trip(name: &str, dsl: &str, test_body: &str) {
+    let code = generated_code(dsl);
+    let test_dir = write_runtime_crate(name, &code, test_body);
+    let output = Command::new("cargo")
+        .arg("test")
+        .arg("--quiet")
+        .arg("--manifest-path")
+        .arg(test_dir.join("Cargo.toml"))
+        .output()
+        .expect("failed to run generated runtime tests");
+
+    assert!(
+        output.status.success(),
+        "generated runtime tests failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_writer_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct P {
+    a: u8,
+    b: u16,
+    c: u32,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(PWriter::SIZE, 7);
+        assert!(PWriter::new(&mut [0u8; 3]).is_err());
+
+        let content = PContent { a: 0x11, b: 0x2233, c: 0x44556677 };
+        let bytes = PWriter::to_vec(&content);
+        let (mut p, _) = P::parse(&bytes).unwrap();
+        assert_eq!(p.a(), 0x11);
+        assert_eq!(p.b(), 0x2233);
+        assert_eq!(p.c(), 0x44556677);
+    "#;
+    run_round_trip("primitive", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_bitfields_round_trip() {
+    let dsl = r#"
+@endian(big)
+struct Ip {
+    version: b<4>,
+    ihl: b<4>,
+    ttl: u8,
+    total: u16,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(IpWriter::SIZE, 4);
+
+        let content = IpContent { version: 4, ihl: 5, ttl: 64, total: 0x1234 };
+        let bytes = IpWriter::to_vec(&content);
+        let (mut ip, _) = Ip::parse(&bytes).unwrap();
+        assert_eq!(ip.version(), 4);
+        assert_eq!(ip.ihl(), 5);
+        assert_eq!(ip.ttl(), 64);
+        assert_eq!(ip.total(), 0x1234);
+    "#;
+    run_round_trip("bitfield-mixed", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_bitfields_straddle_msb_round_trips() {
+    let dsl = r#"
+struct S {
+    a: b<3>,
+    b: b<7>,
+    c: b<6>,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(SWriter::SIZE, 2);
+
+        let content = SContent { a: 5, b: 0x4b, c: 0x29 };
+        let bytes = SWriter::to_vec(&content);
+        let (mut s, _) = S::parse(&bytes).unwrap();
+        assert_eq!(s.a(), 5);
+        assert_eq!(s.b(), 0x4b);
+        assert_eq!(s.c(), 0x29);
+    "#;
+    run_round_trip("bitfield-straddle-msb", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_bitfields_straddle_lsb_round_trips() {
+    let dsl = r#"
+@bit_order(lsb)
+struct S {
+    a: b<3>,
+    b: b<7>,
+    c: b<6>,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(SWriter::SIZE, 2);
+
+        let content = SContent { a: 5, b: 0x4b, c: 0x29 };
+        let bytes = SWriter::to_vec(&content);
+        let (mut s, _) = S::parse(&bytes).unwrap();
+        assert_eq!(s.a(), 5);
+        assert_eq!(s.b(), 0x4b);
+        assert_eq!(s.c(), 0x29);
+    "#;
+    run_round_trip("bitfield-straddle-lsb", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_byte_array_to_vec_round_trips() {
+    let dsl = r#"
+struct Eth {
+    dst: [u8; 6],
+    src: [u8; 6],
+    ethertype: u16,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(EthWriter::SIZE, 14);
+
+        let content = EthContent {
+            dst: [1, 2, 3, 4, 5, 6],
+            src: [10, 11, 12, 13, 14, 15],
+            ethertype: 0x0800,
+        };
+        let bytes = EthWriter::to_vec(&content);
+        let (mut p, _) = Eth::parse(&bytes).unwrap();
+        assert_eq!(p.ethertype(), 0x0800);
+        assert_eq!(
+            p.dst().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![1, 2, 3, 4, 5, 6]
+        );
+        assert_eq!(
+            p.src().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![10, 11, 12, 13, 14, 15]
+        );
+    "#;
+    run_round_trip("byte-array-to-vec", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_byte_array_mut_round_trips() {
+    let dsl = r#"
+struct Eth {
+    dst: [u8; 6],
+    src: [u8; 6],
+    ethertype: u16,
+}
+"#;
+    let test_body = r#"
+        let mut buf = [0u8; 14];
+        let mut w = EthWriter::new(&mut buf).unwrap();
+        w.dst_mut().copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        w.src_mut().copy_from_slice(&[10, 11, 12, 13, 14, 15]);
+        w.set_ethertype(0x0800);
+
+        let (mut p, _) = Eth::parse(&buf).unwrap();
+        assert_eq!(p.ethertype(), 0x0800);
+        assert_eq!(
+            p.dst().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![1, 2, 3, 4, 5, 6]
+        );
+        assert_eq!(
+            p.src().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![10, 11, 12, 13, 14, 15]
+        );
+    "#;
+    run_round_trip("byte-array-mut", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_struct_ref_to_vec_round_trips() {
+    let dsl = r#"
+@endian(big) struct Inner { a: u8, b: u16 }
+@endian(big) struct Outer { tag: u8, inner: Inner, trailer: u8 }
+"#;
+    let test_body = r#"
+        assert_eq!(OuterWriter::SIZE, 5);
+
+        let content = OuterContent {
+            tag: 0xAA,
+            inner: InnerContent { a: 1, b: 0x0203 },
+            trailer: 0xBB,
+        };
+        let bytes = OuterWriter::to_vec(&content);
+        let (mut outer, _) = Outer::parse(&bytes).unwrap();
+        assert_eq!(outer.tag(), 0xAA);
+        assert_eq!(outer.trailer(), 0xBB);
+        assert_eq!(outer.inner().unwrap().a(), 1);
+        assert_eq!(outer.inner().unwrap().b(), 0x0203);
+    "#;
+    run_round_trip("struct-ref-to-vec", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_struct_ref_mut_round_trips() {
+    let dsl = r#"
+@endian(big) struct Inner { a: u8, b: u16 }
+@endian(big) struct Outer { tag: u8, inner: Inner, trailer: u8 }
+"#;
+    let test_body = r#"
+        let mut buf = [0u8; 5];
+        let mut w = OuterWriter::new(&mut buf).unwrap();
+        w.set_tag(0xAA);
+        {
+            let mut inner = w.inner_mut();
+            inner.set_a(1);
+            inner.set_b(0x0203);
+        }
+        w.set_trailer(0xBB);
+
+        let (mut outer, _) = Outer::parse(&buf).unwrap();
+        assert_eq!(outer.tag(), 0xAA);
+        assert_eq!(outer.trailer(), 0xBB);
+        assert_eq!(outer.inner().unwrap().a(), 1);
+        assert_eq!(outer.inner().unwrap().b(), 0x0203);
+    "#;
+    run_round_trip("struct-ref-mut", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_bitfield_then_byte_array_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct M {
+    a: b<4>,
+    b: b<4>,
+    data: [u8; 3],
+    tail: u16,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(MWriter::SIZE, 6);
+
+        let content = MContent { a: 0xa, b: 0x5, data: [0x11, 0x22, 0x33], tail: 0x4455 };
+        let bytes = MWriter::to_vec(&content);
+        let (mut m, _) = M::parse(&bytes).unwrap();
+        assert_eq!(m.a(), 0xa);
+        assert_eq!(m.b(), 0x5);
+        assert_eq!(
+            m.data().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![0x11, 0x22, 0x33]
+        );
+        assert_eq!(m.tail(), 0x4455);
+    "#;
+    run_round_trip("bitfield-then-byte-array", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_dynamic_tail_u8_round_trips() {
+    let dsl = r#"
+struct Frame {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+}
+"#;
+    let test_body = r#"
+        let content = FrameContent { kind: 0x02, payload: b"hello" };
+        let bytes = FrameWriter::to_vec(&content);
+        assert_eq!(bytes.len(), 7);
+        let (mut frame, _) = Frame::parse(&bytes).unwrap();
+        assert_eq!(frame.kind(), 0x02);
+        assert_eq!(frame.len(), 5);
+        assert_eq!(
+            frame.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"hello".to_vec()
+        );
+
+        let lens = FrameLens { payload: 5 };
+        let mut buf = vec![0u8; FrameWriter::encoded_len(&lens)];
+        let mut w = FrameWriter::new(&mut buf, lens).unwrap();
+        w.set_kind(0x02);
+        w.payload_mut().copy_from_slice(b"hello");
+        let (mut frame, _) = Frame::parse(&buf).unwrap();
+        assert_eq!(frame.kind(), 0x02);
+        assert_eq!(frame.len(), 5);
+        assert_eq!(
+            frame.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"hello".to_vec()
+        );
+
+        assert!(matches!(
+            FrameWriter::new(&mut [0u8; 3], FrameLens { payload: 5 }),
+            Err(bytesmith::WriteError::NotEnoughSpace { .. })
+        ));
+        assert!(matches!(
+            FrameWriter::new(&mut [0u8; 500], FrameLens { payload: 300 }),
+            Err(bytesmith::WriteError::ValueTooLarge { .. })
+        ));
+    "#;
+    run_round_trip("dynamic-tail-u8", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_varint_dynamic_tail_one_byte_round_trips() {
+    let dsl = r#"
+struct VarFrame {
+    tag: u8,
+    @hook(bytesmith.hooks.leb128_unsigned, u64) @write_hook(bytesmith.hooks.write_leb128_unsigned, bytesmith.hooks.leb128_unsigned_len) len: [u8],
+    body: [u8; len],
+}
+"#;
+    let test_body = r#"
+        let content = VarFrameContent { tag: 0x07, body: b"hello" };
+        let bytes = VarFrameWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x07, 0x05, b'h', b'e', b'l', b'l', b'o']);
+
+        let (mut frame, _) = VarFrame::parse(&bytes).unwrap();
+        assert_eq!(frame.tag(), 0x07);
+        assert_eq!(frame.len().unwrap(), 5);
+        assert_eq!(
+            frame.body().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"hello".to_vec()
+        );
+    "#;
+    run_round_trip("varint-tail-one-byte", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_varint_dynamic_tail_two_byte_round_trips() {
+    let dsl = r#"
+struct VarFrame {
+    tag: u8,
+    @hook(bytesmith.hooks.leb128_unsigned, u64) @write_hook(bytesmith.hooks.write_leb128_unsigned, bytesmith.hooks.leb128_unsigned_len) len: [u8],
+    body: [u8; len],
+}
+"#;
+    let test_body = r#"
+        let payload = vec![0xCDu8; 300];
+        let content = VarFrameContent { tag: 0x01, body: &payload };
+        let lens = VarFrameLens { body: 300 };
+        assert_eq!(VarFrameWriter::encoded_len(&lens), 303);
+
+        let bytes = VarFrameWriter::to_vec(&content);
+        assert_eq!(bytes.len(), 303);
+        assert_eq!(&bytes[1..3], &[0xAC, 0x02]);
+
+        let (mut frame, _) = VarFrame::parse(&bytes).unwrap();
+        assert_eq!(frame.tag(), 0x01);
+        assert_eq!(frame.len().unwrap(), 300);
+        assert_eq!(
+            frame.body().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            payload
+        );
+    "#;
+    run_round_trip("varint-tail-two-byte", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_varint_tail_without_write_hook_errors() {
+    let dsl = r#"
+struct VarFrame {
+    tag: u8,
+    @hook(bytesmith.hooks.leb128_unsigned, u64) len: [u8],
+    body: [u8; len],
+}
+"#;
+    let ast = bytesmith_dsl_parse::parse_str(dsl).expect("failed to parse DSL");
+    assert!(bytesmith_codegen::CodeGen::generate_writers(&ast).is_err());
+}
+
+#[test]
+fn generated_writer_content_hook_round_trips() {
+    let dsl = r#"
+struct Msg {
+    count: u8,
+    @hook(bytesmith.hooks.length_prefixed_bytes, &'a [u8]) @write_hook(bytesmith.hooks.write_length_prefixed_bytes, bytesmith.hooks.length_prefixed_bytes_len) body: [u8],
+}
+"#;
+    let test_body = r#"
+        let content = MsgContent { count: 0x09, body: b"payload" };
+        assert_eq!(MsgWriter::encoded_len(&content), 1 + 1 + 7);
+
+        let bytes = MsgWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x09, 0x07, b'p', b'a', b'y', b'l', b'o', b'a', b'd']);
+
+        let (mut msg, _) = Msg::parse(&bytes).unwrap();
+        assert_eq!(msg.count(), 0x09);
+        assert_eq!(msg.body().unwrap(), b"payload");
+
+        let empty = MsgContent { count: 0x00, body: b"" };
+        let bytes = MsgWriter::to_vec(&empty);
+        assert_eq!(bytes, vec![0x00, 0x00]);
+        let (mut msg, _) = Msg::parse(&bytes).unwrap();
+        assert_eq!(msg.body().unwrap(), b"");
+
+        let mut small = [0u8; 3];
+        assert!(matches!(
+            MsgWriter::write_into(&mut small, &content),
+            Err(bytesmith::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("content-hook", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_content_hook_no_width_round_trips() {
+    let dsl = r#"
+struct Msg {
+    header: [u8; 8],
+    @hook(bytesmith.hooks.backref_blob, &'a [u8]) @write_hook(bytesmith.hooks.write_backref_blob) name: [u8],
+}
+"#;
+    let test_body = r#"
+        let inline = MsgContent { header: [0u8; 8], name: b"hello" };
+        let inline_bytes = MsgWriter::to_vec(&inline);
+        assert_eq!(
+            inline_bytes,
+            vec![0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x05, b'h', b'e', b'l', b'l', b'o']
+        );
+
+        let mut buf = vec![0u8; 64];
+        let written = MsgWriter::write_into(&mut buf, &inline).unwrap();
+        assert_eq!(written, inline_bytes.len());
+        let (mut msg, rest) = Msg::parse(&buf[..written]).unwrap();
+        assert_eq!(rest.len(), 0);
+        assert_eq!(buf[..written].len() - rest.len(), written);
+        assert_eq!(
+            msg.header().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![0u8; 8]
+        );
+        assert_eq!(msg.name().unwrap(), b"hello");
+
+        let compressed = MsgContent {
+            header: [0x01, 0x05, b'h', b'e', b'l', b'l', b'o', 0x00],
+            name: b"hello",
+        };
+        let compressed_bytes = MsgWriter::to_vec(&compressed);
+        assert_eq!(
+            compressed_bytes,
+            vec![0x01, 0x05, b'h', b'e', b'l', b'l', b'o', 0x00, 0x00, 0x00, 0x00]
+        );
+        assert!(compressed_bytes.len() < inline_bytes.len());
+
+        let mut buf2 = vec![0u8; 64];
+        let written2 = MsgWriter::write_into(&mut buf2, &compressed).unwrap();
+        assert_eq!(written2, compressed_bytes.len());
+        let (mut msg2, rest2) = Msg::parse(&buf2[..written2]).unwrap();
+        assert_eq!(buf2[..written2].len() - rest2.len(), written2);
+        assert_eq!(
+            msg2.header().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![0x01, 0x05, b'h', b'e', b'l', b'l', b'o', 0x00]
+        );
+        assert_eq!(msg2.name().unwrap(), b"hello");
+
+        assert!(matches!(
+            MsgWriter::write_into(&mut [0u8; 4], &inline),
+            Err(bytesmith::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("content-hook-no-width", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_union_connect_variant_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Packet {
+    kind: u8,
+    body: union(kind) {
+        1 => Connect { keep_alive: u16 },
+        2 => Connack { ack: u8, code: u8 },
+        _ => Unknown { },
+    },
+}
+"#;
+    let test_body = r#"
+        let content = PacketContent {
+            body: PacketBodyContent::Connect(ConnectContent { keep_alive: 60 }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x01, 0x00, 0x3C]);
+
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.kind(), 1);
+        match packet.body().unwrap() {
+            Packet_body::Connect(mut connect) => assert_eq!(connect.keep_alive(), 60),
+            _ => panic!("expected Connect variant"),
+        }
+    "#;
+    run_round_trip("union-connect", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_union_connack_variant_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Packet {
+    kind: u8,
+    body: union(kind) {
+        1 => Connect { keep_alive: u16 },
+        2 => Connack { ack: u8, code: u8 },
+        _ => Unknown { },
+    },
+}
+"#;
+    let test_body = r#"
+        let content = PacketContent {
+            body: PacketBodyContent::Connack(ConnackContent { ack: 0xAB, code: 0x05 }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x02, 0xAB, 0x05]);
+
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.kind(), 2);
+        match packet.body().unwrap() {
+            Packet_body::Connack(mut connack) => {
+                assert_eq!(connack.ack(), 0xAB);
+                assert_eq!(connack.code(), 0x05);
+            }
+            _ => panic!("expected Connack variant"),
+        }
+    "#;
+    run_round_trip("union-connack", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_union_bitfield_discriminant_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct P2 {
+    tag: b<4>,
+    flags: b<4>,
+    body: union(tag) {
+        1 => A { v: u16 },
+        2 => B { v: u32 },
+        _ => Unknown { },
+    },
+}
+"#;
+    let test_body = r#"
+        let content = P2Content {
+            flags: 0x7,
+            body: P2BodyContent::A(AContent { v: 0x1234 }),
+        };
+        let bytes = P2Writer::to_vec(&content);
+        assert_eq!(bytes, vec![0x17, 0x12, 0x34]);
+
+        let (mut p2, _) = P2::parse(&bytes).unwrap();
+        assert_eq!(p2.tag(), 1);
+        assert_eq!(p2.flags(), 0x7);
+        match p2.body().unwrap() {
+            P2_body::A(mut a) => assert_eq!(a.v(), 0x1234),
+            _ => panic!("expected A variant"),
+        }
+
+        let content = P2Content {
+            flags: 0x2,
+            body: P2BodyContent::B(BContent { v: 0xDEADBEEF }),
+        };
+        let bytes = P2Writer::to_vec(&content);
+        assert_eq!(bytes, vec![0x22, 0xDE, 0xAD, 0xBE, 0xEF]);
+
+        let (mut p2, _) = P2::parse(&bytes).unwrap();
+        assert_eq!(p2.tag(), 2);
+        assert_eq!(p2.flags(), 0x2);
+        match p2.body().unwrap() {
+            P2_body::B(mut b) => assert_eq!(b.v(), 0xDEADBEEF),
+            _ => panic!("expected B variant"),
+        }
+    "#;
+    run_round_trip("union-bitfield-disc", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_ethernet_greedy_payload_round_trips() {
+    let dsl = r#"
+struct EthernetII {
+    dst: [u8; 6],
+    src: [u8; 6],
+    @discriminator ethertype: u16,
+    @greedy(unsafe_eof) @payload payload: [u8],
+}
+"#;
+    let test_body = r#"
+        let content = EthernetIIContent {
+            dst: [1, 2, 3, 4, 5, 6],
+            src: [10, 11, 12, 13, 14, 15],
+            ethertype: 0x0800,
+            payload: b"hello world",
+        };
+        let lens = EthernetIILens { payload: content.payload.len() };
+        assert_eq!(EthernetIIWriter::encoded_len(&lens), 14 + content.payload.len());
+
+        let bytes = EthernetIIWriter::to_vec(&content);
+        let (mut eth, _) = EthernetII::parse(&bytes).unwrap();
+        assert_eq!(
+            eth.dst().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![1, 2, 3, 4, 5, 6]
+        );
+        assert_eq!(
+            eth.src().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![10, 11, 12, 13, 14, 15]
+        );
+        assert_eq!(eth.ethertype(), 0x0800);
+        assert_eq!(
+            eth.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"hello world".to_vec()
+        );
+    "#;
+    run_round_trip("ethernet-greedy-payload", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_vlan_constant_and_payload_round_trips() {
+    let dsl = r#"
+struct Vlan {
+    dst: [u8; 6],
+    src: [u8; 6],
+    tpid = x8100,
+    pcp: b<3>,
+    dei: b<1>,
+    vid_hi: b<4>,
+    vid_lo: u8,
+    ethertype: u16,
+    @greedy(unsafe_eof) payload: [u8],
+}
+"#;
+    let test_body = r#"
+        let content = VlanContent {
+            dst: [1, 2, 3, 4, 5, 6],
+            src: [10, 11, 12, 13, 14, 15],
+            pcp: 5,
+            dei: 1,
+            vid_hi: 0xa,
+            vid_lo: 0xbc,
+            ethertype: 0x0800,
+            payload: b"payload-bytes",
+        };
+        let bytes = VlanWriter::to_vec(&content);
+        assert_eq!(&bytes[12..14], &[0x81, 0x00]);
+
+        let (mut vlan, _) = Vlan::parse(&bytes).unwrap();
+        assert_eq!(
+            vlan.dst().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![1, 2, 3, 4, 5, 6]
+        );
+        assert_eq!(vlan.tpid(), 0x8100);
+        assert_eq!(vlan.pcp(), 5);
+        assert_eq!(vlan.dei(), 1);
+        assert_eq!(vlan.vid_hi(), 0xa);
+        assert_eq!(vlan.vid_lo(), 0xbc);
+        assert_eq!(vlan.ethertype(), 0x0800);
+        assert_eq!(
+            vlan.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"payload-bytes".to_vec()
+        );
+    "#;
+    run_round_trip("vlan-constant-payload", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_dynamic_tail_u16_big_endian_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Msg {
+    len: u16,
+    body: [u8; len],
+}
+"#;
+    let test_body = r#"
+        let payload = vec![0xABu8; 300];
+        let content = MsgContent { body: &payload };
+        let bytes = MsgWriter::to_vec(&content);
+        assert_eq!(bytes.len(), 302);
+        let (mut msg, _) = Msg::parse(&bytes).unwrap();
+        assert_eq!(msg.len(), 300);
+        assert_eq!(
+            msg.body().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            payload
+        );
+    "#;
+    run_round_trip("dynamic-tail-u16-be", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_dynamic_region_with_fixed_trailer_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Frame {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+    crc: u16,
+    tail: u8,
+}
+"#;
+    let test_body = r#"
+        let content = FrameContent { kind: 0x09, payload: b"hello", crc: 0xBEEF, tail: 0x7F };
+        assert_eq!(FrameWriter::encoded_len(&FrameLens { payload: 5 }), 10);
+        let bytes = FrameWriter::to_vec(&content);
+        assert_eq!(
+            bytes,
+            vec![0x09, 0x05, b'h', b'e', b'l', b'l', b'o', 0xBE, 0xEF, 0x7F]
+        );
+
+        let (mut frame, rem) = Frame::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(frame.kind(), 0x09);
+        assert_eq!(frame.len(), 5);
+        assert_eq!(
+            frame.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"hello".to_vec()
+        );
+        assert_eq!(frame.crc(), 0xBEEF);
+        assert_eq!(frame.tail(), 0x7F);
+
+        let lens = FrameLens { payload: 5 };
+        let mut buf = vec![0u8; FrameWriter::encoded_len(&lens)];
+        let mut w = FrameWriter::new(&mut buf, lens).unwrap();
+        w.set_kind(0x09);
+        w.payload_mut().copy_from_slice(b"world");
+        w.set_crc(0xBEEF);
+        w.set_tail(0x7F);
+        let (mut frame, _) = Frame::parse(&buf).unwrap();
+        assert_eq!(frame.kind(), 0x09);
+        assert_eq!(frame.len(), 5);
+        assert_eq!(
+            frame.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"world".to_vec()
+        );
+        assert_eq!(frame.crc(), 0xBEEF);
+        assert_eq!(frame.tail(), 0x7F);
+
+        let empty = FrameContent { kind: 1, payload: b"", crc: 0x0102, tail: 0x03 };
+        let bytes = FrameWriter::to_vec(&empty);
+        assert_eq!(bytes, vec![0x01, 0x00, 0x01, 0x02, 0x03]);
+        let (mut frame, _) = Frame::parse(&bytes).unwrap();
+        assert_eq!(frame.len(), 0);
+        assert_eq!(frame.crc(), 0x0102);
+        assert_eq!(frame.tail(), 0x03);
+
+        assert!(matches!(
+            FrameWriter::new(&mut [0u8; 3], FrameLens { payload: 5 }),
+            Err(bytesmith::WriteError::NotEnoughSpace { .. })
+        ));
+        assert!(matches!(
+            FrameWriter::new(&mut [0u8; 600], FrameLens { payload: 300 }),
+            Err(bytesmith::WriteError::ValueTooLarge { .. })
+        ));
+    "#;
+    run_round_trip("dynamic-region-fixed-trailer", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_dynamic_region_u16_with_array_trailer_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Msg {
+    ver: u8,
+    rlen: u16,
+    region: [u8; rlen],
+    footer: [u8; 4],
+    checksum: u16,
+}
+"#;
+    let test_body = r#"
+        let region = vec![0xAAu8; 300];
+        let content = MsgContent {
+            ver: 0x01,
+            region: &region,
+            footer: [0xDE, 0xAD, 0xBE, 0xEF],
+            checksum: 0x1234,
+        };
+        let lens = MsgLens { region: 300 };
+        assert_eq!(MsgWriter::encoded_len(&lens), 3 + 300 + 6);
+
+        let bytes = MsgWriter::to_vec(&content);
+        assert_eq!(bytes.len(), 309);
+        assert_eq!(&bytes[1..3], &[0x01, 0x2c]);
+        assert_eq!(&bytes[303..307], &[0xDE, 0xAD, 0xBE, 0xEF]);
+        assert_eq!(&bytes[307..309], &[0x12, 0x34]);
+
+        let (mut msg, rem) = Msg::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(msg.ver(), 1);
+        assert_eq!(msg.rlen(), 300);
+        assert_eq!(
+            msg.region().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            region
+        );
+        assert_eq!(
+            msg.footer().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            vec![0xDE, 0xAD, 0xBE, 0xEF]
+        );
+        assert_eq!(msg.checksum(), 0x1234);
+
+        let mut big = vec![0u8; 80000];
+        assert!(matches!(
+            MsgWriter::new(&mut big, MsgLens { region: 70000 }),
+            Err(bytesmith::WriteError::ValueTooLarge { .. })
+        ));
+    "#;
+    run_round_trip("dynamic-region-array-trailer", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_affine_len_minus_const_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Udp {
+    src: u16,
+    dst: u16,
+    length: u16,
+    checksum: u16,
+    payload: [u8; length - 8],
+}
+"#;
+    let test_body = r#"
+        let content = UdpContent {
+            src: 0x1234,
+            dst: 0x5678,
+            checksum: 0xBEEF,
+            payload: b"hello",
+        };
+        let lens = UdpLens { payload: 5 };
+        assert_eq!(UdpWriter::encoded_len(&lens), 13);
+
+        let bytes = UdpWriter::to_vec(&content);
+        assert_eq!(bytes.len(), 13);
+        assert_eq!(
+            bytes,
+            vec![0x12, 0x34, 0x56, 0x78, 0x00, 0x0D, 0xBE, 0xEF, b'h', b'e', b'l', b'l', b'o']
+        );
+
+        let (mut udp, rem) = Udp::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(udp.src(), 0x1234);
+        assert_eq!(udp.dst(), 0x5678);
+        assert_eq!(udp.checksum(), 0xBEEF);
+        // derived length field inverts the size expr: length == payload.len() + 8
+        assert_eq!(udp.length(), 13);
+        assert_eq!(
+            udp.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"hello".to_vec()
+        );
+
+        // empty payload: length == 8 (the minimum, == k)
+        let empty = UdpContent { src: 1, dst: 2, checksum: 3, payload: b"" };
+        let bytes = UdpWriter::to_vec(&empty);
+        assert_eq!(bytes.len(), 8);
+        let (mut udp, _) = Udp::parse(&bytes).unwrap();
+        assert_eq!(udp.length(), 8);
+        assert_eq!(
+            udp.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            Vec::<u8>::new()
+        );
+
+        // Mode 1 random access keeps the same derived length.
+        let lens = UdpLens { payload: 5 };
+        let mut buf = vec![0u8; UdpWriter::encoded_len(&lens)];
+        let mut w = UdpWriter::new(&mut buf, lens).unwrap();
+        w.set_src(0x1234);
+        w.set_dst(0x5678);
+        w.set_checksum(0xBEEF);
+        w.payload_mut().copy_from_slice(b"world");
+        let (mut udp, _) = Udp::parse(&buf).unwrap();
+        assert_eq!(udp.length(), 13);
+        assert_eq!(
+            udp.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"world".to_vec()
+        );
+
+        // ValueTooLarge edge: the WRITTEN length (payload + 8) overflows u16.
+        let mut big = vec![0u8; 70000];
+        assert!(matches!(
+            UdpWriter::new(&mut big, UdpLens { payload: 65534 }),
+            Err(bytesmith::WriteError::ValueTooLarge { .. })
+        ));
+        // payload that fits exactly: 65535 - 8 = 65527 is the largest legal payload.
+        let lens = UdpLens { payload: 65528 };
+        let mut buf = vec![0u8; UdpWriter::encoded_len(&lens)];
+        assert!(matches!(
+            UdpWriter::new(&mut buf, lens),
+            Err(bytesmith::WriteError::ValueTooLarge { .. })
+        ));
+    "#;
+    run_round_trip("affine-len-minus-const", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_affine_len_minus_const_with_trailer_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Frame {
+    kind: u8,
+    total: u16,
+    payload: [u8; total - 5],
+    crc: u16,
+}
+"#;
+    let test_body = r#"
+        let content = FrameContent {
+            kind: 0x09,
+            payload: b"abc",
+            crc: 0xDEAD,
+        };
+        let lens = FrameLens { payload: 3 };
+        // 1 (kind) + 2 (total) + 3 (payload) + 2 (crc) = 8
+        assert_eq!(FrameWriter::encoded_len(&lens), 8);
+
+        let bytes = FrameWriter::to_vec(&content);
+        assert_eq!(
+            bytes,
+            vec![0x09, 0x00, 0x08, b'a', b'b', b'c', 0xDE, 0xAD]
+        );
+
+        let (mut frame, rem) = Frame::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(frame.kind(), 0x09);
+        // derived: total == payload.len() + 5
+        assert_eq!(frame.total(), 8);
+        assert_eq!(
+            frame.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"abc".to_vec()
+        );
+        assert_eq!(frame.crc(), 0xDEAD);
+    "#;
+    run_round_trip("affine-len-minus-const-trailer", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_affine_len_plus_const_round_trips() {
+    let dsl = r#"
+struct Frame {
+    kind: u8,
+    len: u8,
+    payload: [u8; len + 2],
+}
+"#;
+    let test_body = r#"
+        let content = FrameContent { kind: 0x02, payload: b"hello" };
+        let lens = FrameLens { payload: 5 };
+        assert_eq!(FrameWriter::encoded_len(&lens), 7);
+
+        let bytes = FrameWriter::to_vec(&content);
+        // derived: len == payload.len() - 2 == 3
+        assert_eq!(bytes, vec![0x02, 0x03, b'h', b'e', b'l', b'l', b'o']);
+
+        let (mut frame, _) = Frame::parse(&bytes).unwrap();
+        assert_eq!(frame.kind(), 0x02);
+        assert_eq!(frame.len(), 3);
+        assert_eq!(
+            frame.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"hello".to_vec()
+        );
+
+        // underflow edge: a payload smaller than k saturates the derived len to 0,
+        // which the reader then sees as a 2-byte region (len + 2).
+        let small = FrameContent { kind: 0x01, payload: b"xy" };
+        let bytes = FrameWriter::to_vec(&small);
+        assert_eq!(bytes, vec![0x01, 0x00, b'x', b'y']);
+        let (mut frame, _) = Frame::parse(&bytes).unwrap();
+        assert_eq!(frame.len(), 0);
+        assert_eq!(
+            frame.payload().unwrap().collect::<Result<Vec<u8>, _>>().unwrap(),
+            b"xy".to_vec()
+        );
+    "#;
+    run_round_trip("affine-len-plus-const", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_len_region_struct_ref_round_trips() {
+    let dsl = r#"
+@endian(big) struct Inner { a: u8, b: u16 }
+@endian(big) struct Tlv { tag: u8, length: u8, @len(length) value: Inner }
+"#;
+    let test_body = r#"
+        let content = TlvContent {
+            tag: 0x42,
+            value: InnerContent { a: 0x11, b: 0x2233 },
+        };
+        let lens = TlvLens { value: InnerWriter::SIZE };
+        // 1 (tag) + 1 (length) + 3 (Inner::SIZE) = 5
+        assert_eq!(TlvWriter::encoded_len(&lens), 5);
+
+        let bytes = TlvWriter::to_vec(&content);
+        // length is DERIVED = Inner encoded_len = 3
+        assert_eq!(bytes, vec![0x42, 0x03, 0x11, 0x22, 0x33]);
+
+        let (mut tlv, rem) = Tlv::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(tlv.tag(), 0x42);
+        // derived length field == inner encoded_len
+        assert_eq!(tlv.length() as usize, InnerWriter::SIZE);
+        let mut inner = tlv.value().unwrap();
+        assert_eq!(inner.a(), 0x11);
+        assert_eq!(inner.b(), 0x2233);
+
+        // Mode 1: the region accessor returns the child writer, derived length still set.
+        let lens = TlvLens { value: InnerWriter::SIZE };
+        let mut buf = vec![0u8; TlvWriter::encoded_len(&lens)];
+        let mut w = TlvWriter::new(&mut buf, lens).unwrap();
+        w.set_tag(0x99);
+        {
+            let mut inner = w.value_mut();
+            inner.set_a(0x44);
+            inner.set_b(0x5566);
+        }
+        let (mut tlv, _) = Tlv::parse(&buf).unwrap();
+        assert_eq!(tlv.tag(), 0x99);
+        assert_eq!(tlv.length() as usize, InnerWriter::SIZE);
+        let mut inner = tlv.value().unwrap();
+        assert_eq!(inner.a(), 0x44);
+        assert_eq!(inner.b(), 0x5566);
+
+        assert!(matches!(
+            TlvWriter::new(&mut [0u8; 2], TlvLens { value: InnerWriter::SIZE }),
+            Err(bytesmith::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("len-region-struct-ref", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_len_region_struct_ref_affine_round_trips() {
+    // @len(length - 2): the region occupies (length - 2) bytes, so the derived
+    // length = encoded_len + 2.
+    let dsl = r#"
+@endian(big) struct Inner { a: u8, b: u16 }
+@endian(big) struct Tlv { tag: u8, length: u8, @len(length - 2) value: Inner }
+"#;
+    let test_body = r#"
+        let content = TlvContent {
+            tag: 0x42,
+            value: InnerContent { a: 0x11, b: 0x2233 },
+        };
+        let bytes = TlvWriter::to_vec(&content);
+        // length is DERIVED: Inner encoded_len (3) + 2 = 5
+        assert_eq!(bytes, vec![0x42, 0x05, 0x11, 0x22, 0x33]);
+
+        let (mut tlv, rem) = Tlv::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(tlv.length() as usize, InnerWriter::SIZE + 2);
+        let mut inner = tlv.value().unwrap();
+        assert_eq!(inner.a(), 0x11);
+        assert_eq!(inner.b(), 0x2233);
+    "#;
+    run_round_trip("len-region-struct-ref-affine", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_len_region_struct_ref_with_trailer_round_trips() {
+    let dsl = r#"
+@endian(big) struct Inner { a: u8, b: u16 }
+@endian(big) struct Tlv { tag: u8, length: u8, @len(length) value: Inner, crc: u16 }
+"#;
+    let test_body = r#"
+        let content = TlvContent {
+            tag: 0x42,
+            value: InnerContent { a: 0x11, b: 0x2233 },
+            crc: 0xBEEF,
+        };
+        let lens = TlvLens { value: InnerWriter::SIZE };
+        // 1 + 1 + 3 + 2 = 7
+        assert_eq!(TlvWriter::encoded_len(&lens), 7);
+
+        let bytes = TlvWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x42, 0x03, 0x11, 0x22, 0x33, 0xBE, 0xEF]);
+
+        let (mut tlv, rem) = Tlv::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(tlv.length() as usize, InnerWriter::SIZE);
+        let mut inner = tlv.value().unwrap();
+        assert_eq!(inner.a(), 0x11);
+        assert_eq!(inner.b(), 0x2233);
+        // trailer sits AFTER the bounded region.
+        assert_eq!(tlv.crc(), 0xBEEF);
+    "#;
+    run_round_trip("len-region-struct-ref-trailer", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_len_region_union_round_trips() {
+    let dsl = r#"
+@endian(big) struct Packet {
+    kind: u8,
+    length: u8,
+    @len(length) body: union(kind) {
+        1 => Connect { keep_alive: u16 },
+        2 => Connack { ack: u8, code: u8 },
+        _ => Unknown { },
+    },
+}
+"#;
+    let test_body = r#"
+        // Connect: 2-byte body, derived length == 2.
+        let content = PacketContent {
+            body: PacketBodyContent::Connect(ConnectContent { keep_alive: 0x1234 }),
+        };
+        assert_eq!(PacketWriter::encoded_len(&content), 4);
+        let bytes = PacketWriter::to_vec(&content);
+        // kind (derived) = 1, length (derived) = 2, then body.
+        assert_eq!(bytes, vec![0x01, 0x02, 0x12, 0x34]);
+        let (mut packet, rem) = Packet::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(packet.kind(), 1);
+        assert_eq!(packet.length(), 2);
+        match packet.body().unwrap() {
+            Packet_body::Connect(mut c) => assert_eq!(c.keep_alive(), 0x1234),
+            _ => panic!("expected Connect"),
+        }
+
+        // Connack: 2-byte body too, but a different discriminator.
+        let content = PacketContent {
+            body: PacketBodyContent::Connack(ConnackContent { ack: 0xAB, code: 0xCD }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x02, 0x02, 0xAB, 0xCD]);
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.kind(), 2);
+        // derived length == inner encoded_len
+        assert_eq!(packet.length(), 2);
+        match packet.body().unwrap() {
+            Packet_body::Connack(mut c) => {
+                assert_eq!(c.ack(), 0xAB);
+                assert_eq!(c.code(), 0xCD);
+            }
+            _ => panic!("expected Connack"),
+        }
+
+        assert!(matches!(
+            PacketWriter::write_into(
+                &mut [0u8; 2],
+                &PacketContent {
+                    body: PacketBodyContent::Connect(ConnectContent { keep_alive: 1 }),
+                },
+            ),
+            Err(bytesmith::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("len-region-union", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_len_region_value_too_large_errors() {
+    // @len(length + 1): derived length = encoded_len - 1, into a u8 field. With a
+    // large fixed child, the derived value can exceed u8::MAX.
+    let dsl = r#"
+@endian(big) struct Inner { data: [u8; 300] }
+@endian(big) struct Tlv { tag: u8, length: u8, @len(length) value: Inner }
+"#;
+    let test_body = r#"
+        // Inner::SIZE == 300 > u8::MAX, so the derived length field overflows.
+        assert!(matches!(
+            TlvWriter::new(&mut [0u8; 400], TlvLens { value: InnerWriter::SIZE }),
+            Err(bytesmith::WriteError::ValueTooLarge { .. })
+        ));
+        let content = TlvContent { tag: 0x01, value: InnerContent { data: [0u8; 300] } };
+        let mut buf = vec![0u8; TlvWriter::encoded_len(&TlvLens { value: InnerWriter::SIZE })];
+        assert!(matches!(
+            TlvWriter::write_into(&mut buf, &content),
+            Err(bytesmith::WriteError::ValueTooLarge { .. })
+        ));
+    "#;
+    run_round_trip("len-region-value-too-large", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_counted_array_of_structs_round_trips() {
+    let dsl = r#"
+@endian(big) struct Pair { a: u8, b: u16 }
+@endian(big) struct Rec { n: u8, items: [Pair; n] }
+"#;
+    let test_body = r#"
+        let content = RecContent {
+            items: &[
+                PairContent { a: 0x11, b: 0x2233 },
+                PairContent { a: 0x44, b: 0x5566 },
+            ],
+        };
+        // 1 (n) + 2 * Pair::SIZE (3) = 7
+        let lens = RecLens { items: 2 };
+        assert_eq!(RecWriter::encoded_len(&lens), 7);
+
+        let bytes = RecWriter::to_vec(&content);
+        // n is DERIVED = element count = 2, then each Pair written sequentially.
+        assert_eq!(bytes, vec![0x02, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
+
+        let (mut rec, rem) = Rec::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        // derived count field == number of supplied elements.
+        assert_eq!(rec.n(), 2);
+        let mut items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
+        assert_eq!(items.len(), 2);
+        assert_eq!((items[0].a(), items[0].b()), (0x11, 0x2233));
+        assert_eq!((items[1].a(), items[1].b()), (0x44, 0x5566));
+
+        // Empty array edge: derived count == 0, just the count byte.
+        let empty = RecContent { items: &[] };
+        let bytes = RecWriter::to_vec(&empty);
+        assert_eq!(bytes, vec![0x00]);
+        let (mut rec, _) = Rec::parse(&bytes).unwrap();
+        assert_eq!(rec.n(), 0);
+        assert_eq!(rec.items().unwrap().count(), 0);
+
+        assert!(matches!(
+            RecWriter::new(&mut [0u8; 4], RecLens { items: 2 }),
+            Err(bytesmith::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("counted-array-of-structs", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_counted_array_of_structs_with_trailer_round_trips() {
+    let dsl = r#"
+@endian(big) struct Pair { a: u8, b: u16 }
+@endian(big) struct Rec { n: u8, items: [Pair; n], crc: u16 }
+"#;
+    let test_body = r#"
+        let content = RecContent {
+            items: &[
+                PairContent { a: 0x11, b: 0x2233 },
+                PairContent { a: 0x44, b: 0x5566 },
+            ],
+            crc: 0xBEEF,
+        };
+        // 1 (n) + 2 * 3 (items) + 2 (crc) = 9
+        let lens = RecLens { items: 2 };
+        assert_eq!(RecWriter::encoded_len(&lens), 9);
+
+        let bytes = RecWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x02, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0xBE, 0xEF]);
+
+        let (mut rec, rem) = Rec::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(rec.n(), 2);
+        let mut items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
+        assert_eq!(items.len(), 2);
+        assert_eq!((items[1].a(), items[1].b()), (0x44, 0x5566));
+        // trailer sits AFTER the array region.
+        assert_eq!(rec.crc(), 0xBEEF);
+    "#;
+    run_round_trip("counted-array-of-structs-trailer", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_counted_array_of_structs_value_too_large_errors() {
+    // count field is u8: supplying more than u8::MAX elements overflows it.
+    let dsl = r#"
+@endian(big) struct Pair { a: u8, b: u16 }
+@endian(big) struct Rec { n: u8, items: [Pair; n] }
+"#;
+    let test_body = r#"
+        let elems: Vec<PairContent> = (0..256).map(|_| PairContent { a: 0, b: 0 }).collect();
+        let content = RecContent { items: &elems };
+        let mut buf = vec![0u8; RecWriter::encoded_len(&RecLens { items: 256 })];
+        assert!(matches!(
+            RecWriter::write_into(&mut buf, &content),
+            Err(bytesmith::WriteError::ValueTooLarge { .. })
+        ));
+    "#;
+    run_round_trip("counted-array-of-structs-too-large", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_greedy_array_of_structs_round_trips() {
+    let dsl = r#"
+@endian(big) struct Pair { a: u8, b: u16 }
+@endian(big) struct Rec { tag: u8, @greedy(unsafe_eof) items: [Pair] }
+"#;
+    let test_body = r#"
+        let content = RecContent {
+            tag: 0x99,
+            items: &[
+                PairContent { a: 0x11, b: 0x2233 },
+                PairContent { a: 0x44, b: 0x5566 },
+                PairContent { a: 0x77, b: 0x8899 },
+            ],
+        };
+        // 1 (tag) + 3 * 3 (items) = 10
+        let lens = RecLens { items: 3 };
+        assert_eq!(RecWriter::encoded_len(&lens), 10);
+
+        let bytes = RecWriter::to_vec(&content);
+        assert_eq!(
+            bytes,
+            vec![0x99, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99],
+        );
+
+        let (mut rec, rem) = Rec::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(rec.tag(), 0x99);
+        let mut items: Vec<_> = rec.items().unwrap().map(|r| r.unwrap()).collect();
+        // no count field; all supplied elements are recovered by reading to EOF.
+        assert_eq!(items.len(), 3);
+        assert_eq!((items[0].a(), items[0].b()), (0x11, 0x2233));
+        assert_eq!((items[2].a(), items[2].b()), (0x77, 0x8899));
+
+        // Empty tail: just the prefix byte.
+        let empty = RecContent { tag: 0x01, items: &[] };
+        let bytes = RecWriter::to_vec(&empty);
+        assert_eq!(bytes, vec![0x01]);
+        let (mut rec, _) = Rec::parse(&bytes).unwrap();
+        assert_eq!(rec.tag(), 0x01);
+        assert_eq!(rec.items().unwrap().count(), 0);
+
+        assert!(matches!(
+            RecWriter::new(&mut [0u8; 5], RecLens { items: 3 }),
+            Err(bytesmith::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("greedy-array-of-structs", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_conditional_with_else_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Cond {
+    n: u8,
+    if (n == 1) {
+        x: u16,
+    } else {
+        y: u8,
+    }
+}
+"#;
+    let test_body = r#"
+        let present = CondContent { n: 1, x: Some(0xABCD), y: None };
+        assert_eq!(CondWriter::encoded_len(&present), 3);
+        let bytes = CondWriter::to_vec(&present);
+        assert_eq!(bytes, vec![0x01, 0xAB, 0xCD]);
+        let (mut c, rem) = Cond::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(c.n(), 1);
+        assert_eq!(c.x(), Some(0xABCD));
+        assert_eq!(c.y(), None);
+
+        let absent = CondContent { n: 2, x: None, y: Some(0x7F) };
+        assert_eq!(CondWriter::encoded_len(&absent), 2);
+        let bytes = CondWriter::to_vec(&absent);
+        assert_eq!(bytes, vec![0x02, 0x7F]);
+        let (mut c, rem) = Cond::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(c.n(), 2);
+        assert_eq!(c.x(), None);
+        assert_eq!(c.y(), Some(0x7F));
+
+        assert!(matches!(
+            CondWriter::write_into(&mut [0u8; 1], &present),
+            Err(bytesmith::WriteError::NotEnoughSpace { .. })
+        ));
+    "#;
+    run_round_trip("conditional-with-else", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_conditional_no_else_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Opt {
+    flags: u8,
+    if (flags > 0) {
+        a: u16,
+        b: u8,
+    }
+}
+"#;
+    let test_body = r#"
+        let present = OptContent { flags: 5, a: Some(0x1234), b: Some(0x56) };
+        assert_eq!(OptWriter::encoded_len(&present), 4);
+        let bytes = OptWriter::to_vec(&present);
+        assert_eq!(bytes, vec![0x05, 0x12, 0x34, 0x56]);
+        let (mut o, rem) = Opt::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(o.flags(), 5);
+        assert_eq!(o.a(), Some(0x1234));
+        assert_eq!(o.b(), Some(0x56));
+
+        let absent = OptContent { flags: 0, a: None, b: None };
+        assert_eq!(OptWriter::encoded_len(&absent), 1);
+        let bytes = OptWriter::to_vec(&absent);
+        assert_eq!(bytes, vec![0x00]);
+        let (mut o, rem) = Opt::parse(&bytes).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(o.flags(), 0);
+        assert_eq!(o.a(), None);
+        assert_eq!(o.b(), None);
+    "#;
+    run_round_trip("conditional-no-else", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_union_multi_literal_discriminant_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Packet {
+    kind: u8,
+    body: union(kind) {
+        1 | 2 => Hello { v: u16 },
+        3 => Bye { code: u8 },
+        _ => Unknown { },
+    },
+}
+"#;
+    let test_body = r#"
+        let content = PacketContent {
+            body: PacketBodyContent::Hello(HelloContent { v: 0xABCD }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x01, 0xAB, 0xCD]);
+
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.kind(), 1);
+        match packet.body().unwrap() {
+            Packet_body::Hello(mut hello) => assert_eq!(hello.v(), 0xABCD),
+            _ => panic!("expected Hello variant"),
+        }
+
+        let content = PacketContent {
+            body: PacketBodyContent::Bye(ByeContent { code: 0x09 }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x03, 0x09]);
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.kind(), 3);
+        match packet.body().unwrap() {
+            Packet_body::Bye(mut bye) => assert_eq!(bye.code(), 0x09),
+            _ => panic!("expected Bye variant"),
+        }
+    "#;
+    run_round_trip("union-multi-literal", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_union_tuple_discriminant_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Packet {
+    a: u8,
+    b: u8,
+    body: union(a, b) {
+        (0, 0) => Both { v: u16 },
+        (1, 2) => OneTwo { code: u8 },
+        _ => Unknown { },
+    },
+}
+"#;
+    let test_body = r#"
+        let content = PacketContent {
+            body: PacketBodyContent::Both(BothContent { v: 0x1234 }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x00, 0x00, 0x12, 0x34]);
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.a(), 0);
+        assert_eq!(packet.b(), 0);
+        match packet.body().unwrap() {
+            Packet_body::Both(mut both) => assert_eq!(both.v(), 0x1234),
+            _ => panic!("expected Both variant"),
+        }
+
+        let content = PacketContent {
+            body: PacketBodyContent::OneTwo(OneTwoContent { code: 0x77 }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x01, 0x02, 0x77]);
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.a(), 1);
+        assert_eq!(packet.b(), 2);
+        match packet.body().unwrap() {
+            Packet_body::OneTwo(mut one_two) => assert_eq!(one_two.code(), 0x77),
+            _ => panic!("expected OneTwo variant"),
+        }
+    "#;
+    run_round_trip("union-tuple-disc", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_union_writable_wildcard_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Packet {
+    kind: u8,
+    body: union(kind) {
+        1 => Connect { keep_alive: u16 },
+        _ => Generic { a: u8, b: u8 },
+    },
+}
+"#;
+    let test_body = r#"
+        let content = PacketContent {
+            body: PacketBodyContent::Generic {
+                discriminant: 99,
+                content: GenericContent { a: 0xAA, b: 0xBB },
+            },
+        };
+        let mut buf = vec![0xFFu8; PacketWriter::encoded_len(&content)];
+        let n = PacketWriter::write_into(&mut buf, &content).unwrap();
+        assert_eq!(n, 3);
+        assert_eq!(buf, vec![99, 0xAA, 0xBB]);
+        let (mut packet, _) = Packet::parse(&buf).unwrap();
+        assert_eq!(packet.kind(), 99);
+        match packet.body().unwrap() {
+            Packet_body::Generic(mut generic) => {
+                assert_eq!(generic.a(), 0xAA);
+                assert_eq!(generic.b(), 0xBB);
+            }
+            _ => panic!("expected Generic variant"),
+        }
+
+        let content = PacketContent {
+            body: PacketBodyContent::Connect(ConnectContent { keep_alive: 60 }),
+        };
+        let mut buf = vec![0xFFu8; PacketWriter::encoded_len(&content)];
+        let _ = PacketWriter::write_into(&mut buf, &content).unwrap();
+        assert_eq!(buf, vec![0x01, 0x00, 0x3C]);
+        let (mut packet, _) = Packet::parse(&buf).unwrap();
+        assert_eq!(packet.kind(), 1);
+        match packet.body().unwrap() {
+            Packet_body::Connect(mut connect) => assert_eq!(connect.keep_alive(), 60),
+            _ => panic!("expected Connect variant"),
+        }
+    "#;
+    run_round_trip("union-writable-wildcard", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_union_error_arm_round_trips() {
+    let dsl = r#"
+error { BadKind { got: u8 }, }
+@endian(big)
+struct Packet {
+    kind: u8,
+    body: union(kind) {
+        1 => Connect { keep_alive: u16 },
+        _ => @error(BadKind { got: kind }),
+    },
+}
+"#;
+    let test_body = r#"
+        let content = PacketContent {
+            body: PacketBodyContent::Connect(ConnectContent { keep_alive: 90 }),
+        };
+        let bytes = PacketWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x01, 0x00, 0x5A]);
+        let (mut packet, _) = Packet::parse(&bytes).unwrap();
+        assert_eq!(packet.kind(), 1);
+        match packet.body().unwrap() {
+            Packet_body::Connect(mut connect) => assert_eq!(connect.keep_alive(), 90),
+            _ => panic!("expected Connect variant"),
+        }
+    "#;
+    run_round_trip("union-error-arm", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_multibyte_array_big_endian_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Samples {
+    count: u8,
+    data: [u16; 4],
+    crc: u16,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(SamplesWriter::SIZE, 11);
+
+        let content = SamplesContent {
+            count: 4,
+            data: [0x1122, 0x3344, 0x5566, 0x7788],
+            crc: 0xABCD,
+        };
+        let bytes = SamplesWriter::to_vec(&content);
+        assert_eq!(
+            bytes,
+            vec![4, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0xAB, 0xCD]
+        );
+        let (mut p, _) = Samples::parse(&bytes).unwrap();
+        assert_eq!(p.count(), 4);
+        assert_eq!(p.crc(), 0xABCD);
+        assert_eq!(
+            p.data().unwrap().collect::<Result<Vec<u16>, _>>().unwrap(),
+            vec![0x1122, 0x3344, 0x5566, 0x7788]
+        );
+    "#;
+    run_round_trip("multibyte-array-be", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_multibyte_array_little_endian_round_trips() {
+    let dsl = r#"
+struct LeSamples {
+    @endian(little) data: [u32; 2],
+}
+"#;
+    let test_body = r#"
+        assert_eq!(LeSamplesWriter::SIZE, 8);
+
+        let content = LeSamplesContent { data: [0x11223344, 0x55667788] };
+        let bytes = LeSamplesWriter::to_vec(&content);
+        assert_eq!(
+            bytes,
+            vec![0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55]
+        );
+        let (mut p, _) = LeSamples::parse(&bytes).unwrap();
+        assert_eq!(
+            p.data().unwrap().collect::<Result<Vec<u32>, _>>().unwrap(),
+            vec![0x11223344, 0x55667788]
+        );
+    "#;
+    run_round_trip("multibyte-array-le", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_concat_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct WithConcat {
+    tag: u8,
+    combo: concat(u8, u16),
+    trailer: u8,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(WithConcatWriter::SIZE, 5);
+
+        let content = WithConcatContent {
+            tag: 0xAA,
+            combo: (0x42, 0x1234),
+            trailer: 0xBB,
+        };
+        let bytes = WithConcatWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0xAA, 0x42, 0x12, 0x34, 0xBB]);
+        let (mut p, _) = WithConcat::parse(&bytes).unwrap();
+        assert_eq!(p.tag(), 0xAA);
+        assert_eq!(p.trailer(), 0xBB);
+        assert_eq!(p.combo(), (0x42, 0x1234));
+    "#;
+    run_round_trip("concat-tuple", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_concat_bitfield_nibbles_round_trips() {
+    let dsl = r#"
+struct Nib {
+    combo: concat(b<4>, b<4>),
+    tail: u8,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(NibWriter::SIZE, 2);
+
+        let content = NibContent { combo: (0xA, 0x5), tail: 0xFF };
+        let bytes = NibWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0xA5, 0xFF]);
+        let (mut p, _) = Nib::parse(&bytes).unwrap();
+        assert_eq!(p.combo(), (0xA, 0x5));
+        assert_eq!(p.tail(), 0xFF);
+    "#;
+    run_round_trip("concat-nibbles", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_pad_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Padded {
+    a: u8,
+    @pad(2) b: u16,
+    c: u8,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(PaddedWriter::SIZE, 6);
+
+        let mut buf = [0xFFu8; 6];
+        let written = PaddedWriter::write_into(
+            &mut buf,
+            &PaddedContent { a: 0x11, b: 0x2233, c: 0x44 },
+        )
+        .unwrap();
+        assert_eq!(written, 6);
+        assert_eq!(buf, [0x11, 0x00, 0x00, 0x22, 0x33, 0x44]);
+        let (mut p, _) = Padded::parse(&buf).unwrap();
+        assert_eq!(p.a(), 0x11);
+        assert_eq!(p.b(), 0x2233);
+        assert_eq!(p.c(), 0x44);
+    "#;
+    run_round_trip("pad", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_pad_to_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Aligned {
+    a: u8,
+    @pad_to(4) b: u32,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(AlignedWriter::SIZE, 8);
+
+        let mut buf = [0xFFu8; 8];
+        AlignedWriter::write_into(&mut buf, &AlignedContent { a: 0x11, b: 0x22334455 })
+            .unwrap();
+        assert_eq!(buf, [0x11, 0x00, 0x00, 0x00, 0x22, 0x33, 0x44, 0x55]);
+        let (mut p, _) = Aligned::parse(&buf).unwrap();
+        assert_eq!(p.a(), 0x11);
+        assert_eq!(p.b(), 0x22334455);
+    "#;
+    run_round_trip("pad-to", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_align_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Al {
+    a: u16,
+    @align(2) b: u16,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(AlWriter::SIZE, 4);
+
+        let content = AlContent { a: 0x1122, b: 0x3344 };
+        let bytes = AlWriter::to_vec(&content);
+        assert_eq!(bytes, vec![0x11, 0x22, 0x33, 0x44]);
+        let (mut p, _) = Al::parse(&bytes).unwrap();
+        assert_eq!(p.a(), 0x1122);
+        assert_eq!(p.b(), 0x3344);
+    "#;
+    run_round_trip("align", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_skip_round_trips() {
+    let dsl = r#"
+@endian(big)
+struct Sk {
+    a: u8,
+    @skip reserved: u16,
+    b: u8,
+}
+"#;
+    let test_body = r#"
+        assert_eq!(SkWriter::SIZE, 4);
+
+        let mut buf = [0xFFu8; 4];
+        SkWriter::write_into(&mut buf, &SkContent { a: 0x11, b: 0x22 }).unwrap();
+        assert_eq!(buf, [0x11, 0x00, 0x00, 0x22]);
+        let (mut p, _) = Sk::parse(&buf).unwrap();
+        assert_eq!(p.a(), 0x11);
+        assert_eq!(p.b(), 0x22);
+    "#;
+    run_round_trip("skip", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_over_fixed_edits_in_place() {
+    let dsl = r#"
+@endian(big)
+struct P {
+    a: u8,
+    b: u16,
+    c: u32,
+}
+"#;
+    let test_body = r#"
+        let mut buf = PWriter::to_vec(&PContent { a: 0x11, b: 0x2233, c: 0x44556677 });
+        assert!(PWriter::writer_over(&mut [0u8; 3]).is_err());
+
+        {
+            let mut w = PWriter::writer_over(&mut buf).unwrap();
+            w.set_b(0xBEEF);
+        }
+        let (mut p, _) = P::parse(&buf).unwrap();
+        assert_eq!(p.a(), 0x11);
+        assert_eq!(p.b(), 0xBEEF);
+        assert_eq!(p.c(), 0x44556677);
+    "#;
+    run_round_trip("writer-over-fixed", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_over_dynamic_tail_edits_in_place() {
+    let dsl = r#"
+struct Frame {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+}
+"#;
+    let test_body = r#"
+        let mut buf = FrameWriter::to_vec(&FrameContent {
+            kind: 7,
+            payload: &[1, 2, 3, 4],
+        });
+        let original_len = buf[1];
+
+        {
+            let mut w = FrameWriter::writer_over(&mut buf).unwrap();
+            w.set_kind(9);
+            w.payload_mut().copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
+        }
+        assert_eq!(buf[1], original_len);
+        let (mut f, _) = Frame::parse(&buf).unwrap();
+        assert_eq!(f.kind(), 9);
+        let payload: Vec<u8> = f.payload().unwrap().map(|b| b.unwrap()).collect();
+        assert_eq!(payload, vec![0xAA, 0xBB, 0xCC, 0xDD]);
+    "#;
+    run_round_trip("writer-over-dynamic-tail", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_over_forward_trailer_edits_in_place() {
+    let dsl = r#"
+@endian(big)
+struct Frame {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+    crc: u16,
+    tail: u8,
+}
+"#;
+    let test_body = r#"
+        let mut buf = FrameWriter::to_vec(&FrameContent {
+            kind: 1,
+            payload: &[0x10, 0x20, 0x30],
+            crc: 0xABCD,
+            tail: 0xEE,
+        });
+
+        {
+            let mut w = FrameWriter::writer_over(&mut buf).unwrap();
+            w.set_kind(2);
+            w.payload_mut()[1] = 0x99;
+            w.set_crc(0x1234);
+            w.set_tail(0x77);
+        }
+        let (mut f, _) = Frame::parse(&buf).unwrap();
+        assert_eq!(f.kind(), 2);
+        let payload: Vec<u8> = f.payload().unwrap().map(|b| b.unwrap()).collect();
+        assert_eq!(payload, vec![0x10, 0x99, 0x30]);
+        assert_eq!(f.crc(), 0x1234);
+        assert_eq!(f.tail(), 0x77);
+    "#;
+    run_round_trip("writer-over-forward-trailer", dsl, test_body);
+}
+
+#[test]
+fn generated_writer_over_rejects_invalid_buffer() {
+    let dsl = r#"
+struct Frame {
+    kind: u8,
+    len: u8,
+    payload: [u8; len],
+}
+"#;
+    let test_body = r#"
+        let mut buf = [0u8, 3u8, 0u8];
+        assert!(matches!(
+            FrameWriter::writer_over(&mut buf),
+            Err(bytesmith::WriteError::InvalidContent)
+        ));
+    "#;
+    run_round_trip("writer-over-invalid", dsl, test_body);
+}

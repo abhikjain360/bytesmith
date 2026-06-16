@@ -4,8 +4,8 @@ use libfuzzer_sys::fuzz_target;
 
 include!(concat!(env!("OUT_DIR"), "/generated_writers.rs"));
 
-fn read_leb128(data: &[u8], ctx: binparse::HookContext<'_>) -> binparse::ParseResult<(u64, usize)> {
-    binparse::hooks::leb128_unsigned(data, ctx)
+fn read_leb128(data: &[u8], ctx: bytesmith::HookContext<'_>) -> bytesmith::ParseResult<(u64, usize)> {
+    bytesmith::hooks::leb128_unsigned(data, ctx)
 }
 
 struct Cursor<'a> {
@@ -102,7 +102,7 @@ fuzz_target!(|data: &[u8]| {
         assert_eq!(p.tag(), content.tag);
         assert_eq!(p.tail(), content.tail);
         assert_eq!(
-            p.bytes().unwrap().collect::<binparse::ParseResult<Vec<u8>>>().unwrap(),
+            p.bytes().unwrap().collect::<bytesmith::ParseResult<Vec<u8>>>().unwrap(),
             content.bytes.to_vec()
         );
     }
@@ -142,7 +142,7 @@ fuzz_target!(|data: &[u8]| {
         assert_eq!(p.kind(), content.kind);
         assert_eq!(usize::from(p.len()), payload.len());
         assert_eq!(
-            p.payload().unwrap().collect::<binparse::ParseResult<Vec<u8>>>().unwrap(),
+            p.payload().unwrap().collect::<bytesmith::ParseResult<Vec<u8>>>().unwrap(),
             payload.to_vec()
         );
     }
@@ -168,7 +168,7 @@ fuzz_target!(|data: &[u8]| {
         assert_eq!(p.kind(), content.kind);
         assert_eq!(usize::from(p.len()), payload.len());
         assert_eq!(
-            p.payload().unwrap().collect::<binparse::ParseResult<Vec<u8>>>().unwrap(),
+            p.payload().unwrap().collect::<bytesmith::ParseResult<Vec<u8>>>().unwrap(),
             payload.to_vec()
         );
         assert_eq!(p.crc(), crc);
@@ -186,7 +186,7 @@ fuzz_target!(|data: &[u8]| {
         assert_eq!(p.tag(), content.tag);
         assert_eq!(p.len().unwrap() as usize, body.len());
         assert_eq!(
-            p.body().unwrap().collect::<binparse::ParseResult<Vec<u8>>>().unwrap(),
+            p.body().unwrap().collect::<bytesmith::ParseResult<Vec<u8>>>().unwrap(),
             body.to_vec()
         );
     }
@@ -238,15 +238,15 @@ fuzz_target!(|data: &[u8]| {
         let (p, _) = WEthernet::parse(&bytes).unwrap();
         assert_eq!(p.ethertype(), ethertype);
         assert_eq!(
-            p.dst().unwrap().collect::<binparse::ParseResult<Vec<u8>>>().unwrap(),
+            p.dst().unwrap().collect::<bytesmith::ParseResult<Vec<u8>>>().unwrap(),
             dst.to_vec()
         );
         assert_eq!(
-            p.src().unwrap().collect::<binparse::ParseResult<Vec<u8>>>().unwrap(),
+            p.src().unwrap().collect::<bytesmith::ParseResult<Vec<u8>>>().unwrap(),
             src.to_vec()
         );
         assert_eq!(
-            p.payload().unwrap().collect::<binparse::ParseResult<Vec<u8>>>().unwrap(),
+            p.payload().unwrap().collect::<bytesmith::ParseResult<Vec<u8>>>().unwrap(),
             payload.to_vec()
         );
     }
@@ -274,7 +274,7 @@ fuzz_target!(|data: &[u8]| {
         assert_eq!(p.vid_lo(), content.vid_lo);
         assert_eq!(p.ethertype(), content.ethertype);
         assert_eq!(
-            p.payload().unwrap().collect::<binparse::ParseResult<Vec<u8>>>().unwrap(),
+            p.payload().unwrap().collect::<bytesmith::ParseResult<Vec<u8>>>().unwrap(),
             payload.to_vec()
         );
     }

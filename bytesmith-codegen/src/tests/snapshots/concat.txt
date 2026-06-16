@@ -1,0 +1,284 @@
+impl<'a> ::bytesmith::Dissect<'a> for WithConcat<'a> {
+    fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        WithConcat::field_tree(self)
+    }
+    fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        WithConcat::handoff(self)
+    }
+}
+
+impl<'a> WithConcat<'a> {
+    pub fn parse(data: &'a [u8]) -> Result<(Self, &'a [u8]), ::bytesmith::ParseError> {
+        let mut me = Self { data };
+        me.flags_fatal_check()?;
+        me.flags_recoverable_check()?;
+        me.fragment_offset_fatal_check()?;
+        me.fragment_offset_recoverable_check()?;
+        let len = me.fragment_offset_end_offset();
+        if len.bit != 0 {
+            return Err(::bytesmith::ParseError::UnalignedLength(len));
+        }
+        if data.len() < len.byte {
+            return Err(::bytesmith::ParseError::NotEnoughData {
+                expected: len.byte,
+                got: data.len(),
+            });
+        }
+        Ok((me, &data[len.byte..]))
+    }
+    pub fn field_tree(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let mut children = ::std::vec::Vec::new();
+        {
+            let me = &mut *self;
+            children.push(me.flags_present_node());
+        }
+        {
+            let me = &mut *self;
+            children.push(me.fragment_offset_present_node());
+        }
+        let mut root = ::bytesmith::FieldNode::new(
+                "WithConcat",
+                "WithConcat",
+                0usize..self.fragment_offset_end_offset().bits(),
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        root.set_paths("");
+        root
+    }
+    pub fn dissect(data: &'a [u8]) -> ::bytesmith::FieldNode<'a> {
+        let mut me = Self { data };
+        let mut children: ::std::vec::Vec<::bytesmith::FieldNode<'a>> = ::std::vec::Vec::new();
+        let mut fatal: Option<::bytesmith::ParseError> = None;
+        if fatal.is_none() {
+            match me.flags_fatal_check() {
+                Err(error) => {
+                    let start = me.flags_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "flags",
+                                    "b<3>",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.flags_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.flags_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "flags",
+                                            "b<3>",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.flags_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        if fatal.is_none() {
+            match me.fragment_offset_fatal_check() {
+                Err(error) => {
+                    let start = me.fragment_offset_start_offset().bits();
+                    children
+                        .push(
+                            ::bytesmith::FieldNode::new(
+                                    "fragment_offset",
+                                    "concat",
+                                    start..start,
+                                    ::bytesmith::Value::Opaque,
+                                )
+                                .with_status(::bytesmith::Status::Error(error)),
+                        );
+                    fatal = Some(error);
+                }
+                Ok(()) => {
+                    match me.fragment_offset_recoverable_check() {
+                        Err(error) => {
+                            let bit_range = me.fragment_offset_bit_range();
+                            children
+                                .push(
+                                    ::bytesmith::FieldNode::new(
+                                            "fragment_offset",
+                                            "concat",
+                                            bit_range,
+                                            ::bytesmith::Value::Opaque,
+                                        )
+                                        .with_status(::bytesmith::Status::Error(error)),
+                                );
+                        }
+                        Ok(()) => {
+                            children.push(me.fragment_offset_present_node());
+                        }
+                    }
+                }
+            }
+        }
+        let root_end = children.last().map(|child| child.bit_range.end).unwrap_or(0);
+        let mut root = ::bytesmith::FieldNode::new(
+                "WithConcat",
+                "WithConcat",
+                0usize..root_end,
+                ::bytesmith::Value::Struct,
+            )
+            .with_children(children);
+        if let Some(error) = fatal {
+            root = root.with_status(::bytesmith::Status::Error(error));
+        }
+        root.set_paths("");
+        root
+    }
+    pub fn handoff(&mut self) -> Option<::bytesmith::Handoff<'a>> {
+        None
+    }
+    #[allow(dead_code)]
+    fn flags_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.flags_bit_range();
+        ::bytesmith::FieldNode::new(
+            "flags",
+            "b<3>",
+            bit_range.clone(),
+            ::bytesmith::Value::UInt(u128::from(self.flags())),
+        )
+    }
+    #[allow(clippy::identity_op)]
+    pub fn flags(&mut self) -> u8 {
+        (self.data[0usize] >> 5usize) & 7u8
+    }
+    pub fn flags_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 0usize,
+            bit: 3usize,
+        }
+    }
+    pub fn flags_start_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len::ZERO
+    }
+    pub fn flags_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self.flags_start_offset().bits()..self.flags_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn flags_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.flags_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn flags_recoverable_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn fragment_offset_present_node(&mut self) -> ::bytesmith::FieldNode<'a> {
+        let bit_range = self.fragment_offset_bit_range();
+        {
+            let mut item_nodes = ::std::vec::Vec::new();
+            {
+                let bit_range = 3usize..8usize;
+                item_nodes
+                    .push(
+                        ::bytesmith::FieldNode::new(
+                            "fragment_offset_0",
+                            "b<5>",
+                            bit_range.clone(),
+                            ::bytesmith::Value::UInt(
+                                u128::from(self.fragment_offset_0()),
+                            ),
+                        ),
+                    );
+            }
+            {
+                let bit_range = 8usize..16usize;
+                item_nodes
+                    .push(
+                        ::bytesmith::FieldNode::new(
+                            "fragment_offset_1",
+                            "u8",
+                            bit_range.clone(),
+                            ::bytesmith::Value::UInt(
+                                u128::from(self.fragment_offset_1()),
+                            ),
+                        ),
+                    );
+            }
+            ::bytesmith::FieldNode::new(
+                    "fragment_offset",
+                    "concat",
+                    bit_range.clone(),
+                    ::bytesmith::Value::Struct,
+                )
+                .with_children(item_nodes)
+        }
+    }
+    #[allow(clippy::identity_op)]
+    pub fn fragment_offset_0(&mut self) -> u8 {
+        (self.data[0usize] >> 0usize) & 31u8
+    }
+    #[allow(clippy::identity_op)]
+    pub fn fragment_offset_1(&mut self) -> u8 {
+        self.data[1usize]
+    }
+    #[allow(clippy::identity_op)]
+    pub fn fragment_offset(&mut self) -> (u8, u8) {
+        (self.fragment_offset_0(), self.fragment_offset_1())
+    }
+    pub fn fragment_offset_end_offset(&mut self) -> bytesmith::Len {
+        bytesmith::Len {
+            byte: 2usize,
+            bit: 0usize,
+        }
+    }
+    pub fn fragment_offset_start_offset(&mut self) -> bytesmith::Len {
+        self.flags_end_offset()
+    }
+    pub fn fragment_offset_bit_range(&mut self) -> ::core::ops::Range<usize> {
+        self
+            .fragment_offset_start_offset()
+            .bits()..self.fragment_offset_end_offset().bits()
+    }
+    #[allow(dead_code)]
+    fn fragment_offset_fatal_check(&mut self) -> Result<(), ::bytesmith::ParseError> {
+        {
+            let len = self.fragment_offset_end_offset();
+            let expected = len.byte_ceil();
+            if self.data.len() < expected {
+                return Err(::bytesmith::ParseError::NotEnoughData {
+                    expected,
+                    got: self.data.len(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[allow(dead_code)]
+    fn fragment_offset_recoverable_check(
+        &mut self,
+    ) -> Result<(), ::bytesmith::ParseError> {
+        Ok(())
+    }
+}
+
+pub struct WithConcat<'a> {
+    #[allow(dead_code)]
+    data: &'a [u8],
+}
+
